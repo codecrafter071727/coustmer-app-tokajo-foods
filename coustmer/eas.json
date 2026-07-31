@@ -6,16 +6,30 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://api.viharfood.in",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyDtqlNuzkFM6Ix8GKcQcV06Dz6j1_FVRjo"
+      }
     },
     "preview": {
       "android": {
-        "buildType": "apk",
-        "image": "latest",
-        "gradleCommand": ":app:assembleRelease"
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://api.viharfood.in",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyDtqlNuzkFM6Ix8GKcQcV06Dz6j1_FVRjo"
       }
     },
-    "production": {}
+    "production": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://api.viharfood.in",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyDtqlNuzkFM6Ix8GKcQcV06Dz6j1_FVRjo"
+      }
+    }
   },
   "submit": {
     "production": {}

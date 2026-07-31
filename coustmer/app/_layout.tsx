@@ -24,20 +24,29 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const hydrate = useAuthStore((s) => s.hydrate);
   const isHydrated = useAuthStore((s) => s.isHydrated);
-  const [fontsLoaded] = useAppFonts();
+  const [fontsLoaded, fontError] = useAppFonts();
   const [appReady, setAppReady] = useState(false);
 
   // Kick off auth hydration once on mount.
   useEffect(() => {
-    hydrate();
+    hydrate().catch(() => {
+      // hydrate already sets isHydrated in its own catch; this is a safety net
+    });
   }, [hydrate]);
 
-  // Once both fonts and auth store are ready, mark the app ready.
+  // Once fonts (or font failure) and auth store are ready, mark the app ready.
+  // Font errors must not leave the app stuck on a blank splash that looks like a crash.
   useEffect(() => {
-    if (fontsLoaded && isHydrated) {
+    if ((fontsLoaded || fontError) && isHydrated) {
       setAppReady(true);
     }
-  }, [fontsLoaded, isHydrated]);
+  }, [fontsLoaded, fontError, isHydrated]);
+
+  // Hard timeout so a hung hydrate/font load never freezes the process forever.
+  useEffect(() => {
+    const timer = setTimeout(() => setAppReady(true), 8000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Hide the native splash screen only after the first frame has painted,
   // so there is zero white-flash between splash and real UI.
