@@ -2,6 +2,7 @@ import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { RestaurantCard } from '@/components/home/RestaurantCard';
 import { authTheme } from '@/constants/auth-theme';
+import { fonts } from '@/constants/typography';
 import type { RestaurantCard as RestaurantCardType } from '@/lib/customer/types';
 
 type Props = {
@@ -89,14 +90,15 @@ const styles = StyleSheet.create({
   },
   title: {
     color: authTheme.text,
-    fontSize: 19,
-    fontWeight: '800',
+    fontSize: 20,
+    fontFamily: fonts.displayBold,
     letterSpacing: -0.3,
   },
   subtitle: {
     color: authTheme.textMuted,
     fontSize: 13,
-    marginTop: 1,
+    marginTop: 2,
+    fontWeight: '600',
   },
   list: {
     paddingHorizontal: 20,

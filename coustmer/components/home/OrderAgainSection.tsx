@@ -43,8 +43,8 @@ export function OrderAgainSection() {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Order Again</Text>
-        <Text style={styles.viewAll}>View All &gt;</Text>
+        <Text style={styles.title}>Order again</Text>
+        <Text style={styles.viewAll}>View all</Text>
       </View>
 
       <ScrollView
@@ -66,7 +66,7 @@ export function OrderAgainSection() {
                 {order.restaurantName}
               </Text>
               <View style={styles.timeRow}>
-                <Clock color="#9CA3AF" size={12} strokeWidth={2.5} />
+                <Clock color="#64748B" size={12} strokeWidth={2.5} />
                 <Text style={styles.time}>{order.time}</Text>
               </View>
             </View>
@@ -97,13 +97,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 20,
-    color: '#111827',
+    fontSize: 22,
+    color: '#0B1220',
+    letterSpacing: -0.3,
   },
   viewAll: {
-    fontFamily: fonts.uiMedium,
+    fontFamily: fonts.uiBold,
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#EA580C',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -146,14 +147,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   category: {
-    fontFamily: fonts.uiMedium,
-    fontSize: 10,
-    color: '#9CA3AF',
+    fontFamily: fonts.uiSemi,
+    fontSize: 11,
+    color: '#475569',
   },
   name: {
     fontFamily: fonts.displayBold,
     fontSize: 15,
-    color: '#111827',
+    color: '#0B1220',
   },
   timeRow: {
     flexDirection: 'row',
@@ -162,9 +163,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   time: {
-    fontFamily: fonts.uiMedium,
-    fontSize: 11,
-    color: '#9CA3AF',
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: '#475569',
   },
   ratingBadge: {
     position: 'absolute',

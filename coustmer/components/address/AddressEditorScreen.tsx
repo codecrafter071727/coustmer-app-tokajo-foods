@@ -318,6 +318,7 @@ export function AddressEditorScreen({ mode = 'create' }: Props) {
 
       <DeliveryLocationPicker
         visible={pickerOpen}
+        variant="pin"
         initial={
           lat != null && lng != null ? { lat, lng } : undefined
         }

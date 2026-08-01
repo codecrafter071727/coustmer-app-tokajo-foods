@@ -126,6 +126,7 @@ export function RestaurantFeedCard({
               {priceLevel(price)} • {topCuisine}
               {restaurant.deliveryTime ? ` • ${restaurant.deliveryTime}` : ''}
               {restaurant.isPureVeg ? ' • Pure Veg' : ''}
+              {isClosed ? ' • Closed' : ''}
             </Text>
           </Pressable>
         </View>

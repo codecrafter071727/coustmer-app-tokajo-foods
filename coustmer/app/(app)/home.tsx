@@ -19,16 +19,16 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { SaveAddressLabelModal } from '@/components/address/SaveAddressLabelModal';
+import { CategoriesSection } from '@/components/home/CategoriesSection';
+import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
 import { FeaturedRestaurants } from '@/components/home/FeaturedRestaurants';
-import { CategoriesSection, CategoryPillStrip } from '@/components/home/CategoriesSection';
 import { OrderAgainSection } from '@/components/home/OrderAgainSection';
 
 import { SwiggyHomeChrome } from '@/components/home/SwiggyHomeChrome';
 import { VegModeModal } from '@/components/home/VegModeModal';
 import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
 import { InitialLocationSheet } from '@/components/location/InitialLocationSheet';
-import { OnboardingPrompt } from '@/components/customer/OnboardingPrompt';
 import { CustomerRecommendations } from '@/components/customer/CustomerRecommendations';
 import { APP_BOTTOM_NAV_INSET } from '@/components/navigation/AppBottomNav';
 import { CartFloatingBar } from '@/components/order/CartFloatingBar';
@@ -41,9 +41,14 @@ import {
   useDeals,
   useHomeFeed,
   useOffersFeed,
-  useOnboardingStatus,
 } from '@/lib/customer/hooks';
 import { useFavoriteToggle } from '@/lib/customer/useFavoriteToggle';
+import {
+  applyHomeFilters,
+  countActiveHomeFilters,
+  DEFAULT_HOME_FILTERS,
+  type HomeFilterState,
+} from '@/lib/home/filters';
 import { useHomeDiscovery } from '@/lib/home/hooks';
 import {
   deliveryHeaderSubtitle,
@@ -78,7 +83,8 @@ export default function HomeScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [vegModalOpen, setVegModalOpen] = useState(false);
   const [hasPromptedLocation, setHasPromptedLocation] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [homeFilters, setHomeFilters] =
+    useState<HomeFilterState>(DEFAULT_HOME_FILTERS);
   const [mindPinned, setMindPinned] = useState(false);
   const [savePrompt, setSavePrompt] = useState<{
     label: string;
@@ -146,7 +152,6 @@ export default function HomeScreen() {
   const deals = useDeals();
   const offers = useOffersFeed();
   const profile = useCustomerProfile();
-  const onboarding = useOnboardingStatus();
   const discovery = useHomeDiscovery(city);
   const { favoriteIds, toggleFavorite } = useFavoriteToggle();
 
@@ -164,7 +169,7 @@ export default function HomeScreen() {
     { enabled: Boolean(city) }
   );
 
-  const restaurants = useMemo(() => {
+  const baseRestaurants = useMemo(() => {
     const rows = feed.data?.pages.flatMap((p) => p.restaurants) ?? [];
     if (!city) return [];
 
@@ -174,29 +179,13 @@ export default function HomeScreen() {
       if (!hasLocationFields) matched = rows;
       else return [];
     }
-
-    if (vegMode === 'pure_veg') {
-      matched = matched.filter((r) => r.isPureVeg === true);
-    }
-
-    if (activeFilter === 'fast') {
-      matched = [...matched].sort((a, b) => {
-        const ta = parseInt(String(a.deliveryTime || '40'), 10) || 40;
-        const tb = parseInt(String(b.deliveryTime || '40'), 10) || 40;
-        return ta - tb;
-      });
-    } else if (activeFilter === 'rating') {
-      matched = matched.filter((r) => (r.rating ?? 0) >= 4);
-    } else if (activeFilter === 'offers' || activeFilter === 'min_off') {
-      matched = [...matched].sort((a, b) => {
-        const ao = a.offer ? 0 : 1;
-        const bo = b.offer ? 0 : 1;
-        return ao - bo;
-      });
-    }
-
     return matched;
-  }, [feed.data?.pages, city, vegMode, activeFilter]);
+  }, [feed.data?.pages, city]);
+
+  const restaurants = useMemo(
+    () => applyHomeFilters(baseRestaurants, homeFilters),
+    [baseRestaurants, homeFilters]
+  );
 
   const openRestaurant = (id: string) => {
     router.push({
@@ -218,16 +207,29 @@ export default function HomeScreen() {
     deals.refetch();
     offers.refetch();
     profile.refetch();
-    onboarding.refetch();
     discovery.refetch();
   };
 
   const onVegApply = (mode: VegMode) => {
     setVegMode(mode);
+    setHomeFilters((prev) => ({
+      ...prev,
+      pureVeg: mode === 'pure_veg',
+    }));
   };
 
-  const onFilterPress = (id: string) => {
-    setActiveFilter((prev) => (prev === id ? null : id));
+  const onFiltersChange = (next: HomeFilterState) => {
+    setHomeFilters(next);
+    if (next.pureVeg && vegMode !== 'pure_veg') {
+      setVegMode('pure_veg');
+    } else if (!next.pureVeg && vegMode === 'pure_veg') {
+      setVegMode('all');
+    }
+  };
+
+  const onClearFilters = () => {
+    setHomeFilters(DEFAULT_HOME_FILTERS);
+    if (vegMode === 'pure_veg') setVegMode('all');
   };
 
   const onScroll = useAnimatedScrollHandler({
@@ -439,7 +441,11 @@ export default function HomeScreen() {
     />
   );
 
-  const showInitialSheet = !hasPromptedLocation && !isDetectingLocation && !pickerOpen;
+  const showInitialSheet =
+    !deliveryLocation &&
+    !hasPromptedLocation &&
+    !isDetectingLocation &&
+    !pickerOpen;
 
   const initialSheet = (
     <InitialLocationSheet
@@ -467,14 +473,14 @@ export default function HomeScreen() {
       deliverySubtitle={deliverySubtitle}
       isDetectingLocation={isDetectingLocation}
       onLocationPress={() => setPickerOpen(true)}
-      vegActive={vegMode === 'pure_veg'}
+      vegActive={vegMode === 'pure_veg' || homeFilters.pureVeg}
       onVegPress={() => setVegModalOpen(true)}
       banners={offers.data?.banners ?? home.data?.banners}
       deals={offers.data?.deals ?? deals.data}
-      activeFilter={activeFilter}
-      onFilterPress={onFilterPress}
     />
   );
+
+  const filtersActive = countActiveHomeFilters(homeFilters) > 0;
 
   /**
    * Title scrolls away with content above.
@@ -491,69 +497,109 @@ export default function HomeScreen() {
         {chrome}
       </View>
 
-
-
-
-
-
-
-      {/* Categories Section */}
-      <CategoriesSection restaurants={restaurants.slice(0, 10)} />
-
-      {/* Featured Restaurants horizontal scroll (Hot Deals) */}
-      {restaurants.length > 0 ? (
-        <View>
-          <Text style={{ fontFamily: fonts.displayBold, fontSize: 22, color: '#202020', paddingHorizontal: 16, marginBottom: 4, marginTop: 4 }}>
-            Hot Deals %
-          </Text>
-          <FeaturedRestaurants
-            restaurants={restaurants.slice(0, 10)}
+      {filtersActive ? (
+        <>
+          <View style={styles.filteredWrap}>
+            <HomeFiltersBar
+              filters={homeFilters}
+              onChange={onFiltersChange}
+              onClear={onClearFilters}
+              allRestaurants={baseRestaurants}
+            />
+            <Text style={styles.filteredTitle}>
+              {restaurants.length > 0
+                ? `${restaurants.length} restaurant${restaurants.length === 1 ? '' : 's'} found`
+                : 'No restaurants found'}
+            </Text>
+            {restaurants.length === 0 ? (
+              <View style={styles.filteredEmpty}>
+                <Text style={styles.filteredEmptyText}>
+                  Nothing matches these filters. Clear filters to see all restaurants.
+                </Text>
+                <Text style={styles.filteredClear} onPress={onClearFilters}>
+                  Clear filters
+                </Text>
+              </View>
+            ) : (
+              <PopularRestaurantsSection
+                title=""
+                restaurants={restaurants}
+                totalCount={restaurants.length}
+                favoriteIds={favoriteIds}
+                onToggleFavorite={(id) => {
+                  const r = restaurants.find((x) => x.id === id);
+                  toggleFavorite(id, r ? { restaurant: r } : undefined);
+                }}
+                onPressRestaurant={openRestaurant}
+                loadingMore={false}
+                loading={false}
+              />
+            )}
+          </View>
+        </>
+      ) : (
+        <>
+          <CategoriesSection
+            restaurants={restaurants.slice(0, 12)}
+            filters={homeFilters}
+            onFiltersChange={onFiltersChange}
+            onClearFilters={onClearFilters}
+            allRestaurants={baseRestaurants}
           />
-        </View>
-      ) : null}
 
-      {!city && !isDetectingLocation ? (
-        <View style={[styles.paddedBlock, styles.hintCard]}>
-          <Text style={styles.hintText}>
-            Set your delivery location above to see restaurants in your city.
-          </Text>
-        </View>
-      ) : null}
+          {restaurants.length > 0 ? (
+            <View key="hot-deals-v5">
+              <Text style={[styles.sectionHead, styles.hotDealsHead]}>
+                <Text style={styles.sectionHeadDark}>Hot deals </Text>
+                <Text style={styles.sectionHeadAccent}>%</Text>
+              </Text>
+              <FeaturedRestaurants restaurants={restaurants.slice(0, 10)} />
+            </View>
+          ) : null}
 
-      {feed.isError ? (
-        <View style={[styles.paddedBlock, styles.errorWrap]}>
-          <ErrorView
-            message={
-              feed.error instanceof Error
-                ? feed.error.message
-                : 'Could not load restaurants'
-            }
-            onRetry={() => feed.refetch()}
-          />
-        </View>
-      ) : null}
+          {!city && !isDetectingLocation ? (
+            <View style={[styles.paddedBlock, styles.hintCard]}>
+              <Text style={styles.hintText}>
+                Set your delivery location above to see restaurants in your city.
+              </Text>
+            </View>
+          ) : null}
 
-      {/* Order Again Section */}
-      <OrderAgainSection />
+          {feed.isError ? (
+            <View style={[styles.paddedBlock, styles.errorWrap]}>
+              <ErrorView
+                message={
+                  feed.error instanceof Error
+                    ? feed.error.message
+                    : 'Could not load restaurants'
+                }
+                onRetry={() => feed.refetch()}
+              />
+            </View>
+          ) : null}
 
-      <CustomerRecommendations />
+          <OrderAgainSection />
 
-      {restaurants.length > 0 || (feed.isLoading && !!city) ? (
-        <PopularRestaurantsSection
-          restaurants={restaurants}
-          totalCount={
-            feed.data?.pages?.[0]?.meta?.total ?? restaurants.length
-          }
-          favoriteIds={favoriteIds}
-          onToggleFavorite={(id) => {
-            const r = restaurants.find((x) => x.id === id);
-            toggleFavorite(id, r ? { restaurant: r } : undefined);
-          }}
-          onPressRestaurant={openRestaurant}
-          loadingMore={feed.isFetchingNextPage}
-          loading={feed.isLoading && restaurants.length === 0}
-        />
-      ) : null}
+          <CustomerRecommendations />
+
+          {restaurants.length > 0 || (feed.isLoading && !!city) ? (
+            <PopularRestaurantsSection
+              restaurants={restaurants}
+              totalCount={
+                feed.data?.pages?.[0]?.meta?.total ?? restaurants.length
+              }
+              favoriteIds={favoriteIds}
+              onToggleFavorite={(id) => {
+                const r = restaurants.find((x) => x.id === id);
+                toggleFavorite(id, r ? { restaurant: r } : undefined);
+              }}
+              onPressRestaurant={openRestaurant}
+              loadingMore={feed.isFetchingNextPage}
+              loading={feed.isLoading && restaurants.length === 0}
+            />
+          ) : null}
+        </>
+      )}
     </View>
   );
 
@@ -598,17 +644,17 @@ export default function HomeScreen() {
         }}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={
-          !feed.isLoading && restaurants.length === 0 && !!city ? (
+          !filtersActive &&
+          !feed.isLoading &&
+          restaurants.length === 0 &&
+          !!city ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>
-                {vegMode === 'pure_veg'
-                  ? `No pure veg restaurants in ${city}`
-                  : `No restaurants in ${city} yet`}
+                {`No restaurants in ${city} yet`}
               </Text>
               <Text style={styles.emptyText}>
-                {vegMode === 'pure_veg'
-                  ? 'Try “All restaurants” in the VEG filter, or pull to refresh.'
-                  : 'Partners in your city will appear here once they register. Pull to refresh.'}
+                Partners in your city will appear here once they register. Pull
+                to refresh.
               </Text>
             </View>
           ) : null
@@ -635,7 +681,14 @@ export default function HomeScreen() {
         ]}
         pointerEvents={mindPinned ? 'auto' : 'none'}
       >
-        <CategoryPillStrip style={{ paddingHorizontal: 16 }} />
+        <HomeFiltersBar
+          compact
+          filters={homeFilters}
+          onChange={onFiltersChange}
+          onClear={onClearFilters}
+          allRestaurants={baseRestaurants}
+          style={{ paddingTop: 4 }}
+        />
       </Animated.View>
 
       {locationPicker}
@@ -646,10 +699,6 @@ export default function HomeScreen() {
         onClose={() => setVegModalOpen(false)}
         onApply={onVegApply}
       />
-
-      <View style={{ position: 'absolute', bottom: Math.max(insets.bottom, 16), left: 0, right: 0, zIndex: 1000 }}>
-        <OnboardingPrompt />
-      </View>
 
       <CartFloatingBar />
     </View>
@@ -723,5 +772,61 @@ const styles = StyleSheet.create({
     color: authTheme.textMuted,
     textAlign: 'center',
     lineHeight: 19,
+  },
+  sectionHead: {
+    fontFamily: fonts.displayBold,
+    fontSize: 22,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 8,
+    letterSpacing: -0.35,
+  },
+  sectionHeadDark: {
+    color: '#0B1220',
+    fontFamily: fonts.displayBold,
+  },
+  sectionHeadAccent: {
+    color: '#EA580C',
+    fontFamily: fonts.displayBold,
+  },
+  hotDealsHead: {
+    marginBottom: 14,
+  },
+  filteredWrap: {
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  filteredTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 18,
+    color: '#0B1220',
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    letterSpacing: -0.3,
+  },
+  filteredEmpty: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 24,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FAFAFA',
+    alignItems: 'center',
+  },
+  filteredEmptyText: {
+    fontFamily: fonts.ui,
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  filteredClear: {
+    marginTop: 12,
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: '#F97316',
   },
 });

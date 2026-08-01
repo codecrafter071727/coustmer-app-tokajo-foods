@@ -9,9 +9,14 @@ import {
   Info,
   LogOut,
   MapPin,
+  MonitorSmartphone,
+  Phone,
   Receipt,
+  Settings2,
+  Smartphone,
   Star,
   Tag,
+  Trash2,
   User,
 } from 'lucide-react-native';
 import { useState } from 'react';
@@ -26,13 +31,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
+import { useDefaultSavedAddress } from '@/lib/address/hooks';
+import { useCustomerProfile } from '@/lib/customer/hooks';
 import { usePaymentWallet } from '@/lib/payment/hooks';
 import { useUserProfile } from '@/lib/profile/hooks';
 import { useAuthStore } from '@/store/auth-store';
-import { useDefaultSavedAddress } from '@/lib/address/hooks';
-import { useCustomerProfile } from '@/lib/customer/hooks';
 
 const PAGE_BG = '#F7F7F7';
 const CARD_BG = '#FFFFFF';
@@ -59,7 +63,7 @@ export function ProfileHubScreen() {
     user?.displayName ||
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
     authUser?.firstName ||
-    'Andrew Bielov';
+    'Guest';
 
   const locationText = defaultAddress?.formattedAddress || 'No saved address';
 
@@ -86,15 +90,22 @@ export function ProfileHubScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* ── Top Bar ── */}
       <View style={styles.topBar}>
         <View style={styles.navLeft}>
-          <TouchableOpacity style={styles.iconCircle} activeOpacity={0.7} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.iconCircle}
+            activeOpacity={0.7}
+            onPress={() => router.back()}
+          >
             <User color={TEXT_DARK} size={20} strokeWidth={2} />
           </TouchableOpacity>
           <Text style={styles.navTitle}>Profile</Text>
         </View>
-        <TouchableOpacity style={styles.iconCircle} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.iconCircle}
+          activeOpacity={0.7}
+          onPress={() => router.push('/profile/preferences')}
+        >
           <Bell color={TEXT_DARK} size={20} strokeWidth={2} />
         </TouchableOpacity>
       </View>
@@ -103,35 +114,50 @@ export function ProfileHubScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={profile.isRefetching} onRefresh={onRefresh} tintColor={TEXT_DARK} />
+          <RefreshControl
+            refreshing={profile.isRefetching}
+            onRefresh={onRefresh}
+            tintColor={TEXT_DARK}
+          />
         }
       >
-        {/* ── Profile Card ── */}
         <View style={styles.profileCard}>
           <View style={styles.profileLeft}>
             <Image
-              source={{ uri: user?.profilePhotoUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop' }}
+              source={{
+                uri:
+                  user?.profilePhotoUrl ||
+                  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop',
+              }}
               style={styles.avatar}
               contentFit="cover"
             />
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
-              <Text style={styles.profileLocation} numberOfLines={1}>{locationText}</Text>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={styles.profileLocation} numberOfLines={1}>
+                {locationText}
+              </Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => router.push('/profile/edit')}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            activeOpacity={0.7}
+            onPress={() => router.push('/profile/edit')}
+          >
             <Edit2 color={TEXT_MUTED} size={20} strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
 
-        {/* ── Settings Group 1 ── */}
-        <Text style={styles.sectionTitle}>Settings</Text>
+        <Text style={styles.sectionTitle}>Orders & money</Text>
         <View style={styles.cardGroup}>
           <SettingRow
             icon={<Star color={TEXT_DARK} size={20} strokeWidth={1.8} />}
             label="Rewards"
             value={`${points} points`}
             onPress={() => router.push('/profile/referral')}
+            hasChevron
           />
           <SettingRow
             icon={<Archive color={TEXT_DARK} size={20} strokeWidth={1.8} />}
@@ -147,9 +173,10 @@ export function ProfileHubScreen() {
           />
           <SettingRow
             icon={<CircleDollarSign color={TEXT_DARK} size={20} strokeWidth={1.8} />}
-            label="Balance"
-            value={`$${balance.toFixed(2)}`}
+            label="Wallet"
+            value={`₹${balance.toFixed(0)}`}
             onPress={() => router.push('/profile/wallet')}
+            hasChevron
           />
           <SettingRow
             icon={<Receipt color={TEXT_DARK} size={20} strokeWidth={1.8} />}
@@ -159,15 +186,43 @@ export function ProfileHubScreen() {
           />
           <SettingRow
             icon={<Tag color={TEXT_DARK} size={20} strokeWidth={1.8} />}
-            label="Tokajo Pro"
+            label="Refer & earn"
             onPress={() => router.push('/profile/referral')}
             hasChevron
             isLast
           />
         </View>
 
-        {/* ── Settings Group 2 ── */}
-        <Text style={styles.sectionTitle}>Settings</Text>
+        <Text style={styles.sectionTitle}>Account</Text>
+        <View style={styles.cardGroup}>
+          <SettingRow
+            icon={<Phone color={TEXT_DARK} size={20} strokeWidth={1.8} />}
+            label="Phone & email"
+            onPress={() => router.push('/profile/contact')}
+            hasChevron
+          />
+          <SettingRow
+            icon={<Settings2 color={TEXT_DARK} size={20} strokeWidth={1.8} />}
+            label="Preferences"
+            onPress={() => router.push('/profile/preferences')}
+            hasChevron
+          />
+          <SettingRow
+            icon={<MonitorSmartphone color={TEXT_DARK} size={20} strokeWidth={1.8} />}
+            label="Active sessions"
+            onPress={() => router.push('/profile/sessions')}
+            hasChevron
+          />
+          <SettingRow
+            icon={<Smartphone color={TEXT_DARK} size={20} strokeWidth={1.8} />}
+            label="Push devices"
+            onPress={() => router.push('/profile/devices')}
+            hasChevron
+            isLast
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.cardGroup}>
           <SettingRow
             icon={<Info color={TEXT_DARK} size={20} strokeWidth={1.8} />}
@@ -176,10 +231,11 @@ export function ProfileHubScreen() {
             hasChevron
           />
           <SettingRow
-            icon={<Info color={TEXT_DARK} size={20} strokeWidth={1.8} />}
-            label="About App"
-            onPress={() => { }}
+            icon={<Trash2 color={ACCENT} size={20} strokeWidth={1.8} />}
+            label="Delete account"
+            onPress={() => router.push('/profile/delete-account')}
             hasChevron
+            labelColor={ACCENT}
           />
           <SettingRow
             icon={<LogOut color={ACCENT} size={20} strokeWidth={1.8} />}
@@ -190,9 +246,9 @@ export function ProfileHubScreen() {
             labelColor={ACCENT}
           />
         </View>
-        {isLoggingOut && (
+        {isLoggingOut ? (
           <ActivityIndicator size="large" color={TEXT_DARK} style={{ marginTop: 20 }} />
-        )}
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -203,7 +259,6 @@ function SettingRow({
   label,
   value,
   hasChevron,
-  isLast,
   onPress,
   labelColor,
 }: {
@@ -216,18 +271,16 @@ function SettingRow({
   labelColor?: string;
 }) {
   return (
-    <TouchableOpacity
-      style={styles.row}
-      activeOpacity={0.7}
-      onPress={onPress}
-    >
+    <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={styles.rowIconCircle}>{icon}</View>
-        <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : undefined]}>{label}</Text>
+        <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : undefined]}>
+          {label}
+        </Text>
       </View>
       <View style={styles.rowRight}>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        {hasChevron && <ChevronRight color={UI_LIGHT} size={20} strokeWidth={2.5} />}
+        {hasChevron ? <ChevronRight color={UI_LIGHT} size={20} strokeWidth={2.5} /> : null}
       </View>
     </TouchableOpacity>
   );
@@ -268,8 +321,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 40,
   },
-
-  /* Profile Card */
   profileCard: {
     backgroundColor: CARD_BG,
     borderRadius: 24,
@@ -315,8 +366,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  /* Section Title */
   sectionTitle: {
     fontFamily: fonts.displaySemi,
     fontSize: 15,
@@ -324,8 +373,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginBottom: 12,
   },
-
-  /* Card Group */
   cardGroup: {
     backgroundColor: CARD_BG,
     borderRadius: 24,
@@ -333,8 +380,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 28,
   },
-
-  /* Setting Row */
   row: {
     flexDirection: 'row',
     alignItems: 'center',

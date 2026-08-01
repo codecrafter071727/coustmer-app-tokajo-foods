@@ -107,9 +107,9 @@ export function WhatsOnYourMind({
     <View style={[styles.wrap, compact && styles.wrapCompact]}>
       {!hideTitle && !compact ? (
         <Text style={styles.title}>
-          <Text style={{ color: '#202020' }}>What's </Text>
-          <Text style={{ color: '#A0A0A0', fontFamily: fonts.displayMedium }}>Your Craving </Text>
-          <Text style={{ color: '#202020' }}>Today?</Text>
+          <Text style={styles.titleDark}>What's </Text>
+          <Text style={styles.titleAccent}>your craving</Text>
+          <Text style={styles.titleDark}> today?</Text>
         </Text>
       ) : null}
 
@@ -161,11 +161,19 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 20,
-    color: '#111827',
+    fontSize: 22,
+    color: '#0B1220',
     letterSpacing: -0.4,
     paddingHorizontal: 16,
     marginBottom: 14,
+  },
+  titleDark: {
+    color: '#0B1220',
+    fontFamily: fonts.displayBold,
+  },
+  titleAccent: {
+    color: '#EA580C',
+    fontFamily: fonts.displayBold,
   },
   row: {
     paddingHorizontal: 12,
@@ -219,9 +227,9 @@ const styles = StyleSheet.create({
   // ── Label ──
   label: {
     marginTop: 7,
-    fontFamily: fonts.uiSemi,
+    fontFamily: fonts.uiBold,
     fontSize: 12,
-    color: '#374151',
+    color: '#1F2937',
     textAlign: 'center',
     letterSpacing: 0.1,
   },

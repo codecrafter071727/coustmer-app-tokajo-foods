@@ -1,13 +1,15 @@
 import { Pressable } from '@/components/common/Pressable';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import { Plus, Smartphone, Trash2 } from 'lucide-react-native';
-import { ActivityIndicator,
+import { useState } from 'react';
+import {
+  ActivityIndicator,
   FlatList,
-  
+  Platform,
   StyleSheet,
   Text,
-  View } from 'react-native';
+  View,
+} from 'react-native';
 
 import { EmptyView, ErrorView, LoadingView } from '@/components/common/StateViews';
 import { ProfileFormLayout } from '@/components/profile/ProfileFormLayout';
@@ -15,26 +17,49 @@ import { authTheme } from '@/constants/auth-theme';
 import { useDevices, useRegisterDevice, useRemoveDevice } from '@/lib/profile/hooks';
 
 function getDeviceId() {
-  return Constants.installationId ?? Constants.sessionId ?? `device_${Date.now()}`;
+  return (
+    Constants.installationId ??
+    Constants.sessionId ??
+    `device_${Platform.OS}_${Date.now()}`
+  );
 }
 
 export function DevicesScreen() {
   const { data, isLoading, isError, error, refetch } = useDevices();
   const registerDevice = useRegisterDevice();
   const removeDevice = useRemoveDevice();
+  const [banner, setBanner] = useState<{
+    message: string;
+    type: 'error' | 'success';
+  } | null>(null);
 
   const handleRegister = () => {
-    registerDevice.mutate({
-      deviceId: getDeviceId(),
-      deviceType: Platform.OS === 'ios' ? 'ios' : 'android',
-      deviceName: `${Platform.OS} device`,
-    });
+    const deviceId = String(getDeviceId());
+    registerDevice.mutate(
+      {
+        deviceId,
+        deviceType: Platform.OS === 'ios' ? 'ios' : 'android',
+        deviceName: `${Platform.OS === 'ios' ? 'iPhone' : 'Android'} · TOKAJO`,
+        // Until FCM/APNS is configured, send a stable install id so the API accepts registration.
+        deviceToken: deviceId,
+      },
+      {
+        onSuccess: (message) =>
+          setBanner({ message: message || 'Device registered', type: 'success' }),
+        onError: (err) =>
+          setBanner({
+            message: err instanceof Error ? err.message : 'Registration failed',
+            type: 'error',
+          }),
+      }
+    );
   };
 
   return (
     <ProfileFormLayout
       title="Push devices"
       subtitle="Manage notification devices"
+      banner={banner}
       onSave={handleRegister}
       saveLabel={registerDevice.isPending ? 'Registering…' : 'Register this device'}
       saving={registerDevice.isPending}

@@ -338,6 +338,7 @@ export const addressApi = {
     address?: string;
   }): Promise<GeocodeResult> => {
     try {
+      await refreshCsrfToken();
       const res = await api.post<Envelope<Record<string, unknown>>>(
         `${ADDRESS_BASE}/geocode`,
         {
@@ -372,6 +373,7 @@ export const addressApi = {
     lng: number;
   }): Promise<string | null> => {
     try {
+      await refreshCsrfToken();
       const res = await api.post<Envelope<Record<string, unknown>>>(
         `${ADDRESS_BASE}/reverse-geocode`,
         {

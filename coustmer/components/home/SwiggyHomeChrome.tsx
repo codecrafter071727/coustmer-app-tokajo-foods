@@ -106,14 +106,14 @@ export function SwiggyHomeChrome({
           style={styles.searchBox}
           onPress={() => router.push('/search')}
         >
-          <Search color="#9CA3AF" size={18} strokeWidth={2.2} />
+          <Search color="#64748B" size={18} strokeWidth={2.4} />
           <Text style={styles.searchPlaceholder}>
-            Search by name &amp; restaurant
+            Search dishes, restaurants…
           </Text>
         </Pressable>
 
         <SmoothPressable style={styles.mapCircle}>
-          <MapIcon color="#F97316" size={20} strokeWidth={2.2} />
+          <MapIcon color="#EA580C" size={20} strokeWidth={2.4} />
         </SmoothPressable>
       </View>
     </View>
@@ -152,10 +152,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   locationLabel: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.92)',
     fontSize: 12,
-    fontFamily: fonts.uiMedium,
+    fontFamily: fonts.uiBold,
     marginBottom: 2,
+    letterSpacing: 0.2,
   },
   locationRow: {
     flexDirection: 'row',
@@ -164,7 +165,7 @@ const styles = StyleSheet.create({
   },
   locationText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: fonts.displayBold,
     maxWidth: 200,
   },
@@ -235,9 +236,9 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: {
     flex: 1,
-    color: '#9CA3AF',
+    color: '#475569',
     fontSize: 14,
-    fontFamily: fonts.uiMedium,
+    fontFamily: fonts.uiSemi,
   },
   mapCircle: {
     width: 52,

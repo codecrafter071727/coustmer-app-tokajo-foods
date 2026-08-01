@@ -12,6 +12,7 @@ import {
   useUpdateDietaryPreferences,
   useUpdateLanguagePreference,
   useUpdateNotificationPreferences,
+  useUserProfile,
 } from '@/lib/profile/hooks';
 import type {
   DietaryPreferences,
@@ -22,6 +23,7 @@ const SPICE_OPTIONS = ['mild', 'medium', 'hot'] as const;
 
 export function PreferencesScreen() {
   const { data: prefs, isLoading } = usePreferences();
+  const { data: profile } = useUserProfile();
   const updateNotifications = useUpdateNotificationPreferences();
   const updateDietary = useUpdateDietaryPreferences();
   const updateLanguage = useUpdateLanguagePreference();
@@ -41,6 +43,12 @@ export function PreferencesScreen() {
     setDietary(prefs.dietaryPreferences ?? {});
     setAllergiesText((prefs.dietaryPreferences?.allergies ?? []).join(', '));
   }, [prefs]);
+
+  useEffect(() => {
+    if (profile?.language) {
+      setLanguage(profile.language);
+    }
+  }, [profile?.language]);
 
   const toggleNotification = (key: keyof NotificationPreferences) => {
     setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));

@@ -321,8 +321,7 @@ function dedupeSuggestions(list: AddressSuggestion[]): AddressSuggestion[] {
 }
 
 /**
- * Production-style place search:
- * Prefer Google Places (New), merge OSM/Photon, rank by query match (typo-tolerant).
+ * Place search — backend address-service first, then Google / OSM / device.
  */
 export async function searchAddresses(
   query: string,
@@ -336,8 +335,27 @@ export async function searchAddresses(
   const primary = variants[0];
   const secondaryVariant = variants.find((v) => v !== primary);
 
-  const googleTask = googlePlacesApi.isConfigured()
-    ? withTimeout(
+  const rank = (list: AddressSuggestion[]) =>
+    list
+      .map((item) => ({ item, score: scoreSuggestion(trimmed, item) }))
+      .sort((a, b) => b.score - a.score)
+      .filter((row) => row.score > 0 || list.length <= 3)
+      .slice(0, 10)
+      .map((row) => row.item);
+
+  // 1) Backend primary
+  const backend = await withTimeout(
+    addressApi.autocomplete(primary).catch(() => [] as AddressSuggestion[]),
+    5000,
+    [] as AddressSuggestion[]
+  );
+  if (backend.length > 0) {
+    return rank(dedupeSuggestions(backend));
+  }
+
+  // 2) Google Places
+  const google = googlePlacesApi.isConfigured()
+    ? await withTimeout(
         (async () => {
           const first = await googlePlacesApi.autocomplete(primary, bias);
           if (first.length) return first;
@@ -349,46 +367,24 @@ export async function searchAddresses(
         6500,
         [] as AddressSuggestion[]
       )
-    : Promise.resolve([] as AddressSuggestion[]);
-
-  const backendTask = withTimeout(
-    addressApi.autocomplete(primary).catch(() => [] as AddressSuggestion[]),
-    2500,
-    [] as AddressSuggestion[]
-  );
-
-  const nominatimTask = withTimeout(
-    searchWithNominatim(primary, bias),
-    7000,
-    [] as AddressSuggestion[]
-  );
-  const photonTask = withTimeout(
-    searchWithPhoton(primary, bias),
-    7000,
-    [] as AddressSuggestion[]
-  );
-
-  // Wait for Google first (best quality for Indian roads), then merge fallbacks
-  const google = await googleTask;
-  const [backend, nominatim, photon] = await Promise.all([
-    backendTask,
-    nominatimTask,
-    photonTask,
-  ]);
-
-  let merged = dedupeSuggestions([...google, ...backend, ...nominatim, ...photon]);
-
-  if (merged.length === 0) {
-    const expoResults = await searchWithExpo(primary);
-    merged = dedupeSuggestions(expoResults);
+    : [];
+  if (google.length > 0) {
+    return rank(dedupeSuggestions(google));
   }
 
-  return merged
-    .map((item) => ({ item, score: scoreSuggestion(trimmed, item) }))
-    .sort((a, b) => b.score - a.score)
-    .filter((row) => row.score > 0 || merged.length <= 3)
-    .slice(0, 10)
-    .map((row) => row.item);
+  // 3) OSM / Photon
+  const [nominatim, photon] = await Promise.all([
+    withTimeout(searchWithNominatim(primary, bias), 7000, [] as AddressSuggestion[]),
+    withTimeout(searchWithPhoton(primary, bias), 7000, [] as AddressSuggestion[]),
+  ]);
+  let merged = dedupeSuggestions([...nominatim, ...photon]);
+
+  // 4) Device geocoder
+  if (merged.length === 0) {
+    merged = dedupeSuggestions(await searchWithExpo(primary));
+  }
+
+  return rank(merged);
 }
 
 export async function geocodeAddress(input: {
@@ -426,22 +422,24 @@ export async function geocodeAddress(input: {
     }
   }
 
-  if (
-    googlePlacesApi.isConfigured() &&
-    input.placeId &&
-    !input.placeId.startsWith('nominatim:') &&
-    !input.placeId.startsWith('photon:')
-  ) {
-    try {
-      return await googlePlacesApi.geocode(input);
-    } catch {
-      // try other sources
-    }
-  }
-
+  // 1) Backend primary
   try {
     return await addressApi.geocode(input);
   } catch (backendError) {
+    // 2) Google Places (placeId or address text)
+    if (
+      googlePlacesApi.isConfigured() &&
+      input.placeId &&
+      !input.placeId.startsWith('nominatim:') &&
+      !input.placeId.startsWith('photon:')
+    ) {
+      try {
+        return await googlePlacesApi.geocode(input);
+      } catch {
+        // continue
+      }
+    }
+
     if (input.address) {
       if (googlePlacesApi.isConfigured()) {
         try {
@@ -451,6 +449,7 @@ export async function geocodeAddress(input: {
         }
       }
 
+      // 3) Search / OSM results that already include coords
       const results = await searchAddresses(input.address);
       if (
         results[0] &&
@@ -464,6 +463,7 @@ export async function geocodeAddress(input: {
         };
       }
 
+      // 4) Device geocoder
       const [hit] = await Location.geocodeAsync(input.address);
       if (hit) {
         return {
@@ -484,14 +484,25 @@ export async function reverseGeocodeAddress(input: {
   lat: number;
   lng: number;
 }): Promise<string | null> {
-  const backend = await addressApi.reverseGeocode(input);
-  if (backend) return backend;
-
-  if (googlePlacesApi.isConfigured()) {
-    const google = await googlePlacesApi.reverseGeocode(input);
-    if (google) return google;
+  // 1) Backend primary
+  try {
+    const backend = await addressApi.reverseGeocode(input);
+    if (backend) return backend;
+  } catch {
+    // fall through
   }
 
+  // 2) Google
+  if (googlePlacesApi.isConfigured()) {
+    try {
+      const google = await googlePlacesApi.reverseGeocode(input);
+      if (google) return google;
+    } catch {
+      // fall through
+    }
+  }
+
+  // 3) OSM Nominatim
   try {
     const url =
       'https://nominatim.openstreetmap.org/reverse?' +
@@ -514,6 +525,7 @@ export async function reverseGeocodeAddress(input: {
     // ignore
   }
 
+  // 4) Device
   try {
     const [place] = await Location.reverseGeocodeAsync({
       latitude: input.lat,

@@ -347,10 +347,10 @@ const styles = StyleSheet.create({
     color: '#D97706', // Yellowish
   },
   name: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 20,
     fontWeight: '800',
-    color: '#111827',
+    color: '#374151',
     letterSpacing: -0.5,
     marginBottom: 4,
   },

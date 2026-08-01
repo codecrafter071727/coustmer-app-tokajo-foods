@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
 import { authTheme } from '@/constants/auth-theme';
+import { fonts } from '@/constants/typography';
 import { useRecommended } from '@/lib/customer/hooks';
 
 export function CustomerRecommendations() {
@@ -15,7 +16,7 @@ export function CustomerRecommendations() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Sparkles color={authTheme.brand} size={16} />
-        <Text style={styles.title}>Recommended for You</Text>
+        <Text style={styles.title}>Picked for you</Text>
       </View>
       
       <FlatList
@@ -55,9 +56,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontFamily: fonts.displayBold,
     color: authTheme.text,
+    letterSpacing: -0.3,
   },
   list: {
     paddingHorizontal: 16,
@@ -73,17 +75,19 @@ const styles = StyleSheet.create({
   },
   restaurantName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fonts.uiBold,
     color: authTheme.text,
   },
   cuisines: {
     fontSize: 12,
+    fontFamily: fonts.uiSemi,
     color: authTheme.textMuted,
     marginTop: 4,
   },
   rating: {
     fontSize: 12,
-    color: authTheme.brand,
+    fontFamily: fonts.uiBold,
+    color: authTheme.brandDark,
     marginTop: 4,
   },
 });

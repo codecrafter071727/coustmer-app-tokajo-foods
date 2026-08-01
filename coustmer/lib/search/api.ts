@@ -3,6 +3,7 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import { FOOD_CATEGORIES } from '@/lib/restaurant/categories';
 import { restaurantApi } from '@/lib/restaurant/api';
+import { resolveIsOpen } from '@/lib/restaurant/mappers';
 import { firstImageFromList, resolveMediaUrl } from '@/lib/restaurant/media';
 import type { Restaurant } from '@/lib/restaurant/types';
 import type {
@@ -262,12 +263,7 @@ export function mapSearchRestaurant(
         : typeof raw.distanceKm === 'number'
           ? raw.distanceKm
           : undefined,
-    isOpen:
-      raw.isOpen !== undefined
-        ? Boolean(raw.isOpen)
-        : raw.isOnline !== undefined
-          ? Boolean(raw.isOnline)
-          : undefined,
+    isOpen: resolveIsOpen(raw),
     address,
     city: (raw.city as string) || cityFromAddress,
     offer: (raw.offer as string) || (raw.promoText as string) || undefined,

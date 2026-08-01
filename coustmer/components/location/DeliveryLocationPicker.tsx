@@ -18,11 +18,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   Keyboard,
   Linking,
   Modal,
   Platform,
-  
   ScrollView,
   StyleSheet,
   Text,
@@ -68,7 +69,10 @@ const DEFAULT = { lat: 23.2599, lng: 77.4126 }; // Bhopal fallback
 const PAGE_BG = '#F5F5F5';
 const SELECTED_BG = '#D8F5E8';
 const SELECTED_TEXT = '#0A8F5A';
-const ADD_ICON_BG = '#D4452A';
+const ADD_ICON_BG = authTheme.brand;
+/** Keep in sync with authTheme.brand — used inside WebView HTML (must remount on change). */
+const MAP_PIN_COLOR = '#F97316';
+const MAP_THEME_VERSION = 'orange-v2';
 
 /** Compact toggle matching the location mock (grey off / green on). */
 function LocationToggle({
@@ -160,12 +164,23 @@ type DeliveryLocationPickerProps = {
   initial?: { lat: number; lng: number } | null;
   /** When true (default), open → request GPS and center pin on you. */
   autoDetectOnOpen?: boolean;
+  /**
+   * `delivery` — full “Select Your Location” flow (home).
+   * `pin` — map only (edit/add saved address): pick pin → confirm → return to form.
+   */
+  variant?: 'delivery' | 'pin';
   onClose: () => void;
   onConfirm: (result: DeliveryLocationResult) => void;
 };
 
-function buildGoogleMapHtml(lat: number, lng: number, apiKey: string): string {
+function buildGoogleMapHtml(
+  lat: number,
+  lng: number,
+  apiKey: string,
+  pinColor: string = MAP_PIN_COLOR
+): string {
   const key = apiKey.replace(/'/g, "\\'");
+  const pin = pinColor.replace(/'/g, "\\'");
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -179,12 +194,13 @@ function buildGoogleMapHtml(lat: number, lng: number, apiKey: string): string {
     z-index: 1000; pointer-events: none;
   }
   .center-pin svg { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35)); }
+  .center-pin path { fill: ${pin} !important; stroke: ${pin} !important; }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <div class="center-pin">
-  <svg width="44" height="44" viewBox="0 0 24 24" fill="#AC0F45" stroke="#AC0F45" stroke-width="1.5">
+  <svg width="44" height="44" viewBox="0 0 24 24" fill="${pin}" stroke="${pin}" stroke-width="1.5">
     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
     <circle cx="12" cy="10" r="3" fill="#fff" stroke="#fff"></circle>
   </svg>
@@ -320,11 +336,13 @@ export function DeliveryLocationPicker({
   visible,
   initial,
   autoDetectOnOpen = true,
+  variant = 'delivery',
   onClose,
   onConfirm,
 }: DeliveryLocationPickerProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const pinOnly = variant === 'pin';
   const webRef = useRef<InstanceType<typeof WebView>>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reverseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -336,11 +354,20 @@ export function DeliveryLocationPicker({
     id: number;
     kind: 'autocomplete' | 'details' | 'geocode';
   } | null>(null);
+  /** Ignore map "move" echoes right after we programmatically recenter. */
+  const suppressMoveUntil = useRef(0);
+  /** Auto-detect GPS at most once per map open. */
+  const didAutoDetectMapRef = useRef(false);
+  const locationEnabledRef = useRef(false);
 
-  const startPoint = useMemo(() => initial ?? DEFAULT, [initial]);
+  const startPoint = useMemo(() => initial ?? DEFAULT, [initial?.lat, initial?.lng]);
 
-  const [viewMode, setViewMode] = useState<'browse' | 'map'>('browse');
+  const [viewMode, setViewMode] = useState<'browse' | 'map'>(
+    pinOnly ? 'map' : 'browse'
+  );
   const [locationEnabled, setLocationEnabled] = useState(false);
+  const [currentPreview, setCurrentPreview] =
+    useState<DeliveryLocationResult | null>(null);
   const [pin, setPin] = useState(startPoint);
   const [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
@@ -361,6 +388,8 @@ export function DeliveryLocationPicker({
 
   const sendToMap = useCallback((lat: number, lng: number, zoom = 17) => {
     if (!webRef.current) return;
+    // Map fires "move" while animating — keep Confirm address stable during that window.
+    suppressMoveUntil.current = Date.now() + 700;
     // Android WebView often drops RN postMessage — call setMapView via injectJS
     webRef.current.injectJavaScript(`
       (function() {
@@ -442,48 +471,107 @@ export function DeliveryLocationPicker({
     setSearchError(null);
     setSuggestions([]);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Allow location access to use your current position.');
-        setLocationEnabled(false);
-        return null;
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        perm = await Location.requestForegroundPermissionsAsync();
       }
-      const enabled = await Location.hasServicesEnabledAsync();
-      if (!enabled) {
-        setError('Turn on GPS / device location, then try again.');
+      if (perm.status !== 'granted') {
+        setError(
+          'Phone location can be on, but this app still needs permission. Tap Allow when asked.'
+        );
+        locationEnabledRef.current = false;
         setLocationEnabled(false);
+        setCurrentPreview(null);
         return null;
       }
 
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      const servicesOn = await Location.hasServicesEnabledAsync().catch(() => false);
+      if (!servicesOn) {
+        setError('Device location is off. Turn on Location / GPS in phone settings.');
+        locationEnabledRef.current = false;
+        setLocationEnabled(false);
+        setCurrentPreview(null);
+        setGpsReady(false);
+        return null;
+      }
+
+      let pos: Location.LocationObject;
+      try {
+        pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      } catch {
+        setError('Could not read GPS. Make sure Location is on, then try again.');
+        locationEnabledRef.current = false;
+        setLocationEnabled(false);
+        setCurrentPreview(null);
+        return null;
+      }
+
       const { latitude, longitude } = pos.coords;
       const applied = await applyCoords(latitude, longitude, 'gps');
       setGpsReady(true);
+      locationEnabledRef.current = true;
+      setLocationEnabled(true);
       setSearch('');
-      return {
+      const result: DeliveryLocationResult = {
         lat: applied.lat,
         lng: applied.lng,
         formattedAddress: applied.formattedAddress,
         label: shortAddressLabel(applied.formattedAddress, 'gps'),
         source: 'gps',
       };
+      setCurrentPreview(result);
+      return result;
     } catch {
-      setError('Could not detect your location. Search for an address instead.');
+      setError('Could not detect your location. Search or pick a saved address instead.');
+      locationEnabledRef.current = false;
       setLocationEnabled(false);
+      setCurrentPreview(null);
       return null;
     } finally {
       setLocating(false);
     }
   }, [applyCoords]);
 
+  /** Toggle is ON only when app permission AND phone GPS/location services are both on. */
+  const syncLocationToggle = useCallback(async (opts?: { detectIfOn?: boolean }) => {
+    try {
+      const [perm, servicesOn] = await Promise.all([
+        Location.getForegroundPermissionsAsync(),
+        Location.hasServicesEnabledAsync().catch(() => false),
+      ]);
+      const on = perm.status === 'granted' && servicesOn;
+      if (locationEnabledRef.current !== on) {
+        locationEnabledRef.current = on;
+        setLocationEnabled(on);
+      }
+      if (!on) {
+        setCurrentPreview(null);
+        setGpsReady(false);
+        return false;
+      }
+      if (opts?.detectIfOn) {
+        void detectCurrentLocation();
+      }
+      return true;
+    } catch {
+      if (locationEnabledRef.current) {
+        locationEnabledRef.current = false;
+        setLocationEnabled(false);
+      }
+      setCurrentPreview(null);
+      setGpsReady(false);
+      return false;
+    }
+  }, [detectCurrentLocation]);
+
   useEffect(() => {
     if (!visible) {
       setMapReady(false);
       setGpsReady(false);
-      setViewMode('browse');
-      setLocationEnabled(false);
+      setViewMode(pinOnly ? 'map' : 'browse');
+      didAutoDetectMapRef.current = false;
       return;
     }
     setError(null);
@@ -493,14 +581,49 @@ export function DeliveryLocationPicker({
     setPin(startPoint);
     setDetectedAddress(undefined);
     setGpsReady(false);
-    setViewMode('browse');
-    setLocationEnabled(false);
+    setViewMode(pinOnly ? 'map' : 'browse');
+    setCurrentPreview(null);
     sourceRef.current = 'search';
-  }, [visible, startPoint]);
+    didAutoDetectMapRef.current = false;
+
+    void syncLocationToggle({ detectIfOn: autoDetectOnOpen });
+    // Intentionally only re-init when the sheet opens — not when startPoint identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startPoint snapshotted on open
+  }, [visible, pinOnly, autoDetectOnOpen, syncLocationToggle]);
+
+  // When user leaves app to toggle phone Location, refresh when they come back.
+  // Poll only on the browse screen — polling on the map was re-triggering GPS and flickering Confirm.
+  useEffect(() => {
+    if (!visible || pinOnly) return;
+
+    const onAppState = (next: AppStateStatus) => {
+      if (next === 'active') {
+        void syncLocationToggle({ detectIfOn: false });
+      }
+    };
+
+    const sub = AppState.addEventListener('change', onAppState);
+    if (viewMode !== 'browse') {
+      return () => {
+        sub.remove();
+      };
+    }
+
+    const poll = setInterval(() => {
+      void syncLocationToggle({ detectIfOn: false });
+    }, 4000);
+
+    return () => {
+      sub.remove();
+      clearInterval(poll);
+    };
+  }, [visible, viewMode, pinOnly, syncLocationToggle]);
 
   useEffect(() => {
     if (!visible || viewMode !== 'map' || !mapReady) return;
     if (autoDetectOnOpen && locationEnabled) {
+      if (didAutoDetectMapRef.current) return;
+      didAutoDetectMapRef.current = true;
       void detectCurrentLocation();
       return;
     }
@@ -508,13 +631,16 @@ export function DeliveryLocationPicker({
       sendToMap(initial.lat, initial.lng);
       reverseLookup(initial.lat, initial.lng);
     }
+    // Use lat/lng primitives — object identity of `initial` was re-running this and flickering Confirm.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     visible,
     viewMode,
     mapReady,
     autoDetectOnOpen,
     locationEnabled,
-    initial,
+    initial?.lat,
+    initial?.lng,
     detectCurrentLocation,
     sendToMap,
     reverseLookup,
@@ -616,7 +742,11 @@ export function DeliveryLocationPicker({
         const lat = normalizeLat(msg.lat);
         const lng = normalizeLng(msg.lng);
         setPin({ lat, lng });
-        setDetectedAddress(undefined);
+        // Keep previous address visible while map settles / programmatic recenter runs
+        // so Confirm doesn't flicker between spinner, coords, and address.
+        if (Date.now() < suppressMoveUntil.current) {
+          return;
+        }
         setGpsReady(false);
         sourceRef.current = 'search';
         reverseLookup(lat, lng);
@@ -651,12 +781,13 @@ export function DeliveryLocationPicker({
             );
             setSuggestions((prev) => {
               const seen = new Set(
-                mapped.map((s) => s.description.toLowerCase())
+                prev.map((s) => s.description.toLowerCase())
               );
-              const rest = prev.filter(
+              const extra = mapped.filter(
                 (s) => !seen.has(s.description.toLowerCase())
               );
-              return [...mapped, ...rest].slice(0, 10);
+              // Keep REST/backend results first; WebView Google only fills gaps.
+              return [...prev, ...extra].slice(0, 10);
             });
             setSearching(false);
             setSearchError(null);
@@ -829,17 +960,27 @@ export function DeliveryLocationPicker({
 
   const onToggleLocation = (value: boolean) => {
     if (!value) {
+      locationEnabledRef.current = false;
       setLocationEnabled(false);
+      setCurrentPreview(null);
+      setGpsReady(false);
       return;
     }
-    // Ask for device permission immediately — stay on this screen (no map).
-    setLocationEnabled(true);
+    // Turning on: request permission + verify phone GPS is actually enabled.
     void (async () => {
-      const result = await detectCurrentLocation();
-      if (result) {
-        onConfirm(result);
+      const ok = await detectCurrentLocation();
+      if (!ok) {
+        // detectCurrentLocation already set toggle off + error if GPS/permission failed
+        await syncLocationToggle({ detectIfOn: false });
       }
     })();
+  };
+
+  const useCurrentLocationOption = async () => {
+    const result = currentPreview ?? (await detectCurrentLocation());
+    if (result) {
+      onConfirm(result);
+    }
   };
 
   const openAddAddress = () => {
@@ -868,13 +1009,22 @@ export function DeliveryLocationPicker({
     return <Home color="#1C1C1C" size={15} strokeWidth={2} />;
   };
 
+  // Rebuild map HTML only when the sheet opens — remounting on GPS/pin updates caused Confirm flicker.
   const mapHtml = useMemo(
     () =>
-      GOOGLE_MAPS_API_KEY
-        ? buildGoogleMapHtml(startPoint.lat, startPoint.lng, GOOGLE_MAPS_API_KEY)
-        : '',
-    [startPoint.lat, startPoint.lng]
+      !visible || !GOOGLE_MAPS_API_KEY
+        ? ''
+        : buildGoogleMapHtml(
+            startPoint.lat,
+            startPoint.lng,
+            GOOGLE_MAPS_API_KEY,
+            MAP_PIN_COLOR
+          ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot startPoint when visible flips
+    [visible]
   );
+
+  const mapWebViewKey = `${MAP_THEME_VERSION}-${visible ? '1' : '0'}`;
 
   const showSuggestions = search.trim().length >= 2;
 
@@ -886,7 +1036,7 @@ export function DeliveryLocationPicker({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      {viewMode === 'browse' ? (
+      {viewMode === 'browse' && !pinOnly ? (
         <Animated.View
           style={[styles.browseRoot, { paddingTop: insets.top + 6 }]}
         >
@@ -1006,7 +1156,11 @@ export function DeliveryLocationPicker({
                     />
                   )}
                   <Text style={styles.actionLabel}>
-                    {locating ? 'Detecting…' : 'Turn on Location'}
+                    {locating
+                      ? 'Detecting…'
+                      : locationEnabled
+                        ? 'Location on'
+                        : 'Turn on Location'}
                   </Text>
                 </SmoothPressable>
 
@@ -1036,6 +1190,52 @@ export function DeliveryLocationPicker({
               </Animated.View>
 
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+              {locationEnabled ? (
+                <Animated.View>
+                  <Text style={styles.sectionLabel}>CURRENT LOCATION</Text>
+                  <View style={styles.savedCard}>
+                    <SmoothPressable
+                      style={styles.savedRow}
+                      onPress={() => void useCurrentLocationOption()}
+                      disabled={locating}
+                      pressScale={0.985}
+                    >
+                      <View style={[styles.savedIcon, styles.currentLocIcon]}>
+                        {locating ? (
+                          <ActivityIndicator color={authTheme.brand} size="small" />
+                        ) : (
+                          <Navigation color={authTheme.brand} size={18} strokeWidth={2.4} />
+                        )}
+                      </View>
+                      <View style={styles.savedBody}>
+                        <View style={styles.savedTitleRow}>
+                          <Text style={styles.savedTitle} numberOfLines={1}>
+                            {locating ? 'Detecting…' : 'Current location'}
+                          </Text>
+                          {gpsReady && !locating ? (
+                            <View style={styles.selectedBadge}>
+                              <Text style={styles.selectedBadgeText}>GPS</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text style={styles.savedAddress} numberOfLines={2}>
+                          {locating
+                            ? 'Getting your position…'
+                            : currentPreview?.formattedAddress ||
+                              'Use your live GPS position for delivery'}
+                        </Text>
+                      </View>
+                      <ArrowLeft
+                        color="#9CA3AF"
+                        size={16}
+                        strokeWidth={2.4}
+                        style={{ transform: [{ rotate: '180deg' }] }}
+                      />
+                    </SmoothPressable>
+                  </View>
+                </Animated.View>
+              ) : null}
 
               <Animated.View>
                 <Text style={styles.sectionLabel}>SAVED ADDRESSES</Text>
@@ -1125,10 +1325,11 @@ export function DeliveryLocationPicker({
           <View style={styles.mapPane}>
             {visible && GOOGLE_MAPS_API_KEY ? (
               <WebView
+                key={mapWebViewKey}
                 ref={webRef}
                 style={styles.map}
                 originWhitelist={['*']}
-                source={{ html: mapHtml }}
+                source={{ html: mapHtml, baseUrl: 'https://maps.googleapis.com' }}
                 onMessage={onMapMessage}
                 javaScriptEnabled
                 domStorageEnabled
@@ -1161,7 +1362,13 @@ export function DeliveryLocationPicker({
             >
               <View style={styles.topBar}>
                 <Pressable
-                  onPress={() => setViewMode('browse')}
+                  onPress={() => {
+                    if (pinOnly) {
+                      onClose();
+                      return;
+                    }
+                    setViewMode('browse');
+                  }}
                   style={styles.mapBackBtn}
                   hitSlop={10}
                 >
@@ -1292,7 +1499,7 @@ export function DeliveryLocationPicker({
           >
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
             <View style={styles.detectedRow}>
-              <MapPin color="#AC0F45" size={18} />
+              <MapPin color={authTheme.brand} size={18} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.detectedLabel}>DELIVERY LOCATION</Text>
                 <Text style={styles.detectedValue} numberOfLines={2}>
@@ -1315,7 +1522,7 @@ export function DeliveryLocationPicker({
                 marginTop: 14,
                 height: 54,
                 borderRadius: 14,
-                backgroundColor: '#AC0F45',
+                backgroundColor: authTheme.brand,
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexDirection: 'row',
@@ -1473,6 +1680,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
+  },
+  currentLocIcon: {
+    backgroundColor: '#EEF8F1',
   },
   savedBody: {
     flex: 1,

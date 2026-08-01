@@ -11,6 +11,7 @@ import type { Restaurant } from '@/lib/restaurant/types';
 type Props = {
   restaurants: Restaurant[];
   totalCount?: number;
+  title?: string;
   favoriteIds?: string[];
   favoriteLoadingId?: string | null;
   onToggleFavorite?: (id: string) => void;
@@ -22,6 +23,7 @@ type Props = {
 export function PopularRestaurantsSection({
   restaurants,
   totalCount,
+  title,
   favoriteIds = [],
   favoriteLoadingId = null,
   onToggleFavorite,
@@ -30,14 +32,15 @@ export function PopularRestaurantsSection({
   loading,
 }: Props) {
   const count = totalCount ?? restaurants.length;
-  const title =
-    count > 0
+  const heading =
+    title ??
+    (count > 0
       ? `Top ${count} restaurants to explore`
-      : 'Top restaurants to explore';
+      : 'Top restaurants to explore');
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{title}</Text>
+      {heading.trim() ? <Text style={styles.title}>{heading}</Text> : null}
 
       {loading && restaurants.length === 0 ? (
         <View>
@@ -72,14 +75,14 @@ export function PopularRestaurantsSection({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 10,
+    marginTop: 14,
     marginBottom: 4,
   },
   title: {
-    fontFamily: fonts.display,
-    fontSize: 18,
-    color: '#02060C',
-    letterSpacing: -0.3,
+    fontFamily: fonts.displayBold,
+    fontSize: 20,
+    color: '#0B1220',
+    letterSpacing: -0.35,
     paddingHorizontal: 16,
     marginBottom: 16,
   },

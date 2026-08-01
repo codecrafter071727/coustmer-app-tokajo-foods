@@ -1,6 +1,6 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
-import { Eye, EyeOff, Lock, User, Phone } from 'lucide-react-native';
+import { Eye, EyeOff, Lock, Mail, Phone } from 'lucide-react-native';
 import { useState } from 'react';
 import { KeyboardAvoidingView,
   Platform,
@@ -176,11 +176,11 @@ export function LoginFormContent({ onSignUp, onForgotPassword, onLoginSuccess, o
             <View style={styles.fieldWrap}>
               <View style={inputStyle('email', Boolean(errors.email))}>
                 <View style={[styles.iconCircle, focusedField === 'email' && styles.iconCircleFocused]}>
-                  <User color={iconColor('email', Boolean(errors.email))} size={18} strokeWidth={2} />
+                  <Mail color={iconColor('email', Boolean(errors.email))} size={18} strokeWidth={2} />
                 </View>
                 <TextInput
                   style={styles.input}
-                  placeholder="Username"
+                  placeholder="Gmail ID"
                   placeholderTextColor={authTheme.textDim}
                   value={email}
                   onChangeText={(text) => {

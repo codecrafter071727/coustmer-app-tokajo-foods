@@ -21,6 +21,37 @@ function parseRating(data: Record<string, unknown>): number | undefined {
   return getRestaurantRating(data) ?? undefined;
 }
 
+/**
+ * Resolve open/closed from restaurant-service fields.
+ * Backend uses `isOnline` as the live toggle; timings are weekly schedule.
+ */
+export function resolveIsOpen(data: Record<string, unknown>): boolean | undefined {
+  if (typeof data.isOpen === 'boolean') return data.isOpen;
+  if (typeof data.isOnline === 'boolean') return data.isOnline;
+  if (typeof data.openNow === 'boolean') return data.openNow;
+  if (typeof data.currentlyOpen === 'boolean') return data.currentlyOpen;
+  if (typeof data.acceptingOrders === 'boolean') return data.acceptingOrders;
+
+  const settings =
+    data.settings && typeof data.settings === 'object'
+      ? (data.settings as Record<string, unknown>)
+      : undefined;
+  if (typeof settings?.isOnline === 'boolean') return settings.isOnline;
+  if (typeof settings?.isOpen === 'boolean') return settings.isOpen;
+
+  const status = String(data.status ?? data.operatingStatus ?? '')
+    .toLowerCase()
+    .trim();
+  if (status === 'offline' || status === 'closed' || status === 'inactive') {
+    return false;
+  }
+  if (status === 'online' || status === 'open') {
+    return true;
+  }
+
+  return undefined;
+}
+
 /** Fill missing fields on menu items using the flat /items list. */
 export function enrichMenuItems(
   primary: MenuItem[],
@@ -138,12 +169,7 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
         : Number(data.priceForTwo) || undefined,
     distance:
       typeof data.distance === 'number' ? data.distance : Number(data.distanceKm) || undefined,
-    isOpen:
-      data.isOpen !== undefined
-        ? Boolean(data.isOpen)
-        : data.isOnline !== undefined
-          ? Boolean(data.isOnline)
-          : undefined,
+    isOpen: resolveIsOpen(data),
     address,
     city: (data.city as string) || cityFromAddress || undefined,
     offer: (data.offer as string) || (data.promoText as string) || undefined,
@@ -316,5 +342,6 @@ export function restaurantToCard(restaurant: Restaurant) {
     city: restaurant.city,
     offer: restaurant.offer,
     status: restaurant.status,
+    isOpen: restaurant.isOpen,
   };
 }
