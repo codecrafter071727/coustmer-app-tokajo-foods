@@ -355,10 +355,12 @@ export function mapCart(data: unknown): Cart {
     deliveryAddress: mapAddress(
       nestedCart.deliveryAddress ?? nestedCart.address
     ),
-    deliveryType:
-      (nestedCart.deliveryType as string) ||
-      (nestedCart.fulfillmentType as string) ||
-      'delivery',
+    deliveryType: normalizeDeliveryType(
+      nestedCart.deliveryType ??
+        nestedCart.fulfillmentType ??
+        nestedCart.orderType ??
+        nestedCart.type
+    ),
     scheduledFor:
       (nestedCart.scheduledFor as string) ||
       (nestedCart.scheduledAt as string) ||
@@ -418,6 +420,37 @@ function mapValidation(data: unknown): CartValidationResult {
   };
 }
 
+function normalizeDeliveryType(value: unknown): 'delivery' | 'takeaway' {
+  const v = String(value ?? 'delivery')
+    .toLowerCase()
+    .trim();
+  if (
+    v.includes('take') ||
+    v.includes('pick') ||
+    v === 'self' ||
+    v === 'self_pickup' ||
+    v === 'collect'
+  ) {
+    return 'takeaway';
+  }
+  return 'delivery';
+}
+
+function isAuthErrorMessage(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('unauthorized') ||
+    m.includes('forbidden') ||
+    m.includes('auth') ||
+    m.includes('login') ||
+    m.includes('sign in') ||
+    m.includes('token') ||
+    m.includes('csrf') ||
+    m.includes('401') ||
+    m.includes('403')
+  );
+}
+
 async function mutateCart(
   path: string,
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -430,6 +463,9 @@ async function mutateCart(
       return mapCart(res.data ?? res);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Cart request failed');
+      if (isAuthErrorMessage(lastError.message)) {
+        throw lastError;
+      }
     }
   }
   throw lastError ?? new Error('Cart request failed');
@@ -525,22 +561,84 @@ export const cartApi = {
     return mapCart(res.data ?? res);
   },
 
-  /** POST /cart/validate */
+  /** POST /cart/validate — OptAuth; prices / availability / stock. */
   validate: async (): Promise<CartValidationResult> => {
-    const res = await request<unknown>(`${CART_BASE}/validate`, {
-      method: 'POST',
-      body: {},
-    });
-    return mapValidation(res.data ?? res);
+    const sessionId = await getCartSessionId();
+    try {
+      const response = await api.request<Envelope<unknown> | unknown>({
+        url: `${CART_BASE}/validate`,
+        method: 'POST',
+        data: {},
+        withCredentials: true,
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId,
+          'X-Cart-Session-Id': sessionId,
+          'X-Guest-Id': sessionId,
+        },
+        // Treat 4xx as readable so we can map issue lists (not only throw)
+        validateStatus: (status) => status >= 200 && status < 500,
+      });
+
+      const payload = response.data as Envelope<unknown> | unknown;
+      const body =
+        payload &&
+        typeof payload === 'object' &&
+        'data' in (payload as object) &&
+        (payload as Envelope<unknown>).data !== undefined
+          ? (payload as Envelope<unknown>).data
+          : payload;
+
+      const mapped = mapValidation(body ?? payload);
+
+      // HTTP error without a structured validation payload
+      if (response.status >= 400 && mapped.valid && mapped.issues.length === 0) {
+        const msg =
+          (asRecord(payload).message as string) ||
+          (asRecord(payload).error as string) ||
+          `Cart validation failed (${response.status})`;
+        return { valid: false, issues: [{ message: msg }], message: msg };
+      }
+
+      // Non-2xx with issues → invalid
+      if (response.status >= 400) {
+        return { ...mapped, valid: false };
+      }
+
+      return mapped;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (!error.response) {
+          throw new Error(
+            'Network request failed. Check your internet connection and try again.'
+          );
+        }
+        const data = error.response.data;
+        const mapped = mapValidation(data);
+        if (mapped.issues.length > 0 || mapped.valid === false) {
+          return { ...mapped, valid: false };
+        }
+        const record = asRecord(data);
+        throw new Error(
+          String(record.message ?? record.error ?? 'Cart validation failed')
+        );
+      }
+      throw error;
+    }
   },
 
-  /** POST /cart/coupon */
+  /** POST /cart/coupon — Auth */
   applyCoupon: async (payload: ApplyCouponPayload): Promise<Cart> => {
     const code = payload.code.trim();
+    if (!code) throw new Error('Enter a promo code');
+
     const bodies = [
       { code },
       { couponCode: code },
       { promoCode: code },
+      { coupon: code },
+      { code, couponCode: code },
     ];
 
     let lastError: Error | null = null;
@@ -555,7 +653,13 @@ export const cartApi = {
         if (applied && applied === code.toLowerCase()) {
           return cart;
         }
-        // Some APIs return 200 without attaching the coupon for invalid codes
+        // Discount applied but coupon object missing — still accept if discount moved
+        if (!cart.coupon?.code && (cart.discount ?? 0) > 0) {
+          return {
+            ...cart,
+            coupon: { code, discount: cart.discount },
+          };
+        }
         if (!cart.coupon?.code) {
           throw new Error('Invalid promo code');
         }
@@ -563,16 +667,20 @@ export const cartApi = {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Invalid promo code';
+        if (isAuthErrorMessage(message)) {
+          throw new Error('Please sign in to apply a promo code');
+        }
         const lower = message.toLowerCase();
         if (
           lower.includes('invalid') ||
           lower.includes('not found') ||
           lower.includes('expired') ||
-          lower.includes('promo') ||
-          lower.includes('coupon') ||
-          lower.includes('code')
+          lower.includes('already') ||
+          lower.includes('minimum') ||
+          lower.includes('not applicable') ||
+          lower.includes('not eligible')
         ) {
-          throw new Error('Invalid promo code');
+          throw new Error(message || 'Invalid promo code');
         }
         lastError = error instanceof Error ? error : new Error(message);
       }
@@ -580,46 +688,184 @@ export const cartApi = {
     throw lastError ?? new Error('Invalid promo code');
   },
 
-  /** DELETE /cart/coupon */
+  /** DELETE /cart/coupon — Auth */
   removeCoupon: async (): Promise<Cart> => {
-    const res = await request<unknown>(`${CART_BASE}/coupon`, {
-      method: 'DELETE',
-      body: {},
-    });
-    return mapCart(res.data ?? res);
+    try {
+      const res = await request<unknown>(`${CART_BASE}/coupon`, {
+        method: 'DELETE',
+        body: {},
+      });
+      let cart = mapCart(res.data ?? res);
+
+      if (cart.coupon?.code) {
+        // Response still showed coupon — confirm with GET
+        const verifiedRes = await request<unknown>(CART_BASE);
+        cart = mapCart(verifiedRes.data ?? verifiedRes);
+      }
+
+      if (cart.coupon?.code) {
+        throw new Error('Coupon was not removed from the cart');
+      }
+
+      return { ...cart, coupon: null };
+    } catch (error) {
+      if (error instanceof Error && isAuthErrorMessage(error.message)) {
+        throw new Error('Please sign in to remove a promo code');
+      }
+      throw error;
+    }
   },
 
-  /** PUT /cart/tip */
+  /** PUT /cart/tip — Auth only (no PATCH; gateway returns route not found). */
   updateTip: async (payload: UpdateTipPayload): Promise<Cart> => {
-    const tip = Number(payload.tip) || 0;
-    return mutateCart(`${CART_BASE}/tip`, 'PUT', [
+    const tip = Math.max(0, Number(payload.tip) || 0);
+    const bodies: unknown[] = [
       { tip },
       { amount: tip },
       { tipAmount: tip },
       { deliveryTip: tip },
-      { tip: tip, amount: tip },
-      { data: { tip } },
-    ]);
+      { tip, amount: tip },
+      { tip, deliveryTip: tip },
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const body of bodies) {
+      try {
+        const res = await request<unknown>(`${CART_BASE}/tip`, {
+          method: 'PUT',
+          body,
+        });
+        const cart = mapCart(res.data ?? res);
+        const got = Math.max(0, Number(cart.tip) || 0);
+
+        if (tip === 0) {
+          return { ...cart, tip: 0 };
+        }
+
+        if (Math.abs(got - tip) < 0.011) {
+          return cart;
+        }
+
+        // Response omitted tip — confirm via GET /cart
+        try {
+          const verifiedRes = await request<unknown>(CART_BASE);
+          const verified = mapCart(verifiedRes.data ?? verifiedRes);
+          const verifiedTip = Math.max(0, Number(verified.tip) || 0);
+          if (Math.abs(verifiedTip - tip) < 0.011) {
+            return verified;
+          }
+        } catch {
+          // try next body shape
+        }
+
+        lastError = new Error('Tip was not saved on the server bill');
+      } catch (error) {
+        lastError =
+          error instanceof Error ? error : new Error('Failed to update tip');
+        if (isAuthErrorMessage(lastError.message)) {
+          throw lastError;
+        }
+        // Don't keep retrying if the route itself is wrong
+        const lower = lastError.message.toLowerCase();
+        if (
+          lower.includes('not found') &&
+          (lower.includes('patch') || lower.includes('route'))
+        ) {
+          continue;
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Failed to update tip');
   },
 
-  /** PUT /cart/delivery-address */
+  /** PUT /cart/delivery-address — Auth; set address on the server cart. */
   updateDeliveryAddress: async (
     payload: UpdateDeliveryAddressPayload
   ): Promise<Cart> => {
+    const address = {
+      label: payload.label,
+      formattedAddress: payload.formattedAddress,
+      street: payload.street,
+      area: payload.area,
+      city: payload.city,
+      state: payload.state,
+      pincode: payload.pincode,
+      contactName: payload.contactName,
+      contactPhone: payload.contactPhone,
+      lat: payload.lat,
+      lng: payload.lng,
+      addressId: payload.addressId,
+    };
+
     return mutateCart(`${CART_BASE}/delivery-address`, 'PUT', [
-      { ...payload },
-      { address: payload, deliveryAddress: payload },
+      { ...address },
+      { deliveryAddress: address },
+      { address },
+      { address, deliveryAddress: address },
+      // Some backends want saved-address id at the root
+      ...(address.addressId
+        ? [
+            { addressId: address.addressId, deliveryAddress: address },
+            { addressId: address.addressId },
+          ]
+        : []),
     ]);
   },
 
-  /** PUT /cart/delivery-type */
+  /** PUT /cart/delivery-type — Auth; accepts delivery / takeaway (and pickup aliases). */
   updateDeliveryType: async (
     payload: UpdateDeliveryTypePayload
   ): Promise<Cart> => {
-    return mutateCart(`${CART_BASE}/delivery-type`, 'PUT', [
-      { deliveryType: payload.deliveryType, type: payload.type ?? payload.deliveryType },
-      { fulfillmentType: payload.deliveryType },
-    ]);
+    const normalized = normalizeDeliveryType(
+      payload.deliveryType ?? payload.type ?? 'delivery'
+    );
+    const valueVariants =
+      normalized === 'takeaway'
+        ? ['takeaway', 'pickup', 'TAKEAWAY', 'PICKUP', 'self_pickup']
+        : ['delivery', 'DELIVERY', 'home_delivery'];
+
+    const bodies: unknown[] = [];
+    for (const value of valueVariants) {
+      bodies.push({ deliveryType: value });
+      bodies.push({ type: value });
+      bodies.push({ fulfillmentType: value });
+      bodies.push({ orderType: value });
+      bodies.push({ mode: value });
+      bodies.push({ delivery_type: value });
+      bodies.push({ fulfillment_type: value });
+    }
+
+    let lastError: Error | null = null;
+
+    // Prefer PUT, then PATCH — some gateways only accept one verb
+    for (const method of ['PUT', 'PATCH'] as const) {
+      for (const body of bodies) {
+        try {
+          const res = await request<unknown>(`${CART_BASE}/delivery-type`, {
+            method,
+            body,
+          });
+          const cart = mapCart(res.data ?? res);
+          // Ensure local enum stays delivery | takeaway even if API echoed pickup
+          return {
+            ...cart,
+            deliveryType: normalizeDeliveryType(
+              cart.deliveryType ?? normalized
+            ),
+          };
+        } catch (error) {
+          lastError =
+            error instanceof Error ? error : new Error('Cart request failed');
+          if (isAuthErrorMessage(lastError.message)) {
+            throw lastError;
+          }
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Failed to update delivery type');
   },
 
   /** POST /cart/merge */

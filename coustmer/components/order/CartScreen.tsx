@@ -1,9 +1,12 @@
 import { Pressable } from '@/components/common/Pressable';
+import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Bike,
+  ChevronRight,
+  CreditCard,
   MapPin,
   Minus,
   MoreVertical,
@@ -11,6 +14,7 @@ import {
   ShoppingBag,
   Store,
   Tag,
+  Wallet,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
@@ -45,6 +49,7 @@ import {
 import { applyServerCartToStore } from '@/lib/cart/sync';
 import { syncCartItemQuantity } from '@/lib/order/add-to-cart';
 import { DeliveryPreferences } from '@/components/order/DeliveryPreferences';
+import { CartSuggestionsFromStore } from '@/components/order/CartSuggestions';
 import { useCreateOrder } from '@/lib/order/hooks';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
@@ -73,6 +78,49 @@ const TEXT_SEC = '#64748B';
 const TEXT_MUTED = '#94A3B8';
 const BORDER = '#E5E7EB';
 const GREEN = '#16A34A';
+
+function paymentMethodLabel(
+  method: string,
+  savedMethods?: { id: string; type?: string; upiId?: string; brand?: string; last4?: string }[]
+): string {
+  switch (method) {
+    case 'cod':
+      return 'Pay on Delivery';
+    case 'paytm_upi':
+      return 'Paytm UPI';
+    case 'gpay':
+      return 'Google Pay';
+    case 'wallet':
+      return 'Tokajo Foods Wallet';
+    case 'card':
+      return 'Credit / Debit Card';
+    default: {
+      const saved = savedMethods?.find((m) => m.id === method);
+      if (!saved) return 'Choose payment';
+      if (saved.type === 'upi' && saved.upiId) return saved.upiId;
+      if (saved.type === 'card' && saved.last4) {
+        return `${(saved.brand || 'Card').toUpperCase()} •••• ${saved.last4}`;
+      }
+      return 'Saved payment';
+    }
+  }
+}
+
+function paymentMethodHint(method: string): string {
+  switch (method) {
+    case 'cod':
+      return 'Cash or UPI at delivery';
+    case 'paytm_upi':
+    case 'gpay':
+      return 'Pay instantly via UPI';
+    case 'wallet':
+      return 'Pay from Tokajo Foods Wallet';
+    case 'card':
+      return 'Secure card payment';
+    default:
+      return 'Tap to change';
+  }
+}
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
@@ -207,7 +255,8 @@ export function CartScreen() {
   const verifyPayment = useVerifyPayment();
 
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('cod');
+  const paymentMethod = useCartStore((s) => s.paymentMethod);
+  const setPaymentMethod = useCartStore((s) => s.setPaymentMethod);
   const [paying, setPaying] = useState(false);
 
   const [paymentGatewayOpen, setPaymentGatewayOpen] = useState(false);
@@ -221,7 +270,7 @@ export function CartScreen() {
 
   const couponApplied = Boolean(couponCode);
 
-  // Bill is driven only by cart API (hydrated store + live remote cart)
+  // Bill: prefer live cart API fields, but tip uses store value so UI updates immediately
   const apiCart = remoteCart.data;
   const billSubtotal =
     typeof apiCart?.subtotal === 'number' ? apiCart.subtotal : subtotal;
@@ -233,8 +282,16 @@ export function CartScreen() {
     typeof apiCart?.discount === 'number'
       ? apiCart.discount
       : Number(discount) || 0;
-  const displayTip =
-    typeof apiCart?.tip === 'number' ? apiCart.tip : Number(tip) || 0;
+
+  const apiTip =
+    typeof apiCart?.tip === 'number' && Number.isFinite(apiCart.tip)
+      ? apiCart.tip
+      : 0;
+  // Bill tip = server cart tip; optimistic store tip only while PUT /tip is in flight
+  const displayTip = updateTip.isPending
+    ? Math.max(0, Number(tip) || 0)
+    : apiTip;
+
   const apiTax =
     typeof apiCart?.tax === 'number' ? apiCart.tax : Number(tax) || 0;
   const apiTotal =
@@ -244,32 +301,30 @@ export function CartScreen() {
         ? serverTotal
         : null;
 
-  // If API total includes tax but tax field is 0, derive the gap from API numbers only
+  // Derive tax from API total using API tip (not the newly selected tip)
   const displayTax = (() => {
     if (apiTax > 0) return apiTax;
     if (apiTotal != null) {
       const withoutTax =
-        billSubtotal + displayDeliveryFee + displayTip - displayDiscount;
+        billSubtotal + displayDeliveryFee + apiTip - displayDiscount;
       const implied = Math.round((apiTotal - withoutTax) * 100) / 100;
       if (implied > 0.009) return implied;
     }
     return 0;
   })();
 
-  const displayTotal =
-    apiTotal != null
-      ? Math.max(0, apiTotal)
-      : Math.max(
-          0,
-          Math.round(
-            (billSubtotal +
-              displayDeliveryFee +
-              displayTax +
-              displayTip -
-              displayDiscount) *
-              100
-          ) / 100
-        );
+  // Rebuild total so selected tip always appears in To pay + bill row
+  const displayTotal = Math.max(
+    0,
+    Math.round(
+      (billSubtotal +
+        displayDeliveryFee +
+        displayTax +
+        displayTip -
+        displayDiscount) *
+        100
+    ) / 100
+  );
 
   const displayName =
     profile.data?.displayName ||
@@ -294,6 +349,8 @@ export function CartScreen() {
 
   useEffect(() => {
     if (!location || !isLoggedIn) return;
+    if (!location.formattedAddress?.trim()) return;
+
     const parsed = parseDeliveryAddress({
       formattedAddress: location.formattedAddress,
       label: location.label,
@@ -301,31 +358,56 @@ export function CartScreen() {
       lat: location.lat,
       lng: location.lng,
     });
+
+    const phoneForCart = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : '';
+
     void updateAddress
       .mutateAsync({
-        label: parsed.label,
+        label: parsed.label || location.label,
         formattedAddress: parsed.formattedAddress,
         street: parsed.street,
         area: parsed.area,
         city: parsed.city,
         state: parsed.state,
         pincode: parsed.pincode,
-        lat: parsed.lat,
-        lng: parsed.lng,
+        lat: parsed.lat ?? location.lat,
+        lng: parsed.lng ?? location.lng,
+        contactName: displayName !== 'Guest' ? displayName : undefined,
+        contactPhone: phoneForCart || undefined,
+        addressId: location.savedAddressId,
       })
-      .catch(() => undefined);
+      .catch((e) => {
+        if (__DEV__) {
+          console.warn(
+            '[cart] PUT /cart/delivery-address failed',
+            e instanceof Error ? e.message : e
+          );
+        }
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location?.formattedAddress, isLoggedIn]);
+  }, [
+    location?.formattedAddress,
+    location?.savedAddressId,
+    location?.lat,
+    location?.lng,
+    isLoggedIn,
+    displayName,
+    phoneDigits,
+  ]);
 
+  const isFocused = useIsFocused();
+
+  // Only leave the cart screen when it is focused and empty.
+  // After placing an order the cart is cleared while tracking is open —
+  // that must not call router.back() and yank the user off delivery tracking.
   useEffect(() => {
-    if (!items.length) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/home');
-      }
+    if (!isFocused || items.length > 0) return;
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/home');
     }
-  }, [items.length]);
+  }, [items.length, isFocused, router]);
 
   const onRefresh = () => {
     remoteCart.refetch();
@@ -367,14 +449,19 @@ export function CartScreen() {
 
     void updateTip
       .mutateAsync({ tip: nextTip })
-      .then(() => {
-        void remoteCart.refetch();
+      .then((cart) => {
+        // Server cart is source of truth after a successful tip save
+        if (typeof cart.tip === 'number') {
+          setTip(cart.tip);
+        }
       })
       .catch((e) => {
         setTip(previousTip);
         Alert.alert(
-          'Could not update tip',
-          e instanceof Error ? e.message : 'Tip was not saved. Please try again.'
+          'Could not save tip',
+          e instanceof Error
+            ? e.message
+            : 'Tip was not added to the server bill. Please try again.'
         );
       });
   };
@@ -385,20 +472,41 @@ export function CartScreen() {
       return;
     }
 
+    if (deliveryType === type) return;
+
     const previous = deliveryType;
     setDeliveryTypeLocal(type);
 
     void updateDeliveryType
-      .mutateAsync({ deliveryType: type })
-      .then(() => {
+      .mutateAsync({ deliveryType: type, type })
+      .then((cart) => {
+        // Hook already hydrates; refresh to lock bill/fees from server
         void remoteCart.refetch();
+        if (cart?.deliveryType) {
+          setDeliveryTypeLocal(
+            cart.deliveryType === 'takeaway' ||
+              String(cart.deliveryType).toLowerCase().includes('pick')
+              ? 'takeaway'
+              : 'delivery'
+          );
+        }
       })
       .catch((e) => {
         setDeliveryTypeLocal(previous);
-        Alert.alert(
-          'Could not update delivery type',
-          e instanceof Error ? e.message : 'Please try again.'
-        );
+        const message =
+          e instanceof Error ? e.message : 'Please try again.';
+        const lower = message.toLowerCase();
+        if (
+          lower.includes('auth') ||
+          lower.includes('login') ||
+          lower.includes('unauthorized') ||
+          lower.includes('forbidden') ||
+          lower.includes('token')
+        ) {
+          requireLogin('change delivery type');
+          return;
+        }
+        Alert.alert('Could not update delivery type', message);
       });
   };
 
@@ -526,8 +634,11 @@ export function CartScreen() {
         },
         addressId: location.savedAddressId,
         paymentMethod: mappedMethod,
+        deliveryType,
+        fulfillmentType: deliveryType,
         specialInstructions: specialInstructions || undefined,
-        tip: tip > 0 ? tip : undefined,
+        tip: tip > 0 ? tip : 0,
+        deliveryTip: tip > 0 ? tip : 0,
       };
 
       const order = await createOrder.mutateAsync(payload as any);
@@ -708,6 +819,23 @@ export function CartScreen() {
 
   const handleCheckout = async () => {
     try {
+      // Ensure tip is on the backend cart before validate / place order
+      if (isLoggedIn && tip >= 0) {
+        try {
+          await updateTip.mutateAsync({ tip });
+        } catch (tipErr) {
+          if (tip > 0) {
+            Alert.alert(
+              'Tip not saved',
+              tipErr instanceof Error
+                ? tipErr.message
+                : 'Could not add tip to the server bill. Try again or remove the tip.'
+            );
+            return;
+          }
+        }
+      }
+
       const result = await validateCart.mutateAsync();
       if (result.cart) {
         applyServerCartToStore(result.cart);
@@ -745,11 +873,19 @@ export function CartScreen() {
     }
     setVoucherBusy(true);
     try {
-      await applyCoupon.mutateAsync({ code });
-      Alert.alert('Promo applied', `${code.toUpperCase()} applied to your cart`);
+      const cart = await applyCoupon.mutateAsync({ code });
+      const saved =
+        cart.coupon?.code?.trim() || code.toUpperCase();
+      setVoucherCode(saved);
+      Alert.alert(
+        'Promo applied',
+        cart.discount > 0
+          ? `${saved} applied · ₹${Math.round(cart.discount)} off`
+          : `${saved} applied to your cart`
+      );
     } catch (e) {
       Alert.alert(
-        'Invalid promo code',
+        'Could not apply promo',
         e instanceof Error ? e.message : 'This code could not be applied'
       );
     } finally {
@@ -766,6 +902,7 @@ export function CartScreen() {
     try {
       await removeCoupon.mutateAsync();
       setVoucherCode('');
+      Alert.alert('Promo removed', 'Coupon removed from your cart');
     } catch (e) {
       Alert.alert(
         'Could not remove promo',
@@ -920,6 +1057,8 @@ export function CartScreen() {
             </TouchableOpacity>
           </View>
 
+          <CartSuggestionsFromStore />
+
           {/* Delivery type */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Fulfillment</Text>
@@ -1011,6 +1150,35 @@ export function CartScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Payment method */}
+          <Pressable
+            style={styles.paymentCard}
+            onPress={() => setPaymentModalOpen(true)}
+          >
+            <View style={styles.paymentIconWrap}>
+              {paymentMethod === 'cod' ? (
+                <Bike color={ORANGE} size={18} strokeWidth={2.3} />
+              ) : paymentMethod === 'wallet' ? (
+                <Wallet color={ORANGE} size={18} strokeWidth={2.3} />
+              ) : (
+                <CreditCard color={ORANGE} size={18} strokeWidth={2.3} />
+              )}
+            </View>
+            <View style={styles.paymentBody}>
+              <Text style={styles.paymentEyebrow}>PAY USING</Text>
+              <Text style={styles.paymentTitle} numberOfLines={1}>
+                {paymentMethodLabel(paymentMethod, paymentMethods.data)}
+              </Text>
+              <Text style={styles.paymentHint} numberOfLines={1}>
+                {paymentMethodHint(paymentMethod)}
+              </Text>
+            </View>
+            <View style={styles.paymentChange}>
+              <Text style={styles.paymentChangeText}>Change</Text>
+              <ChevronRight color={ORANGE} size={16} strokeWidth={2.4} />
+            </View>
+          </Pressable>
+
           {/* Bill */}
           <View style={styles.billCard}>
             <Text style={styles.cardTitle}>Bill details</Text>
@@ -1072,10 +1240,10 @@ export function CartScreen() {
         <View style={[styles.checkoutBar, { paddingBottom: footerPad }]}>
           <TouchableOpacity
             style={styles.checkoutBtn}
-            onPress={handleCheckout}
+            onPress={() => {
+              router.push('/cart/summary' as import('expo-router').Href);
+            }}
             disabled={
-              validateCart.isPending ||
-              paying ||
               voucherBusy ||
               Boolean(busyId) ||
               applyCoupon.isPending ||
@@ -1084,15 +1252,13 @@ export function CartScreen() {
             activeOpacity={0.9}
           >
             <View>
-              <Text style={styles.checkoutPrice}>₹{displayTotal.toFixed(2)}</Text>
+              <Text style={styles.checkoutPrice}>
+                ₹{displayTotal.toFixed(2)}
+              </Text>
               <Text style={styles.checkoutSub}>TOTAL</Text>
             </View>
             <View style={styles.checkoutLabelWrap}>
-              {validateCart.isPending || paying ? (
-                <ActivityIndicator color={WHITE} size="small" />
-              ) : (
-                <Text style={styles.checkoutLabel}>Place order</Text>
-              )}
+              <Text style={styles.checkoutLabel}>Order summary</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -1139,7 +1305,10 @@ export function CartScreen() {
             setPaymentMethod(m);
             setPaymentModalOpen(false);
           }}
-          onPay={() => { }}
+          onPay={(m) => {
+            setPaymentMethod(m);
+            setPaymentModalOpen(false);
+          }}
           itemCount={items.length}
           total={displayTotal}
           savings={displayDiscount}
@@ -1508,6 +1677,58 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   voucherAction: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: ORANGE,
+  },
+
+  // ── Payment ──
+  paymentCard: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  paymentIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentBody: {
+    flex: 1,
+    gap: 2,
+  },
+  paymentEyebrow: {
+    fontFamily: fonts.uiBold,
+    fontSize: 10,
+    letterSpacing: 1.1,
+    color: TEXT_MUTED,
+  },
+  paymentTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 15,
+    color: TEXT,
+  },
+  paymentHint: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: TEXT_SEC,
+  },
+  paymentChange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  paymentChangeText: {
     fontFamily: fonts.uiBold,
     fontSize: 13,
     color: ORANGE,

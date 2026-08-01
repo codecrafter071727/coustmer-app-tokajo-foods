@@ -1,12 +1,11 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { ChevronDown, ChevronUp, Truck } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, MapPinned, Truck } from 'lucide-react-native';
 import { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/typography';
-import { swiggyOrderUi as ui } from '@/constants/swiggy-order-ui';
 import { useReorder } from '@/lib/order/hooks';
 import { ORDER_STATUS_LABELS, type Order } from '@/lib/order/types';
 
@@ -18,11 +17,14 @@ function formatOrderWhen(iso?: string) {
     month: 'short',
     day: 'numeric',
   });
-  const time = d.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).toLowerCase().replace(' ', ''); // '09:30pm'
+  const time = d
+    .toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .toLowerCase()
+    .replace(' ', '');
   return `${date} • ${time}`;
 }
 
@@ -33,24 +35,54 @@ type Props = {
 const BRAND_ORANGE = '#F3744B';
 const TEXT_DARK = '#202020';
 const TEXT_MUTED = '#9CA3AF';
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=200&auto=format&fit=crop';
+const FALLBACK_IMAGE =
+  'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=200&auto=format&fit=crop';
 
 export function OrderCard({ order }: Props) {
   const router = useRouter();
   const reorder = useReorder(order.id);
   const [expanded, setExpanded] = useState(false);
 
-  const headline = order.restaurantName || order.items[0]?.name || 'Your order';
-  const cover = order.items[0]?.imageUrl || (typeof order.restaurantImageUrl === 'string' ? order.restaurantImageUrl : FALLBACK_IMAGE);
+  const headline =
+    order.restaurantName || order.items[0]?.name || 'Your order';
+  const cover =
+    order.items[0]?.imageUrl ||
+    (typeof order.restaurantImageUrl === 'string'
+      ? order.restaurantImageUrl
+      : FALLBACK_IMAGE);
   const when = formatOrderWhen(order.createdAt || order.scheduledFor);
-  const total = typeof order.total === 'number' ? order.total : order.items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const total =
+    typeof order.total === 'number'
+      ? order.total
+      : order.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
-  const isDelivered = order.status.toLowerCase() === 'delivered';
-  const statusLabel = isDelivered ? 'Delivered' : ORDER_STATUS_LABELS[order.status] ?? order.status;
+  const statusLower = order.status.toLowerCase();
+  const isDelivered = statusLower === 'delivered';
+  const isActive = ![
+    'delivered',
+    'cancelled',
+    'canceled',
+    'rejected',
+    'failed',
+    'completed',
+  ].includes(statusLower);
+  const canReorder = !isActive;
+  const statusLabel = isDelivered
+    ? 'Delivered'
+    : ORDER_STATUS_LABELS[order.status] ?? order.status;
+
+  const openTracking = () => {
+    router.push({
+      pathname: '/orders/[orderId]/tracking',
+      params: { orderId: order.id },
+    });
+  };
 
   const openDetail = () => {
     router.push({
-      pathname: '/orders/[orderId]',
+      pathname: isActive
+        ? '/orders/[orderId]/tracking'
+        : '/orders/[orderId]',
       params: { orderId: order.id },
     });
   };
@@ -68,13 +100,16 @@ export function OrderCard({ order }: Props) {
                 text: 'View order',
                 onPress: () =>
                   router.push({
-                    pathname: '/orders/[orderId]',
+                    pathname: '/orders/[orderId]/tracking',
                     params: { orderId: next.id },
                   }),
               },
             ]);
           } catch (e) {
-            Alert.alert('Reorder failed', e instanceof Error ? e.message : 'Could not reorder');
+            Alert.alert(
+              'Reorder failed',
+              e instanceof Error ? e.message : 'Could not reorder'
+            );
           }
         },
       },
@@ -83,22 +118,34 @@ export function OrderCard({ order }: Props) {
 
   return (
     <Pressable style={styles.card} onPress={openDetail}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.dateText}>{when}</Text>
-        <View style={styles.statusPill}>
-          <Text style={styles.statusText}>{statusLabel}</Text>
+        <View style={[styles.statusPill, isActive && styles.statusPillLive]}>
+          {isActive ? <View style={styles.liveDot} /> : null}
+          <Text style={[styles.statusText, isActive && styles.statusTextLive]}>
+            {statusLabel}
+          </Text>
         </View>
       </View>
 
       <View style={styles.divider} />
 
-      {/* Main Order Item Info */}
-      <Pressable style={styles.mainItemRow} onPress={() => setExpanded(!expanded)}>
-        <Image source={{ uri: cover }} style={styles.mainThumb} contentFit="cover" />
+      <Pressable
+        style={styles.mainItemRow}
+        onPress={() => setExpanded(!expanded)}
+      >
+        <Image
+          source={{ uri: cover }}
+          style={styles.mainThumb}
+          contentFit="cover"
+        />
         <View style={styles.mainItemInfo}>
-          <Text style={styles.mainItemTitle} numberOfLines={1}>{headline}</Text>
-          <Text style={styles.orderIdText}>Order ID: {order.orderNumber || order.id.slice(0, 8)}</Text>
+          <Text style={styles.mainItemTitle} numberOfLines={1}>
+            {headline}
+          </Text>
+          <Text style={styles.orderIdText}>
+            Order ID: {order.orderNumber || order.id.slice(0, 8)}
+          </Text>
         </View>
         <View style={styles.itemsCountWrap}>
           <Text style={styles.itemsCountText}>{order.items.length} Items</Text>
@@ -110,20 +157,23 @@ export function OrderCard({ order }: Props) {
         </View>
       </Pressable>
 
-      {/* Expanded Items List */}
-      {expanded && (
+      {expanded ? (
         <View style={styles.itemsList}>
           {order.items.map((item, index) => {
-            // Mock original price to simulate discount as seen in the mockup
             const originalPrice = (item.price + 2).toFixed(2);
             const currentPrice = item.price.toFixed(2);
             const itemThumb = item.imageUrl || FALLBACK_IMAGE;
 
             return (
               <View key={index} style={styles.itemRow}>
-                <Image source={{ uri: itemThumb }} style={styles.itemThumb} contentFit="cover" />
-                <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
-                
+                <Image
+                  source={{ uri: itemThumb }}
+                  style={styles.itemThumb}
+                  contentFit="cover"
+                />
+                <Text style={styles.itemName} numberOfLines={2}>
+                  {item.name}
+                </Text>
                 <View style={styles.priceWrap}>
                   <Text style={styles.priceCurrent}>₹{currentPrice}</Text>
                   <Text style={styles.priceOriginal}>₹{originalPrice}</Text>
@@ -132,9 +182,8 @@ export function OrderCard({ order }: Props) {
             );
           })}
         </View>
-      )}
+      ) : null}
 
-      {/* Summary Footer */}
       <View style={styles.summaryFooter}>
         <Text style={styles.summaryLeft}>
           <Text style={styles.summaryGrand}>Grand</Text> VAT Include
@@ -142,11 +191,17 @@ export function OrderCard({ order }: Props) {
         <Text style={styles.summaryTotal}>Total: ₹{total.toFixed(2)}</Text>
       </View>
 
-      {/* Order Again Button */}
-      <Pressable style={styles.orderAgainBtn} onPress={handleReorder}>
-        <Truck color={BRAND_ORANGE} size={20} strokeWidth={2} />
-        <Text style={styles.orderAgainText}>Order Again</Text>
-      </Pressable>
+      {isActive ? (
+        <Pressable style={styles.trackBtn} onPress={openTracking}>
+          <MapPinned color="#FFFFFF" size={18} strokeWidth={2.3} />
+          <Text style={styles.trackBtnText}>Track order</Text>
+        </Pressable>
+      ) : canReorder ? (
+        <Pressable style={styles.orderAgainBtn} onPress={handleReorder}>
+          <Truck color={BRAND_ORANGE} size={20} strokeWidth={2} />
+          <Text style={styles.orderAgainText}>Order Again</Text>
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }
@@ -176,11 +231,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusPillLive: {
+    backgroundColor: '#FFF7ED',
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#16A34A',
   },
   statusText: {
     fontFamily: fonts.uiMedium,
     fontSize: 13,
     color: TEXT_DARK,
+  },
+  statusTextLive: {
+    color: BRAND_ORANGE,
+    fontFamily: fonts.uiBold,
   },
   divider: {
     height: 1,
@@ -278,6 +349,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displaySemi,
     fontSize: 14,
     color: '#4B5563',
+  },
+  trackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 24,
+    backgroundColor: BRAND_ORANGE,
+  },
+  trackBtnText: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   orderAgainBtn: {
     flexDirection: 'row',

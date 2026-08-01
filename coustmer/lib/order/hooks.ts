@@ -74,24 +74,42 @@ export function useScheduledOrders() {
 }
 
 /** GET /orders/:orderId */
-export function useOrder(orderId: string) {
+export function useOrder(
+  orderId: string,
+  options?: {
+    refetchInterval?:
+      | number
+      | false
+      | ((query: { state: { data?: { status?: string } } }) => number | false);
+  }
+) {
   return useQuery({
     queryKey: orderKeys.detail(orderId),
     queryFn: () => orderApi.getOrder(orderId),
     enabled: Boolean(orderId),
+    refetchInterval: options?.refetchInterval as number | false | undefined,
   });
 }
 
 /** GET /orders/:orderId/tracking */
 export function useOrderTracking(
   orderId: string,
-  options?: { enabled?: boolean; refetchInterval?: number }
+  options?: {
+    enabled?: boolean;
+    refetchInterval?:
+      | number
+      | false
+      | ((query: { state: { data?: { status?: string } } }) => number | false);
+  }
 ) {
   return useQuery({
     queryKey: orderKeys.tracking(orderId),
     queryFn: () => orderApi.getTracking(orderId),
     enabled: Boolean(orderId) && (options?.enabled ?? true),
-    refetchInterval: options?.refetchInterval ?? 10_000,
+    refetchInterval: (options?.refetchInterval ?? 10_000) as
+      | number
+      | false
+      | undefined,
   });
 }
 
@@ -159,11 +177,18 @@ export function useCancelScheduledOrder(orderId: string) {
 export function useReportIssue(orderId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: ReportIssuePayload) =>
-      orderApi.reportIssue(orderId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.issues(orderId) });
-      queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) });
+    mutationFn: (payload: ReportIssuePayload) => {
+      const id = String(payload.orderId || orderId || '').trim();
+      return orderApi.reportIssue(id, {
+        ...payload,
+        type: String(payload.type ?? '').trim(),
+        description: String(payload.description ?? '').trim(),
+      });
+    },
+    onSuccess: (_data, variables) => {
+      const id = String(variables.orderId || orderId || '').trim();
+      queryClient.invalidateQueries({ queryKey: orderKeys.issues(id) });
+      queryClient.invalidateQueries({ queryKey: orderKeys.detail(id) });
     },
   });
 }

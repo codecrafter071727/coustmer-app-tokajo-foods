@@ -52,6 +52,8 @@ type CartState = {
   deliveryFee: number;
   tax: number;
   serverTotal: number | null;
+  /** Selected checkout payment method (cod, upi labels, wallet, saved id, …) */
+  paymentMethod: string;
   replaceCartPrompt: ReplaceCartPromptData | null;
   promptReplaceCart: (prompt: ReplaceCartPromptData) => void;
   clearReplaceCartPrompt: () => void;
@@ -69,6 +71,7 @@ type CartState = {
   setCouponCode: (code: string | null) => void;
   setDiscount: (discount: number) => void;
   setDeliveryType: (type: 'delivery' | 'takeaway') => void;
+  setPaymentMethod: (method: string) => void;
   hydrateFromServer: (payload: CartHydratePayload) => void;
   clearCart: () => void;
   totalItems: () => number;
@@ -90,6 +93,7 @@ export const useCartStore = create<CartState>()(
       deliveryFee: 0,
       tax: 0,
       serverTotal: null,
+      paymentMethod: 'cod',
       replaceCartPrompt: null,
 
       promptReplaceCart: (prompt) => set({ replaceCartPrompt: prompt }),
@@ -198,6 +202,8 @@ export const useCartStore = create<CartState>()(
 
       setDeliveryType: (deliveryType) => set({ deliveryType }),
 
+      setPaymentMethod: (paymentMethod) => set({ paymentMethod }),
+
       hydrateFromServer: (payload) =>
         set({
           restaurant: payload.restaurant,
@@ -229,6 +235,7 @@ export const useCartStore = create<CartState>()(
           deliveryFee: 0,
           tax: 0,
           serverTotal: null,
+          paymentMethod: 'cod',
         }),
 
       totalItems: () =>
@@ -272,6 +279,7 @@ export const useCartStore = create<CartState>()(
         deliveryType: state.deliveryType,
         deliveryFee: state.deliveryFee,
         tax: state.tax,
+        paymentMethod: state.paymentMethod,
       }),
     }
   )

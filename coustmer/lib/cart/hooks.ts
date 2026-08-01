@@ -110,8 +110,17 @@ export function useClearRemoteCart() {
 
 /** POST /cart/validate */
 export function useValidateCart() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => cartApi.validate(),
+    onSuccess: (result) => {
+      if (result.cart) {
+        applyServerCartToStore(result.cart);
+        queryClient.setQueryData(cartKeys.current(), result.cart);
+      }
+      // Refresh bill / prices after validate (even when valid)
+      queryClient.invalidateQueries({ queryKey: cartKeys.current() });
+    },
   });
 }
 
@@ -138,7 +147,11 @@ export function useUpdateCartTip() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: UpdateTipPayload) => cartApi.updateTip(payload),
-    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+    onSuccess: (cart) => {
+      // Only hydrate what the server actually returned (tip must be on cart)
+      applyServerCartToStore(cart);
+      queryClient.setQueryData(cartKeys.current(), cart);
+    },
   });
 }
 

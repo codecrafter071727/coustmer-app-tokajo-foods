@@ -115,6 +115,7 @@ export type SupportTicket = {
   description: string;
   status: TicketStatus;
   priority: string;
+  orderId?: string;
   attachments: string[];
   messages: TicketMessage[];
   rating?: number;

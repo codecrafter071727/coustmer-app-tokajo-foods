@@ -19,7 +19,7 @@ type Props = {
   onClose: () => void;
   paymentUrl: string;
   onPaymentComplete: (success: boolean, data?: any) => void;
-  orderAmount: number;
+  orderAmount?: number;
   orderNumber?: string;
 };
 
@@ -164,7 +164,8 @@ export function PaymentGatewayWebView({
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Payment Gateway</Text>
             <Text style={styles.headerSubtitle}>
-              {orderNumber ? `Order ${orderNumber} • ` : ''}₹{orderAmount.toFixed(0)}
+              {orderNumber ? `Order ${orderNumber} • ` : ''}₹
+              {Number(orderAmount ?? 0).toFixed(0)}
             </Text>
           </View>
           

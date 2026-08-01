@@ -98,6 +98,7 @@ export type Order = {
   tax?: number;
   discount?: number;
   tip?: number;
+  couponCode?: string;
   total?: number;
   paymentMethod?: string;
   paymentStatus?: string;
@@ -145,7 +146,11 @@ export type CreateOrderPayload = {
   paymentMethod?: string;
   specialInstructions?: string;
   tip?: number;
+  deliveryTip?: number;
+  tipAmount?: number;
   scheduledFor?: string;
+  deliveryType?: string;
+  fulfillmentType?: string;
   /** Alternate shapes some backends accept */
   notes?: string;
 };
@@ -162,6 +167,7 @@ export type TipPayload = {
 export type ReportIssuePayload = {
   type: string;
   description: string;
+  orderId?: string;
   attachments?: string[];
 };
 

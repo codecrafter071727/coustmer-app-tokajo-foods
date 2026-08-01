@@ -35,13 +35,20 @@ async function request<T>(
   } = {}
 ): Promise<Envelope<T>> {
   const { method = 'GET', body } = options;
+  const isMutating = method !== 'GET';
 
   try {
     const response = await api.request<Envelope<T>>({
       url: path,
       method,
-      data: body,
+      data: isMutating ? (body ?? {}) : body,
       withCredentials: true,
+      headers: isMutating
+        ? {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          }
+        : { Accept: 'application/json' },
     });
     return response.data;
   } catch (error) {
@@ -69,14 +76,23 @@ function mapProfile(data: Record<string, unknown>): CustomerProfile {
 }
 
 function mapTicket(data: Record<string, unknown>): SupportTicket {
+  const orderRef =
+    data.orderId ??
+    data.order_id ??
+    (data.order && typeof data.order === 'object'
+      ? (data.order as { _id?: string; id?: string })._id ??
+        (data.order as { id?: string }).id
+      : undefined);
+
   return {
     id: String(data._id ?? data.id ?? ''),
-    userId: String(data.userId ?? ''),
+    userId: String(data.userId ?? data.customerId ?? ''),
     category: data.category as SupportTicket['category'],
-    subject: String(data.subject ?? ''),
-    description: String(data.description ?? ''),
+    subject: String(data.subject ?? data.title ?? ''),
+    description: String(data.description ?? data.message ?? data.details ?? ''),
     status: (data.status as SupportTicket['status']) ?? 'open',
     priority: String(data.priority ?? 'medium'),
+    orderId: orderRef ? String(orderRef) : undefined,
     attachments: (data.attachments as string[]) ?? [],
     messages: (data.messages as SupportTicket['messages']) ?? [],
     rating: data.rating as number | undefined,
@@ -98,6 +114,7 @@ function unwrapList(payload: unknown): Record<string, unknown>[] {
     record.offers ??
     record.items ??
     record.results ??
+    record.tickets ??
     record.data;
   if (Array.isArray(nested)) return nested as Record<string, unknown>[];
   if (nested && typeof nested === 'object') {
@@ -354,11 +371,23 @@ console.log("Fetched " + restaurants.length + " restaurants for deals fallback")
 
   /** POST /customers/support/tickets */
   createTicket: async (payload: CreateTicketPayload): Promise<SupportTicket> => {
+    const body = {
+      category: payload.category,
+      subject: payload.subject,
+      description: payload.description,
+      ...(payload.orderId
+        ? { orderId: payload.orderId, order_id: payload.orderId }
+        : {}),
+      ...(payload.attachments?.length
+        ? { attachments: payload.attachments }
+        : {}),
+    };
+
     const res = await request<Record<string, unknown>>(
       `${CUSTOMER_BASE}/support/tickets`,
-      { method: 'POST', body: payload }
+      { method: 'POST', body }
     );
-    return mapTicket(res.data ?? {});
+    return mapTicket((res.data as Record<string, unknown>) ?? {});
   },
 
   /** GET /customers/support/tickets */
@@ -366,10 +395,15 @@ console.log("Fetched " + restaurants.length + " restaurants for deals fallback")
     tickets: SupportTicket[];
     meta?: PaginationMeta;
   }> => {
-    const res = await request<Record<string, unknown>[]>(
-      `${CUSTOMER_BASE}/support/tickets`
-    );
-    const tickets = Array.isArray(res.data) ? res.data.map(mapTicket) : [];
+    const res = await request<unknown>(`${CUSTOMER_BASE}/support/tickets`);
+    const list = unwrapList(res.data).map(mapTicket);
+    // Fallback if API returns a bare array on envelope.data
+    const tickets =
+      list.length > 0
+        ? list
+        : Array.isArray(res.data)
+          ? (res.data as Record<string, unknown>[]).map(mapTicket)
+          : [];
     return { tickets, meta: res.meta };
   },
 

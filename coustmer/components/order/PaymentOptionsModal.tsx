@@ -1,11 +1,36 @@
 import { Pressable } from '@/components/common/Pressable';
-import { ArrowLeft, CheckCircle2, ChevronRight, Circle, CreditCard, Landmark, Plus, Receipt, Truck, Wallet } from 'lucide-react-native';
-import { Alert, Modal,  ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  CreditCard,
+  Landmark,
+  Plus,
+  Receipt,
+  Truck,
+} from 'lucide-react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+
+import { fonts } from '@/constants/typography';
 import type { SavedPaymentMethod, WalletSummary } from '@/lib/payment/types';
 
-type PaymentMethod = string;
+const ORANGE = '#F97316';
+const ORANGE_DARK = '#EA580C';
+const ORANGE_SOFT = '#FFF7ED';
+const TOKAJO_YELLOW = '#FACC15';
+const TEXT = '#0B1220';
+const TEXT_SEC = '#64748B';
+const BORDER = '#E5E7EB';
+const WHITE = '#FFFFFF';
+
+const PAYTM_LOGO = require('../../assets/images/payment/paytm.png');
+const GPAY_LOGO = require('../../assets/images/payment/gpay.png');
+const TOKAJO_LOGO = require('../../assets/Logo.png');
 
 type Props = {
   visible: boolean;
@@ -24,6 +49,42 @@ type Props = {
   wallet?: WalletSummary;
 };
 
+/** Circular crop + yellow fill — no white left/right bars from square asset */
+function TokajoMark({ size = 56 }: { size?: number }) {
+  const scale = 1.2;
+  const offset = -((size * scale - size) / 2);
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        overflow: 'hidden',
+        backgroundColor: TOKAJO_YELLOW,
+      }}
+    >
+      <Image
+        source={TOKAJO_LOGO}
+        style={{
+          width: size * scale,
+          height: size * scale,
+          marginLeft: offset,
+          marginTop: offset,
+        }}
+        contentFit="cover"
+      />
+    </View>
+  );
+}
+
+function SelectMark({ selected }: { selected: boolean }) {
+  return selected ? (
+    <CheckCircle2 color={ORANGE} fill={ORANGE} size={22} />
+  ) : (
+    <Circle color="#D1D5DB" size={22} />
+  );
+}
+
 export function PaymentOptionsModal({
   visible,
   onClose,
@@ -36,7 +97,6 @@ export function PaymentOptionsModal({
   deliveryTime,
   addressLabel,
   addressText,
-  onPay,
   savedMethods,
   wallet,
 }: Props) {
@@ -53,13 +113,13 @@ export function PaymentOptionsModal({
         `You need ₹${diff.toFixed(0)} more in your wallet to pay for this order.`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Top Up Now', 
+          {
+            text: 'Top Up Now',
             onPress: () => {
               onClose();
               router.push('/profile/wallet' as import('expo-router').Href);
-            }
-          }
+            },
+          },
         ]
       );
     } else {
@@ -68,273 +128,297 @@ export function PaymentOptionsModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <SafeAreaView edges={['bottom']} style={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.backButton} hitSlop={10}>
-            <ArrowLeft color="#1C1C1C" size={24} />
-          </Pressable>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Payment Options</Text>
-            <Text style={styles.headerSubtitle}>
-              {itemCount} item{itemCount !== 1 ? 's' : ''} • Total: ₹{total.toFixed(0)} • <Text style={styles.savingsText}>Savings of ₹{savings.toFixed(0)}</Text>
-            </Text>
-          </View>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
-          <View style={styles.addressStrip}>
-            <View style={styles.timeline}>
-              <View style={styles.timelineDotTop} />
-              <View style={styles.timelineLine} />
-              <View style={styles.timelineDotBottom} />
-            </View>
-            <View style={styles.addressInfo}>
-              <Text style={styles.addressRow} numberOfLines={1}>
-                <Text style={styles.addressName}>{restaurantName}</Text>
-                {deliveryTime ? (
-                  <Text style={styles.addressDesc}>
-                    {' '}
-                    | Delivery in: {deliveryTime}
-                  </Text>
+          <View style={styles.header}>
+            <Pressable onPress={onClose} style={styles.backButton} hitSlop={10}>
+              <ArrowLeft color={TEXT} size={24} />
+            </Pressable>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Payment Options</Text>
+              <Text style={styles.headerSubtitle}>
+                {itemCount} item{itemCount !== 1 ? 's' : ''} • Total: ₹
+                {total.toFixed(0)}
+                {savings > 0 ? (
+                  <>
+                    {' • '}
+                    <Text style={styles.savingsText}>
+                      Savings of ₹{savings.toFixed(0)}
+                    </Text>
+                  </>
                 ) : null}
               </Text>
-              <Text style={styles.addressRow} numberOfLines={1}>
-                <Text style={styles.addressName}>{addressLabel}</Text>
-                <Text style={styles.addressDesc}> | {addressText}</Text>
-              </Text>
             </View>
           </View>
 
-          <Pressable style={styles.offersBanner}>
-            <View style={styles.offersLeft}>
-              <View style={styles.percentBadge}>
-                <Text style={styles.percentText}>%</Text>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            <View style={styles.addressStrip}>
+              <View style={styles.timeline}>
+                <View style={styles.timelineDotTop} />
+                <View style={styles.timelineLine} />
+                <View style={styles.timelineDotBottom} />
               </View>
-              <Text style={styles.offersText}>Save more with payment offers</Text>
+              <View style={styles.addressInfo}>
+                <Text style={styles.addressRow} numberOfLines={1}>
+                  <Text style={styles.addressName}>{restaurantName}</Text>
+                  {deliveryTime ? (
+                    <Text style={styles.addressDesc}>
+                      {' '}
+                      | Delivery in: {deliveryTime}
+                    </Text>
+                  ) : null}
+                </Text>
+                <Text style={styles.addressRow} numberOfLines={1}>
+                  <Text style={styles.addressName}>{addressLabel}</Text>
+                  <Text style={styles.addressDesc}> | {addressText}</Text>
+                </Text>
+              </View>
             </View>
-            <ChevronRight color="#00A160" size={20} />
-          </Pressable>
 
-          <View style={styles.swiggyUpiBanner}>
-            <View style={styles.swiggyUpiContent}>
-              <Text style={styles.swiggyUpiTitle}>UPI payments, now 3X Faster</Text>
-              <Text style={styles.swiggyUpiDesc}>Unlock faster in-app UPI for instant payments!</Text>
-              <Pressable style={styles.swiggyUpiBtn}>
-                <Text style={styles.swiggyUpiBtnText}>Activate in 10s</Text>
+            <Pressable style={styles.offersBanner}>
+              <View style={styles.offersLeft}>
+                <View style={styles.percentBadge}>
+                  <Text style={styles.percentText}>%</Text>
+                </View>
+                <Text style={styles.offersText}>
+                  Save more with payment offers
+                </Text>
+              </View>
+              <ChevronRight color={ORANGE} size={20} />
+            </Pressable>
+
+            <LinearGradient
+              colors={['#FB923C', '#F97316', '#EA580C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.upiPromo}
+            >
+              <View style={styles.upiPromoContent}>
+                <Text style={styles.upiPromoTitle}>
+                  Tokajo Foods Wallet
+                </Text>
+                <Text style={styles.upiPromoDesc}>
+                  {wallet
+                    ? `Balance ₹${wallet.balance.toFixed(0)} · pay in one tap`
+                    : 'Pay faster with your Tokajo balance'}
+                </Text>
+                <Pressable
+                  style={styles.upiPromoBtn}
+                  onPress={handleWalletSelect}
+                >
+                  <Text style={styles.upiPromoBtnText}>
+                    {wallet ? 'Pay with Wallet' : 'Open Wallet'}
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={styles.tokajoUpiMark}>
+                <TokajoMark size={58} />
+                <View style={styles.upiBadge}>
+                  <Text style={styles.upiBadgeText}>WALLET</Text>
+                </View>
+              </View>
+            </LinearGradient>
+
+            <Text style={styles.sectionTitle}>Preferred Payment</Text>
+            <View style={styles.cardGroup}>
+              <Pressable
+                style={styles.cardItem}
+                onPress={() => onSelectMethod('paytm_upi')}
+              >
+                <View style={styles.cardRow}>
+                  <View style={styles.paytmIconBox}>
+                    <Image
+                      source={PAYTM_LOGO}
+                      style={styles.paytmImage}
+                      contentFit="cover"
+                    />
+                  </View>
+                  <Text style={styles.cardItemText}>Paytm UPI</Text>
+                  <SelectMark selected={selectedMethod === 'paytm_upi'} />
+                </View>
               </Pressable>
             </View>
-            <View style={styles.swiggyUpiLogo}>
-              <Text style={styles.swiggyUpiLogoText}>TOKAJO</Text>
-              <Text style={styles.swiggyUpiLogoBadge}>UPI</Text>
+
+            {savedUpis.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>Saved UPI IDs</Text>
+                <View style={styles.cardGroup}>
+                  {savedUpis.map((upi, index) => (
+                    <View key={upi.id}>
+                      <Pressable
+                        style={styles.cardItem}
+                        onPress={() => onSelectMethod(upi.id)}
+                      >
+                        <View style={styles.cardRow}>
+                          <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                            <Text style={styles.upiTiny}>UPI</Text>
+                          </View>
+                          <View style={styles.cardItemBody}>
+                            <Text style={styles.cardItemText}>{upi.upiId}</Text>
+                            <Text style={styles.cardItemSubtext}>
+                              Saved UPI ID
+                            </Text>
+                          </View>
+                          <SelectMark selected={selectedMethod === upi.id} />
+                        </View>
+                      </Pressable>
+                      {index < savedUpis.length - 1 ? (
+                        <View style={styles.divider} />
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            <Text style={styles.sectionTitle}>Tokajo Foods</Text>
+            <View style={styles.cardGroup}>
+              <Pressable style={styles.cardItem} onPress={handleWalletSelect}>
+                <View style={styles.cardRow}>
+                  <TokajoMark size={40} />
+                  <View style={[styles.cardItemBody, { marginLeft: 12 }]}>
+                    <Text style={styles.cardItemText}>Tokajo Foods Wallet</Text>
+                    <Text style={styles.cardItemSubtext}>
+                      {wallet
+                        ? `Available balance ₹${wallet.balance.toFixed(0)}`
+                        : 'Pay instantly from your Tokajo balance'}
+                    </Text>
+                  </View>
+                  <SelectMark selected={selectedMethod === 'wallet'} />
+                </View>
+              </Pressable>
             </View>
-          </View>
 
-          <Text style={styles.sectionTitle}>Preferred Payment</Text>
-          <View style={styles.cardGroup}>
-            <Pressable
-              style={styles.cardItem}
-              onPress={() => onSelectMethod('paytm_upi')}
-            >
-              <View style={styles.cardRow}>
-                <View style={styles.iconBox}>
-                  <Text style={styles.paytmText}>paytm</Text>
+            <Text style={styles.sectionTitle}>Pay by any UPI App</Text>
+            <View style={styles.cardGroup}>
+              <Pressable
+                style={styles.cardItem}
+                onPress={() => onSelectMethod('gpay')}
+              >
+                <View style={styles.cardRow}>
+                  <View style={styles.gpayIconBox}>
+                    <Image
+                      source={GPAY_LOGO}
+                      style={styles.gpayImage}
+                      contentFit="contain"
+                    />
+                  </View>
+                  <Text style={styles.cardItemText}>Google Pay</Text>
+                  <SelectMark selected={selectedMethod === 'gpay'} />
                 </View>
-                <Text style={styles.cardItemText}>Paytm UPI</Text>
-                {selectedMethod === 'paytm_upi' ? (
-                  <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                ) : (
-                  <Circle color="#D3D3D3" size={24} />
-                )}
-              </View>
-            </Pressable>
-          </View>
+              </Pressable>
+            </View>
 
-          {savedUpis.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>Saved UPI IDs</Text>
-              <View style={styles.cardGroup}>
-                {savedUpis.map((upi, index) => (
-                  <View key={upi.id}>
-                    <Pressable style={styles.cardItem} onPress={() => onSelectMethod(upi.id)}>
-                      <View style={styles.cardRow}>
-                        <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}>
-                          <Text style={{ fontSize: 10, fontWeight: 'bold' }}>UPI</Text>
-                        </View>
-                        <View style={styles.cardItemBody}>
-                          <Text style={styles.cardItemText}>{upi.upiId}</Text>
-                          <Text style={styles.cardItemSubtext}>Saved UPI ID</Text>
-                        </View>
-                        {selectedMethod === upi.id ? (
-                          <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                        ) : (
-                          <Circle color="#D3D3D3" size={24} />
-                        )}
+            <Text style={styles.sectionTitle}>Credit & Debit Cards</Text>
+            <View style={styles.cardGroup}>
+              {savedCards.map((card) => (
+                <View key={card.id}>
+                  <Pressable
+                    style={styles.cardItem}
+                    onPress={() => onSelectMethod(card.id)}
+                  >
+                    <View style={styles.cardRow}>
+                      <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                        <CreditCard color="#555" size={20} />
                       </View>
-                    </Pressable>
-                    {index < savedUpis.length - 1 && <View style={styles.divider} />}
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          <Text style={styles.sectionTitle}>Pay by any UPI App</Text>
-          <View style={styles.cardGroup}>
-            <Pressable style={styles.cardItem}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}>
-                  <Text style={styles.swiggyIconText}>TOKAJO</Text>
-                  <Text style={styles.swiggyIconUpi}>UPI</Text>
-                </View>
-                <View style={styles.cardItemBody}>
-                  <View style={styles.cardItemTitleRow}>
-                    <Text style={styles.cardItemText}>Unlock Tokajo Foods UPI</Text>
-                    <View style={styles.newBadge}><Text style={styles.newBadgeText}>NEW</Text></View>
-                  </View>
-                  <Text style={styles.cardItemSubtext}>Activate fastest UPI in 10 seconds</Text>
-                </View>
-                <ChevronRight color="#A0A0A0" size={20} />
-              </View>
-            </Pressable>
-            <View style={styles.divider} />
-            <Pressable style={styles.cardItem} onPress={() => onSelectMethod('gpay')}>
-              <View style={styles.cardRow}>
-                <View style={styles.iconBox}>
-                  <Text style={styles.gpayText}>GPay</Text>
-                </View>
-                <Text style={styles.cardItemText}>Google Pay</Text>
-                {selectedMethod === 'gpay' ? (
-                  <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                ) : (
-                  <Circle color="#D3D3D3" size={24} />
-                )}
-              </View>
-            </Pressable>
-          </View>
-
-          <Text style={styles.sectionTitle}>Credit & Debit Cards</Text>
-          <View style={styles.cardGroup}>
-            {savedCards.map((card) => (
-              <View key={card.id}>
-                <Pressable style={styles.cardItem} onPress={() => onSelectMethod(card.id)}>
-                  <View style={styles.cardRow}>
-                    <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}>
-                      <CreditCard color="#555" size={20} />
+                      <View style={styles.cardItemBody}>
+                        <Text style={styles.cardItemText}>
+                          {card.brand ? card.brand.toUpperCase() : 'CARD'} ••••{' '}
+                          {card.last4}
+                        </Text>
+                        <Text style={styles.cardItemSubtext}>
+                          Expires {card.expiryMonth}/{card.expiryYear}
+                        </Text>
+                      </View>
+                      <SelectMark selected={selectedMethod === card.id} />
                     </View>
-                    <View style={styles.cardItemBody}>
-                      <Text style={styles.cardItemText}>
-                        {card.brand ? card.brand.toUpperCase() : 'CARD'} •••• {card.last4}
-                      </Text>
-                      <Text style={styles.cardItemSubtext}>
-                        Expires {card.expiryMonth}/{card.expiryYear}
-                      </Text>
-                    </View>
-                    {selectedMethod === card.id ? (
-                      <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                    ) : (
-                      <Circle color="#D3D3D3" size={24} />
-                    )}
+                  </Pressable>
+                  <View style={styles.divider} />
+                </View>
+              ))}
+              <Pressable
+                style={styles.cardItem}
+                onPress={() => onSelectMethod('card')}
+              >
+                <View style={styles.cardRow}>
+                  <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                    <Plus color={ORANGE} size={20} />
                   </View>
-                </Pressable>
-                <View style={styles.divider} />
-              </View>
-            ))}
-            <Pressable style={styles.cardItem} onPress={() => onSelectMethod('card')}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}>
-                  <Plus color="#F15700" size={20} />
+                  <View style={styles.cardItemBody}>
+                    <Text style={[styles.cardItemText, { color: ORANGE }]}>
+                      Add New Card
+                    </Text>
+                    <Text style={styles.cardItemSubtext}>
+                      Save and Pay via Cards.
+                    </Text>
+                  </View>
+                  <SelectMark selected={selectedMethod === 'card'} />
                 </View>
-                <View style={styles.cardItemBody}>
-                  <Text style={[styles.cardItemText, { color: '#F15700' }]}>Add New Card</Text>
-                  <Text style={styles.cardItemSubtext}>Save and Pay via Cards.</Text>
-                </View>
-                {selectedMethod === 'card' ? (
-                  <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                ) : (
-                  <Circle color="#D3D3D3" size={24} />
-                )}
-              </View>
-            </Pressable>
-          </View>
+              </Pressable>
+            </View>
 
-          <Text style={styles.sectionTitle}>More Payment Options</Text>
-          <View style={styles.cardGroup}>
-            <Pressable style={styles.cardItem}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}><Receipt color="#555" size={18} /></View>
-                <Text style={styles.cardItemText}>Pay Later</Text>
-                <ChevronRight color="#A0A0A0" size={20} />
-              </View>
-            </Pressable>
-            <View style={styles.divider} />
-            <Pressable style={styles.cardItem}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}><CreditCard color="#555" size={18} /></View>
-                <View style={styles.cardItemBody}>
-                  <Text style={styles.cardItemText}>Pluxee</Text>
-                  <Text style={styles.cardItemSubtext}>Pluxee card valid only on Food & Instamart</Text>
-                </View>
-                <ChevronRight color="#A0A0A0" size={20} />
-              </View>
-            </Pressable>
-            <View style={styles.divider} />
-            <Pressable style={styles.cardItem} onPress={handleWalletSelect}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}><Wallet color="#555" size={18} /></View>
-                <View style={styles.cardItemBody}>
-                  <Text style={styles.cardItemText}>Wallets</Text>
-                  <Text style={styles.cardItemSubtext}>
-                    {wallet ? `Balance: ₹${wallet.balance.toFixed(0)}` : 'PhonePe, Amazon Pay & more'}
-                  </Text>
-                </View>
-                {selectedMethod === 'wallet' ? (
-                  <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                ) : (
+            <Text style={styles.sectionTitle}>More Payment Options</Text>
+            <View style={styles.cardGroup}>
+              <Pressable style={styles.cardItem}>
+                <View style={styles.cardRow}>
+                  <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                    <Receipt color="#555" size={18} />
+                  </View>
+                  <Text style={styles.cardItemText}>Pay Later</Text>
                   <ChevronRight color="#A0A0A0" size={20} />
-                )}
-              </View>
-            </Pressable>
-            <View style={styles.divider} />
-            <Pressable style={styles.cardItem}>
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1 }]}><Landmark color="#555" size={18} /></View>
-                <View style={styles.cardItemBody}>
-                  <Text style={styles.cardItemText}>Netbanking</Text>
-                  <Text style={styles.cardItemSubtext}>Select from a list of banks</Text>
                 </View>
-                <ChevronRight color="#A0A0A0" size={20} />
-              </View>
-            </Pressable>
-          </View>
+              </Pressable>
+              <View style={styles.divider} />
+              <Pressable style={styles.cardItem}>
+                <View style={styles.cardRow}>
+                  <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                    <Landmark color="#555" size={18} />
+                  </View>
+                  <View style={styles.cardItemBody}>
+                    <Text style={styles.cardItemText}>Netbanking</Text>
+                    <Text style={styles.cardItemSubtext}>
+                      Select from a list of banks
+                    </Text>
+                  </View>
+                  <ChevronRight color="#A0A0A0" size={20} />
+                </View>
+              </Pressable>
+            </View>
 
-          <Text style={styles.sectionTitle}>Pay on Delivery</Text>
-          <View style={styles.cardGroup}>
-            <Pressable
-              style={[styles.cardItem, selectedMethod !== 'cod' && { opacity: 0.8 }]}
-              onPress={() => onSelectMethod('cod')}
-            >
-              <View style={styles.cardRow}>
-                <View style={[styles.iconBox, { borderColor: '#E5E5E5', borderWidth: 1, backgroundColor: '#F9F9F9' }]}>
-                  <Truck color="#888" size={20} />
+            <Text style={styles.sectionTitle}>Pay on Delivery</Text>
+            <View style={styles.cardGroup}>
+              <Pressable
+                style={styles.cardItem}
+                onPress={() => onSelectMethod('cod')}
+              >
+                <View style={styles.cardRow}>
+                  <View style={[styles.iconBox, styles.iconBoxBorder]}>
+                    <Truck color="#888" size={20} />
+                  </View>
+                  <View style={styles.cardItemBody}>
+                    <Text style={styles.cardItemText}>
+                      Pay on Delivery (Cash/UPI)
+                    </Text>
+                    <Text style={styles.cardItemSubtext}>
+                      Pay with cash or UPI at your doorstep.
+                    </Text>
+                  </View>
+                  <SelectMark selected={selectedMethod === 'cod'} />
                 </View>
-                <View style={styles.cardItemBody}>
-                  <Text style={styles.cardItemText}>Pay on Delivery (Cash/UPI)</Text>
-                  <Text style={styles.cardItemSubtext}>Pay with cash or UPI at your doorstep.</Text>
-                </View>
-                {selectedMethod === 'cod' ? (
-                  <CheckCircle2 color="#00A160" fill="#00A160" size={24} />
-                ) : (
-                  <Circle color="#D3D3D3" size={24} />
-                )}
-              </View>
-            </Pressable>
-          </View>
+              </Pressable>
+            </View>
 
-          <View style={{ height: 40 }} />
-        </ScrollView>
+            <View style={{ height: 40 }} />
+          </ScrollView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -348,7 +432,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F4F5F7',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '92%',
@@ -359,7 +443,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: WHITE,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
@@ -370,26 +454,26 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
+    fontFamily: fonts.displayBold,
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1C',
+    color: TEXT,
     marginBottom: 2,
   },
   headerSubtitle: {
+    fontFamily: fonts.ui,
     fontSize: 12,
-    color: '#555555',
-    fontWeight: '500',
+    color: TEXT_SEC,
   },
   savingsText: {
-    color: '#00A160',
-    fontWeight: '600',
+    color: ORANGE,
+    fontFamily: fonts.uiBold,
   },
   scrollContent: {
     paddingBottom: 40,
   },
   addressStrip: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: WHITE,
     paddingHorizontal: 16,
     paddingVertical: 16,
     alignItems: 'center',
@@ -403,13 +487,13 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: '#60A5FA',
-    backgroundColor: '#FFFFFF',
+    borderColor: ORANGE,
+    backgroundColor: WHITE,
   },
   timelineLine: {
     width: 2,
     height: 20,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FED7AA',
     marginVertical: 2,
   },
   timelineDotBottom: {
@@ -417,8 +501,8 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: '#8B5CF6',
-    backgroundColor: '#FFFFFF',
+    borderColor: ORANGE_DARK,
+    backgroundColor: WHITE,
   },
   addressInfo: {
     flex: 1,
@@ -428,17 +512,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   addressName: {
-    fontWeight: '600',
-    color: '#1C1C1C',
+    fontFamily: fonts.uiBold,
+    color: TEXT,
   },
   addressDesc: {
-    color: '#777777',
+    color: TEXT_SEC,
+    fontFamily: fonts.ui,
   },
   offersBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: ORANGE_SOFT,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginVertical: 8,
@@ -451,93 +536,119 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#00A160',
+    backgroundColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   percentText: {
-    color: '#FFFFFF',
+    color: WHITE,
     fontSize: 14,
-    fontWeight: 'bold',
+    fontFamily: fonts.uiBold,
   },
   offersText: {
-    color: '#00A160',
-    fontWeight: '600',
+    color: ORANGE_DARK,
+    fontFamily: fonts.uiBold,
     fontSize: 14,
   },
-  swiggyUpiBanner: {
+  upiPromo: {
     flexDirection: 'row',
-    backgroundColor: '#1C5C50',
     marginHorizontal: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     marginTop: 8,
     marginBottom: 16,
     alignItems: 'center',
     justifyContent: 'space-between',
+    overflow: 'hidden',
   },
-  swiggyUpiContent: {
+  upiPromoContent: {
     flex: 1,
     paddingRight: 16,
   },
-  swiggyUpiTitle: {
-    color: '#FFFFFF',
+  upiPromoTitle: {
+    color: WHITE,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fonts.displayBold,
     marginBottom: 4,
   },
-  swiggyUpiDesc: {
-    color: '#A7F3D0',
+  upiPromoDesc: {
+    color: 'rgba(255,255,255,0.92)',
     fontSize: 12,
     marginBottom: 12,
     lineHeight: 16,
+    fontFamily: fonts.ui,
   },
-  swiggyUpiBtn: {
-    backgroundColor: '#FFFFFF',
+  upiPromoBtn: {
+    backgroundColor: WHITE,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     alignSelf: 'flex-start',
   },
-  swiggyUpiBtnText: {
-    color: '#1C5C50',
-    fontWeight: '700',
+  upiPromoBtnText: {
+    color: ORANGE,
+    fontFamily: fonts.uiBold,
     fontSize: 12,
   },
-  swiggyUpiLogo: {
+  tokajoUpiMark: {
     alignItems: 'center',
+    gap: 6,
   },
-  swiggyUpiLogoText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 14,
-    letterSpacing: 0.5,
+  upiBadge: {
+    backgroundColor: WHITE,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  swiggyUpiLogoBadge: {
-    color: '#1C5C50',
-    backgroundColor: '#FDE047',
-    paddingHorizontal: 4,
-    borderRadius: 2,
+  upiBadgeText: {
+    color: ORANGE,
     fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
+    fontFamily: fonts.uiBold,
+  },
+  paytmIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: '#00BAF2',
+  },
+  paytmImage: {
+    width: 40,
+    height: 40,
+  },
+  gpayIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginRight: 12,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gpayImage: {
+    width: 28,
+    height: 28,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333333',
+    fontSize: 15,
+    fontFamily: fonts.displayBold,
+    color: TEXT,
     marginHorizontal: 16,
     marginTop: 16,
     marginBottom: 12,
   },
   cardGroup: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: WHITE,
     borderRadius: 16,
     marginHorizontal: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#F0F0F0',
+    borderColor: BORDER,
   },
   cardItem: {
     padding: 16,
@@ -547,33 +658,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  paytmText: {
-    color: '#00BAF2',
-    fontWeight: '900',
-    fontSize: 12,
+  iconBoxBorder: {
+    borderColor: BORDER,
   },
-  gpayText: {
-    color: '#4285F4',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  swiggyIconText: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: '#333',
-  },
-  swiggyIconUpi: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: '#F15700',
+  upiTiny: {
+    fontSize: 10,
+    fontFamily: fonts.uiBold,
+    color: ORANGE,
   },
   cardItemBody: {
     flex: 1,
@@ -585,42 +686,30 @@ const styles = StyleSheet.create({
   cardItemText: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '600',
-    color: '#1C1C1C',
+    fontFamily: fonts.uiSemi,
+    color: TEXT,
   },
   cardItemSubtext: {
     fontSize: 12,
-    color: '#777777',
+    color: TEXT_SEC,
     marginTop: 2,
+    fontFamily: fonts.ui,
   },
   newBadge: {
-    backgroundColor: '#F15700',
-    paddingHorizontal: 4,
+    backgroundColor: ORANGE,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 8,
   },
   newBadgeText: {
-    color: '#FFFFFF',
+    color: WHITE,
     fontSize: 9,
-    fontWeight: 'bold',
-  },
-  payBtn: {
-    backgroundColor: '#00A160',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
-    marginLeft: 48,
-  },
-  payBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
+    fontFamily: fonts.uiBold,
   },
   divider: {
     height: 1,
     backgroundColor: '#F0F0F0',
-    marginLeft: 64,
-  }
+    marginLeft: 68,
+  },
 });

@@ -5,11 +5,11 @@ import Animated, {
   useSharedValue,
   withDelay,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import { useEffect } from 'react';
 
-import { authTheme } from '@/constants/auth-theme';
+import { fonts } from '@/constants/typography';
+import { normalizeOrderStatus } from '@/lib/order/types';
 
 export type OrderStatus =
   | 'pending'
@@ -29,9 +29,15 @@ type TimelineStep = {
 };
 
 type Props = {
-  currentStatus: OrderStatus;
+  currentStatus: string;
   timestamps?: Record<string, string | undefined>;
 };
+
+const ORANGE = '#FF6A00';
+const INK = '#111827';
+const MUTED = '#6B7280';
+const LINE = '#E5E7EB';
+const WHITE = '#FFFFFF';
 
 const STATUS_ORDER: OrderStatus[] = [
   'pending',
@@ -42,64 +48,98 @@ const STATUS_ORDER: OrderStatus[] = [
   'delivered',
 ];
 
-export function OrderStatusTimeline({ currentStatus, timestamps = {} }: Props) {
+/** Map API statuses onto the timeline steps */
+export function mapToTimelineStatus(status?: string): OrderStatus {
+  const s = normalizeOrderStatus(status);
+  if (['cancelled', 'canceled'].includes(s)) return 'cancelled';
+  if (['rejected', 'failed'].includes(s)) return 'rejected';
+  if (['delivered', 'completed'].includes(s)) return 'delivered';
+  if (
+    s.includes('out') ||
+    s.includes('way') ||
+    s.includes('pick') ||
+    s === 'out_for_delivery' ||
+    s === 'on_the_way'
+  ) {
+    return 'out-for-delivery';
+  }
+  if (s.includes('ready')) return 'ready';
+  if (s.includes('prepar')) return 'preparing';
+  if (
+    s.includes('accept') ||
+    s.includes('confirm') ||
+    s === 'confirmed'
+  ) {
+    return 'accepted';
+  }
+  return 'pending';
+}
+
+export function OrderStatusTimeline({
+  currentStatus,
+  timestamps = {},
+}: Props) {
+  const mapped = mapToTimelineStatus(currentStatus);
   const steps: TimelineStep[] = [
     {
       status: 'pending',
-      label: 'Order Placed',
-      icon: <Clock color="#FFFFFF" size={16} />,
+      label: 'Order placed',
+      icon: <Clock color={WHITE} size={15} strokeWidth={2.4} />,
       timestamp: timestamps.pending || timestamps.createdAt,
     },
     {
       status: 'accepted',
-      label: 'Order Accepted',
-      icon: <Check color="#FFFFFF" size={16} />,
+      label: 'Order confirmed',
+      icon: <Check color={WHITE} size={15} strokeWidth={2.6} />,
       timestamp: timestamps.accepted || timestamps.acceptedAt,
     },
     {
       status: 'preparing',
-      label: 'Being Prepared',
-      icon: <Package color="#FFFFFF" size={16} />,
+      label: 'Preparing',
+      icon: <Package color={WHITE} size={15} strokeWidth={2.4} />,
       timestamp: timestamps.preparing || timestamps.preparingAt,
     },
     {
       status: 'ready',
-      label: 'Ready for Pickup',
-      icon: <CheckCircle2 color="#FFFFFF" size={16} />,
+      label: 'Ready',
+      icon: <CheckCircle2 color={WHITE} size={15} strokeWidth={2.4} />,
       timestamp: timestamps.ready || timestamps.readyAt,
     },
     {
       status: 'out-for-delivery',
-      label: 'Out for Delivery',
-      icon: <Truck color="#FFFFFF" size={16} />,
-      timestamp: timestamps['out-for-delivery'] || timestamps.outForDeliveryAt,
+      label: 'Out for delivery',
+      icon: <Truck color={WHITE} size={15} strokeWidth={2.4} />,
+      timestamp:
+        timestamps['out-for-delivery'] ||
+        timestamps.out_for_delivery ||
+        timestamps.outForDeliveryAt,
     },
     {
       status: 'delivered',
       label: 'Delivered',
-      icon: <CheckCircle2 color="#FFFFFF" size={16} />,
+      icon: <CheckCircle2 color={WHITE} size={15} strokeWidth={2.4} />,
       timestamp: timestamps.delivered || timestamps.deliveredAt,
     },
   ];
 
-  const currentIndex = STATUS_ORDER.indexOf(currentStatus);
-  const isRejected = currentStatus === 'rejected';
-  const isCancelled = currentStatus === 'cancelled';
+  const currentIndex = Math.max(0, STATUS_ORDER.indexOf(mapped));
+  const isRejected = mapped === 'rejected';
+  const isCancelled = mapped === 'cancelled';
 
   if (isRejected || isCancelled) {
     return (
       <View style={styles.container}>
         <View style={styles.errorCard}>
           <View style={[styles.errorIcon, isRejected && styles.rejectedIcon]}>
-            <X color="#FFFFFF" size={24} />
+            <X color={WHITE} size={22} strokeWidth={2.5} />
           </View>
           <Text style={styles.errorTitle}>
-            {isRejected ? 'Order Rejected' : 'Order Cancelled'}
+            {isRejected ? 'Order rejected' : 'Order cancelled'}
           </Text>
           <Text style={styles.errorSubtitle}>
             {isRejected
-              ? 'The restaurant cannot fulfill this order at the moment'
-              : 'This order has been cancelled'}
+              ? 'The restaurant could not fulfill this order'
+              : 'This order was cancelled'}
           </Text>
         </View>
       </View>
@@ -108,8 +148,7 @@ export function OrderStatusTimeline({ currentStatus, timestamps = {} }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Order Status</Text>
-      
+      <Text style={styles.title}>Order status</Text>
       <View style={styles.timeline}>
         {steps.map((step, index) => {
           const isCompleted = index <= currentIndex;
@@ -145,25 +184,18 @@ function TimelineItem({
   isLast: boolean;
   index: number;
 }) {
-  const scale = useSharedValue(0);
-  const opacity = useSharedValue(0);
+  const appear = useSharedValue(0);
 
   useEffect(() => {
-    if (isCompleted) {
-      scale.value = withDelay(
-        index * 150,
-        withSpring(1, { damping: 12, stiffness: 100 })
-      );
-      opacity.value = withDelay(index * 150, withTiming(1, { duration: 300 }));
-    }
-  }, [isCompleted, index]);
+    appear.value = withDelay(
+      index * 90,
+      withSpring(1, { damping: 14, stiffness: 120 })
+    );
+  }, [appear, index]);
 
-  const animatedIconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const animatedTextStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: 0.4 + appear.value * 0.6,
+    transform: [{ translateY: (1 - appear.value) * 6 }],
   }));
 
   const timestamp = step.timestamp
@@ -174,30 +206,34 @@ function TimelineItem({
     : null;
 
   return (
-    <View style={styles.timelineItem}>
+    <Animated.View style={[styles.timelineItem, animatedStyle]}>
       <View style={styles.timelineLeft}>
-        <Animated.View
+        <View
           style={[
             styles.iconContainer,
             isCompleted && styles.iconContainerActive,
             isCurrent && styles.iconContainerCurrent,
-            animatedIconStyle,
           ]}
         >
-          {step.icon}
-        </Animated.View>
-        
-        {!isLast && (
+          {isCompleted ? (
+            step.icon
+          ) : (
+            <View style={styles.idleDot} />
+          )}
+        </View>
+
+        {!isLast ? (
           <View
             style={[
               styles.connector,
-              isCompleted && styles.connectorActive,
+              isCompleted && !isCurrent && styles.connectorActive,
+              isCurrent && styles.connectorCurrent,
             ]}
           />
-        )}
+        ) : null}
       </View>
 
-      <Animated.View style={[styles.timelineContent, animatedTextStyle]}>
+      <View style={styles.timelineContent}>
         <Text
           style={[
             styles.stepLabel,
@@ -207,102 +243,111 @@ function TimelineItem({
         >
           {step.label}
         </Text>
-        
-        {timestamp && isCompleted && (
+
+        {timestamp && isCompleted ? (
           <Text style={styles.timestamp}>{timestamp}</Text>
-        )}
-        
-        {isCurrent && (
+        ) : null}
+
+        {isCurrent ? (
           <View style={styles.currentBadge}>
             <View style={styles.pulseDot} />
-            <Text style={styles.currentText}>In Progress</Text>
+            <Text style={styles.currentText}>In progress</Text>
           </View>
-        )}
-      </Animated.View>
-    </View>
+        ) : null}
+      </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: authTheme.card,
-    borderRadius: 16,
+    backgroundColor: WHITE,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: authTheme.cardBorder,
-    padding: 20,
+    borderColor: LINE,
+    padding: 18,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: authTheme.text,
-    marginBottom: 20,
+    fontFamily: fonts.displayBold,
+    fontSize: 17,
+    color: INK,
+    marginBottom: 18,
+    letterSpacing: -0.2,
   },
   timeline: {
     gap: 0,
   },
   timelineItem: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 14,
   },
   timelineLeft: {
     alignItems: 'center',
+    width: 36,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: authTheme.surface,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: authTheme.cardBorder,
+    borderColor: LINE,
     zIndex: 2,
   },
   iconContainerActive: {
-    backgroundColor: authTheme.brand,
-    borderColor: authTheme.brand,
+    backgroundColor: ORANGE,
+    borderColor: ORANGE,
   },
   iconContainerCurrent: {
-    backgroundColor: authTheme.brand,
-    borderColor: authTheme.brand,
-    shadowColor: authTheme.brand,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    backgroundColor: ORANGE,
+    borderColor: '#FFD7B8',
+    borderWidth: 3,
+  },
+  idleDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#D1D5DB',
   },
   connector: {
     width: 2,
     flex: 1,
-    minHeight: 40,
-    backgroundColor: authTheme.cardBorder,
+    minHeight: 28,
+    backgroundColor: LINE,
     marginVertical: 4,
     zIndex: 1,
   },
   connectorActive: {
-    backgroundColor: authTheme.brand,
+    backgroundColor: ORANGE,
+  },
+  connectorCurrent: {
+    backgroundColor: '#FFD7B8',
   },
   timelineContent: {
     flex: 1,
-    paddingVertical: 8,
+    paddingTop: 6,
+    paddingBottom: 18,
   },
   stepLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: authTheme.textMuted,
-    marginBottom: 4,
+    fontFamily: fonts.uiSemi,
+    fontSize: 14,
+    color: MUTED,
   },
   stepLabelActive: {
-    color: authTheme.text,
+    color: INK,
+    fontFamily: fonts.uiBold,
   },
   stepLabelCurrent: {
-    color: authTheme.brand,
-    fontWeight: '700',
+    color: ORANGE,
+    fontFamily: fonts.displayBold,
   },
   timestamp: {
+    fontFamily: fonts.ui,
     fontSize: 12,
-    color: authTheme.textMuted,
-    marginTop: 2,
+    color: MUTED,
+    marginTop: 3,
   },
   currentBadge: {
     flexDirection: 'row',
@@ -311,42 +356,43 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   pulseDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
-    backgroundColor: authTheme.brand,
+    backgroundColor: ORANGE,
   },
   currentText: {
+    fontFamily: fonts.uiBold,
     fontSize: 12,
-    fontWeight: '600',
-    color: authTheme.brand,
+    color: ORANGE,
   },
   errorCard: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 12,
   },
   errorIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#DC2626',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   rejectedIcon: {
-    backgroundColor: '#F59E0B',
+    backgroundColor: '#DC2626',
   },
   errorTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: authTheme.text,
-    marginBottom: 8,
+    fontFamily: fonts.displayBold,
+    fontSize: 17,
+    color: INK,
   },
   errorSubtitle: {
-    fontSize: 14,
-    color: authTheme.textMuted,
+    marginTop: 6,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    color: MUTED,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
   },
 });

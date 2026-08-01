@@ -71,10 +71,29 @@ async function request<T>(
       }
 
       const data = error.response.data as
-        | { message?: string; error?: string }
+        | {
+            message?: string | string[];
+            error?: string;
+            errors?: Record<string, string[] | string> | string[];
+          }
         | undefined;
-      const message =
-        data?.message || data?.error || `Request failed (${error.response.status})`;
+
+      let message =
+        (Array.isArray(data?.message)
+          ? data?.message.join('; ')
+          : data?.message) ||
+        data?.error ||
+        `Request failed (${error.response.status})`;
+
+      if (data?.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+        const parts = Object.entries(data.errors).map(([key, val]) => {
+          const text = Array.isArray(val) ? val.join(', ') : String(val);
+          return `${key}: ${text}`;
+        });
+        if (parts.length) message = parts.join('; ');
+      } else if (Array.isArray(data?.errors)) {
+        message = data.errors.join('; ');
+      }
 
       if (message.toLowerCase().includes('csrf')) {
         throw new Error(
@@ -175,14 +194,120 @@ export function mapOrder(data: Record<string, unknown>): Order {
       ? asRecord(data.restaurant)
       : undefined;
 
-  const total = Number(
-    data.total ??
-      data.grandTotal ??
-      data.totalAmount ??
-      data.amount ??
-      data.payableAmount ??
-      0
-  );
+  const pricing =
+    data.pricing && typeof data.pricing === 'object'
+      ? asRecord(data.pricing)
+      : data.bill && typeof data.bill === 'object'
+        ? asRecord(data.bill)
+        : undefined;
+
+  const pickNum = (...vals: unknown[]) => {
+    for (const v of vals) {
+      const n = typeof v === 'number' ? v : Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+  };
+
+  const subtotal =
+    pickNum(
+      data.subtotal,
+      data.itemTotal,
+      data.itemsTotal,
+      pricing?.subtotal,
+      pricing?.itemTotal
+    ) ??
+    items.reduce((s, i) => s + i.price * i.quantity, 0);
+
+  const deliveryFee =
+    pickNum(
+      data.deliveryFee,
+      data.deliveryCharge,
+      data.shippingFee,
+      pricing?.deliveryFee,
+      pricing?.deliveryCharge
+    ) ?? 0;
+
+  const discount =
+    pickNum(
+      data.discount,
+      data.discountAmount,
+      data.couponDiscount,
+      data.promoDiscount,
+      pricing?.discount,
+      pricing?.couponDiscount
+    ) ?? 0;
+
+  const tip =
+    pickNum(
+      data.tip,
+      data.deliveryTip,
+      data.tipAmount,
+      pricing?.tip,
+      pricing?.deliveryTip
+    ) ?? 0;
+
+  let tax =
+    pickNum(
+      data.tax,
+      data.taxes,
+      data.taxAmount,
+      data.gst,
+      data.gstAmount,
+      data.taxesAndCharges,
+      data.taxAndCharges,
+      pricing?.tax,
+      pricing?.taxes,
+      pricing?.gst,
+      pricing?.gstAmount,
+      pricing?.taxesAndCharges
+    ) ?? 0;
+
+  const chargesRaw = data.charges ?? pricing?.charges;
+  if (Array.isArray(chargesRaw) && tax <= 0) {
+    tax = chargesRaw.reduce((sum, row) => {
+      const c = asRecord(row);
+      const label = String(c.name ?? c.type ?? c.label ?? '').toLowerCase();
+      const amount = pickNum(c.amount, c.value, c.price) ?? 0;
+      if (
+        label.includes('tax') ||
+        label.includes('gst') ||
+        label.includes('vat')
+      ) {
+        return sum + amount;
+      }
+      return sum;
+    }, 0);
+  }
+
+  let total =
+    pickNum(
+      data.total,
+      data.grandTotal,
+      data.totalAmount,
+      data.amount,
+      data.payableAmount,
+      data.toPay,
+      pricing?.total,
+      pricing?.grandTotal,
+      pricing?.payableAmount
+    ) ?? subtotal + deliveryFee + tax + tip - discount;
+
+  // Derive tax from grand total when API omits an explicit tax line
+  if (tax <= 0 && Number.isFinite(total) && total > 0) {
+    const withoutTax = subtotal + deliveryFee + tip - discount;
+    const implied = Math.round((total - withoutTax) * 100) / 100;
+    if (implied > 0.009) tax = implied;
+  }
+
+  // Tokajo default: 5% tax on item total when still missing
+  if (tax <= 0 && subtotal > 0) {
+    tax = Math.round(subtotal * 0.05 * 100) / 100;
+    const withoutTax = subtotal + deliveryFee + tip - discount;
+    if (Math.abs(total - withoutTax) < 0.02) {
+      total = Math.round((withoutTax + tax) * 100) / 100;
+    }
+  }
 
   return {
     id: String(data._id ?? data.id ?? ''),
@@ -197,11 +322,18 @@ export function mapOrder(data: Record<string, unknown>): Order {
     ) || undefined,
     status: String(data.status ?? data.orderStatus ?? 'pending'),
     items,
-    subtotal: Number(data.subtotal ?? data.itemTotal ?? 0) || undefined,
-    deliveryFee: Number(data.deliveryFee ?? data.deliveryCharge ?? 0) || undefined,
-    tax: Number(data.tax ?? data.taxes ?? 0) || undefined,
-    discount: Number(data.discount ?? data.discountAmount ?? 0) || undefined,
-    tip: Number(data.tip ?? data.deliveryTip ?? 0) || undefined,
+    subtotal: Number.isFinite(subtotal) ? subtotal : undefined,
+    deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : undefined,
+    tax: Number.isFinite(tax) ? tax : undefined,
+    discount: Number.isFinite(discount) ? discount : undefined,
+    tip: Number.isFinite(tip) ? tip : undefined,
+    couponCode:
+      (data.couponCode as string) ||
+      (data.promoCode as string) ||
+      (data.voucherCode as string) ||
+      ((data.coupon as { code?: string } | undefined)?.code) ||
+      ((data.promo as { code?: string } | undefined)?.code) ||
+      undefined,
     total: Number.isFinite(total) ? total : undefined,
     paymentMethod: (data.paymentMethod as string) || (data.paymentMode as string) || undefined,
     paymentStatus: (data.paymentStatus as string) || undefined,
@@ -342,8 +474,12 @@ export const orderApi = {
         deliveryAddress,
         paymentMethod: payload.paymentMethod,
         specialInstructions: payload.specialInstructions,
-        tip: payload.tip,
+        tip: payload.tip ?? 0,
+        deliveryTip: payload.tip ?? 0,
+        tipAmount: payload.tip ?? 0,
         scheduledFor: payload.scheduledFor,
+        deliveryType: payload.deliveryType,
+        fulfillmentType: payload.deliveryType,
       });
 
       bodies.push({
@@ -353,9 +489,12 @@ export const orderApi = {
         deliveryAddress,
         paymentMethod: payload.paymentMethod,
         notes: payload.specialInstructions,
-        tip: payload.tip,
+        tip: payload.tip ?? 0,
+        deliveryTip: payload.tip ?? 0,
         scheduledFor: payload.scheduledFor,
         contactPhone: phone,
+        deliveryType: payload.deliveryType,
+        fulfillmentType: payload.deliveryType,
       });
     }
 
@@ -521,31 +660,76 @@ export const orderApi = {
     orderId: string,
     payload: ReportIssuePayload
   ): Promise<OrderIssue> => {
-    const bodies = [
-      payload,
+    const id = String(orderId ?? '').trim();
+    if (!id) {
+      throw new Error('Missing order id. Go back and open Help from the order again.');
+    }
+
+    const type = String(payload.type ?? '').trim();
+    const description = String(payload.description ?? '').trim();
+    if (!type) throw new Error('Please select an issue type.');
+    if (!description) throw new Error('Please describe the issue.');
+
+    // Backend validates orderId + type in the body (not only the URL).
+    const bodies: Record<string, unknown>[] = [
       {
-        issueType: payload.type,
-        type: payload.type,
-        description: payload.description,
+        orderId: id,
+        type,
+        issueType: type,
+        category: type,
+        description,
+        message: description,
+        details: description,
+        ...(payload.attachments?.length
+          ? { attachments: payload.attachments }
+          : {}),
       },
       {
-        category: payload.type,
-        message: payload.description,
-        description: payload.description,
+        orderId: id,
+        type,
+        description,
+      },
+      {
+        order_id: id,
+        orderId: id,
+        issue_type: type,
+        type,
+        description,
       },
     ];
 
+    // Also try a top-level issues endpoint some backends use
+    const paths = [
+      `${ORDERS_BASE}/${encodeURIComponent(id)}/issues`,
+      `${ORDER_SERVICE}/issues`,
+      `${ORDERS_BASE}/issues`,
+    ];
+
     let lastError: Error | null = null;
-    for (const body of bodies) {
-      try {
-        const res = await request<Record<string, unknown>>(
-          `${ORDERS_BASE}/${orderId}/issues`,
-          { method: 'POST', body }
-        );
-        return mapIssue(asRecord(res.data ?? res));
-      } catch (error) {
-        lastError =
-          error instanceof Error ? error : new Error('Failed to report issue');
+    for (const path of paths) {
+      for (const body of bodies) {
+        try {
+          const res = await request<Record<string, unknown>>(path, {
+            method: 'POST',
+            body,
+          });
+          return mapIssue(asRecord(res.data ?? res));
+        } catch (error) {
+          lastError =
+            error instanceof Error
+              ? error
+              : new Error('Failed to report issue');
+          // Hard auth / not found — don't keep retrying variants forever
+          const msg = lastError.message.toLowerCase();
+          if (
+            msg.includes('unauthorized') ||
+            msg.includes('forbidden') ||
+            msg.includes('401') ||
+            msg.includes('403')
+          ) {
+            throw lastError;
+          }
+        }
       }
     }
     throw lastError ?? new Error('Failed to report issue');
