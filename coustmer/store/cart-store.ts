@@ -17,6 +17,7 @@ type CartRestaurant = {
   id: string;
   name: string;
   imageUrl?: string;
+  deliveryTime?: string;
 };
 
 export type ReplaceCartPromptData = {
@@ -241,14 +242,19 @@ export const useCartStore = create<CartState>()(
 
       estimatedTotal: () => {
         const state = get();
-        if (typeof state.serverTotal === 'number') return state.serverTotal;
+        if (typeof state.serverTotal === 'number' && Number.isFinite(state.serverTotal)) {
+          return Math.max(0, state.serverTotal);
+        }
         return Math.max(
           0,
-          state.subtotal() +
-            state.tip +
-            state.deliveryFee +
-            state.tax -
-            state.discount
+          Math.round(
+            (state.subtotal() +
+              state.tip +
+              state.deliveryFee +
+              state.tax -
+              state.discount) *
+              100
+          ) / 100
         );
       },
     }),

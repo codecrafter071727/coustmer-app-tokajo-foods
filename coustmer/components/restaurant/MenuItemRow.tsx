@@ -4,6 +4,10 @@ import { Heart, Minus, Plus } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { VegBadge } from '@/components/restaurant/MenuBadges';
+import {
+  decrementCartItem,
+  incrementCartItem,
+} from '@/lib/order/add-to-cart';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -21,8 +25,6 @@ export function MenuItemRow({ item, onPress, onAdd }: Props) {
       s.items.find((i) => i.id === item.id || i.menuItemId === item.id)
         ?.quantity || 0
   );
-  const increment = useCartStore((s) => s.increment);
-  const decrement = useCartStore((s) => s.decrement);
 
   const handleAdd = (e: any) => {
     e.stopPropagation?.();
@@ -30,14 +32,14 @@ export function MenuItemRow({ item, onPress, onAdd }: Props) {
     if (quantity === 0 && onAdd) {
       onAdd();
     } else {
-      increment(item.id);
+      void incrementCartItem(item.id);
     }
   };
 
   const handleDecrement = (e: any) => {
     e.stopPropagation?.();
     playHapticFeedback();
-    decrement(item.id);
+    void decrementCartItem(item.id);
   };
 
   const currentPrice = item.price;

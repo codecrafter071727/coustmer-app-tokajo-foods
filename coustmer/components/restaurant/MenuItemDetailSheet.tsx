@@ -13,7 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { VegBadge } from '@/components/restaurant/MenuBadges';
-import { addMenuItemToCart } from '@/lib/order/add-to-cart';
+import {
+  addMenuItemToCart,
+  decrementCartItem,
+  incrementCartItem,
+} from '@/lib/order/add-to-cart';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -46,8 +50,6 @@ export function MenuItemDetailSheet({
       s.items.find((i) => i.id === item?.id || i.menuItemId === item?.id)
         ?.quantity || 0
   );
-  const increment = useCartStore((s) => s.increment);
-  const decrement = useCartStore((s) => s.decrement);
 
   const handleAdd = () => {
     if (!item) return;
@@ -60,14 +62,14 @@ export function MenuItemDetailSheet({
         imageUrl: restaurantImageUrl,
       });
     } else {
-      increment(item.id);
+      void incrementCartItem(item.id);
     }
   };
 
   const handleDecrement = () => {
     if (!item) return;
     playHapticFeedback();
-    decrement(item.id);
+    void decrementCartItem(item.id);
   };
 
   if (!item) return null;

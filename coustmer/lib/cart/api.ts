@@ -191,6 +191,15 @@ function mapCoupon(raw: unknown): CartCoupon | null {
   };
 }
 
+function pickFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (value === undefined || value === null || value === '') continue;
+    const n = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
 export function mapCart(data: unknown): Cart {
   const raw = asRecord(data);
   const nestedCart =
@@ -207,25 +216,109 @@ export function mapCart(data: unknown): Cart {
       ? asRecord(nestedCart.restaurant)
       : undefined;
 
-  const subtotal = Number(
-    nestedCart.subtotal ??
-      nestedCart.itemTotal ??
-      items.reduce((s, i) => s + i.price * i.quantity, 0)
+  const pricing = asRecord(
+    nestedCart.pricing ??
+      nestedCart.bill ??
+      nestedCart.summary ??
+      nestedCart.charges ??
+      nestedCart.amounts ??
+      {}
   );
-  const tip = Number(nestedCart.tip ?? nestedCart.deliveryTip ?? 0);
-  const discount = Number(
-    nestedCart.discount ?? nestedCart.couponDiscount ?? 0
-  );
-  const deliveryFee = Number(
-    nestedCart.deliveryFee ?? nestedCart.deliveryCharge ?? 0
-  );
-  const tax = Number(nestedCart.tax ?? nestedCart.taxes ?? 0);
-  const total = Number(
-    nestedCart.total ??
-      nestedCart.grandTotal ??
-      nestedCart.payableAmount ??
-      subtotal + tip + deliveryFee + tax - discount
-  );
+
+  const itemsSubtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+
+  const subtotal =
+    pickFiniteNumber(
+      nestedCart.subtotal,
+      nestedCart.itemTotal,
+      nestedCart.itemsTotal,
+      pricing.subtotal,
+      pricing.itemTotal
+    ) ?? itemsSubtotal;
+
+  const tip =
+    pickFiniteNumber(
+      nestedCart.tip,
+      nestedCart.deliveryTip,
+      nestedCart.riderTip,
+      pricing.tip,
+      pricing.deliveryTip
+    ) ?? 0;
+
+  const discount =
+    pickFiniteNumber(
+      nestedCart.discount,
+      nestedCart.couponDiscount,
+      nestedCart.promoDiscount,
+      pricing.discount,
+      pricing.couponDiscount
+    ) ?? 0;
+
+  const deliveryFee =
+    pickFiniteNumber(
+      nestedCart.deliveryFee,
+      nestedCart.deliveryCharge,
+      nestedCart.shippingFee,
+      pricing.deliveryFee,
+      pricing.deliveryCharge
+    ) ?? 0;
+
+  let tax =
+    pickFiniteNumber(
+      nestedCart.tax,
+      nestedCart.taxes,
+      nestedCart.taxAmount,
+      nestedCart.gst,
+      nestedCart.gstAmount,
+      nestedCart.taxesAndCharges,
+      nestedCart.taxAndCharges,
+      pricing.tax,
+      pricing.taxes,
+      pricing.gst,
+      pricing.taxesAndCharges
+    ) ?? 0;
+
+  // Sum named charge rows if present (API sometimes returns charges[])
+  const chargesRaw = nestedCart.charges ?? pricing.charges;
+  if (Array.isArray(chargesRaw) && tax <= 0) {
+    const taxLike = chargesRaw.reduce((sum, row) => {
+      const c = asRecord(row);
+      const label = String(c.name ?? c.type ?? c.label ?? '').toLowerCase();
+      const amount = pickFiniteNumber(c.amount, c.value, c.price) ?? 0;
+      if (
+        label.includes('tax') ||
+        label.includes('gst') ||
+        label.includes('vat')
+      ) {
+        return sum + amount;
+      }
+      return sum;
+    }, 0);
+    if (taxLike > 0) tax = taxLike;
+  }
+
+  const total =
+    pickFiniteNumber(
+      nestedCart.total,
+      nestedCart.grandTotal,
+      nestedCart.payableAmount,
+      nestedCart.toPay,
+      nestedCart.amountPayable,
+      pricing.total,
+      pricing.grandTotal,
+      pricing.payableAmount
+    ) ?? subtotal + tip + deliveryFee + tax - discount;
+
+  // If tax line missing but grand total includes it, derive from API total
+  if (
+    tax <= 0 &&
+    Number.isFinite(total) &&
+    total > 0
+  ) {
+    const withoutTax = subtotal + deliveryFee + tip - discount;
+    const implied = Math.round((total - withoutTax) * 100) / 100;
+    if (implied > 0.009) tax = implied;
+  }
 
   return {
     id: String(nestedCart._id ?? nestedCart.id ?? nestedCart.cartId ?? '') || undefined,
@@ -251,9 +344,9 @@ export function mapCart(data: unknown): Cart {
     subtotal: Number.isFinite(subtotal) ? subtotal : 0,
     tip: Number.isFinite(tip) ? tip : 0,
     discount: Number.isFinite(discount) ? discount : 0,
-    deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : undefined,
-    tax: Number.isFinite(tax) ? tax : undefined,
-    total: Number.isFinite(total) ? total : subtotal + tip - discount,
+    deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
+    tax: Number.isFinite(tax) ? tax : 0,
+    total: Number.isFinite(total) ? total : subtotal + tip + deliveryFee - discount,
     coupon: mapCoupon(nestedCart.coupon ?? nestedCart.promo ?? nestedCart.appliedCoupon),
     specialInstructions:
       (nestedCart.specialInstructions as string) ||
@@ -498,9 +591,14 @@ export const cartApi = {
 
   /** PUT /cart/tip */
   updateTip: async (payload: UpdateTipPayload): Promise<Cart> => {
+    const tip = Number(payload.tip) || 0;
     return mutateCart(`${CART_BASE}/tip`, 'PUT', [
-      { tip: payload.tip, amount: payload.amount ?? payload.tip },
-      { deliveryTip: payload.tip },
+      { tip },
+      { amount: tip },
+      { tipAmount: tip },
+      { deliveryTip: tip },
+      { tip: tip, amount: tip },
+      { data: { tip } },
     ]);
   },
 

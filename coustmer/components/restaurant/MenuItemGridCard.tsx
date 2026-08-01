@@ -16,6 +16,10 @@ import Animated, {
 
 import { VegBadge } from '@/components/restaurant/MenuBadges';
 import { authTheme } from '@/constants/auth-theme';
+import {
+  decrementCartItem,
+  incrementCartItem,
+} from '@/lib/order/add-to-cart';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -44,8 +48,6 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
         (i) => i.id === item.id || i.menuItemId === item.id
       )?.quantity || 0
   );
-  const increment = useCartStore((s) => s.increment);
-  const decrement = useCartStore((s) => s.decrement);
 
   useEffect(() => {
     if (highlighted) {
@@ -97,7 +99,7 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
                   onPress={(e) => {
                     e.stopPropagation?.();
                     playHapticFeedback();
-                    decrement(item.id);
+                    void decrementCartItem(item.id);
                   }}
                 >
                   <Minus color="#FFFFFF" size={14} strokeWidth={3} />
@@ -109,7 +111,7 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
                   onPress={(e) => {
                     e.stopPropagation?.();
                     playHapticFeedback();
-                    increment(item.id);
+                    void incrementCartItem(item.id);
                   }}
                 >
                   <Plus color="#FFFFFF" size={14} strokeWidth={3} />

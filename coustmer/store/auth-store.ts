@@ -97,14 +97,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { cartApi } = await import('@/lib/cart/api');
       const { applyServerCartToStore } = await import('@/lib/cart/sync');
+      const { clearCartSessionId } = await import('@/lib/cart/session');
       const merged = await cartApi.merge();
       applyServerCartToStore(merged);
+      // Drop guest session so a future anonymous cart starts clean
+      await clearCartSessionId();
     } catch {
       try {
         const { cartApi } = await import('@/lib/cart/api');
         const { applyServerCartToStore } = await import('@/lib/cart/sync');
+        const { clearCartSessionId } = await import('@/lib/cart/session');
         const cart = await cartApi.getCart();
         applyServerCartToStore(cart);
+        await clearCartSessionId();
       } catch {
         // keep local cart
       }
@@ -253,6 +258,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearSession: async () => {
     useDeliveryLocationStore.getState().unbindUser();
+    try {
+      const { clearCartSessionId } = await import('@/lib/cart/session');
+      const { useCartStore } = await import('@/store/cart-store');
+      await clearCartSessionId();
+      useCartStore.getState().clearCart();
+    } catch {
+      // ignore cart cleanup failures
+    }
     await clearAuthStorage();
     set({ user: null, token: null });
   },

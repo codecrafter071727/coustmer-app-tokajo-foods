@@ -3,13 +3,14 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
-  ChevronRight,
+  Bike,
+  MapPin,
   Minus,
   MoreVertical,
   Plus,
-  Star,
-  Tag,
   ShoppingBag,
+  Store,
+  Tag,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
@@ -31,15 +32,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SmoothPressable } from '@/components/common/SmoothPressable';
 import { fonts } from '@/constants/typography';
 import {
+  useApplyCoupon,
   useCart,
   useClearRemoteCart,
-  useRemoveCartItem,
+  useRemoveCoupon,
   useSaveCart,
   useUpdateCartDeliveryAddress,
-  useUpdateCartItem,
+  useUpdateCartDeliveryType,
+  useUpdateCartTip,
   useValidateCart,
 } from '@/lib/cart/hooks';
-
+import { applyServerCartToStore } from '@/lib/cart/sync';
+import { syncCartItemQuantity } from '@/lib/order/add-to-cart';
+import { DeliveryPreferences } from '@/components/order/DeliveryPreferences';
 import { useCreateOrder } from '@/lib/order/hooks';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
@@ -59,27 +64,17 @@ import { OrderPlacementModal, PlacementPhase } from '@/components/order/OrderPla
 import { PaymentGatewayWebView } from '@/components/payment/PaymentGatewayWebView';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────
-const BG = '#FFFFFF';
+const BG = '#F4F5F7';
 const WHITE = '#FFFFFF';
 const ORANGE = '#F97316';
 const ORANGE_DARK = '#EA580C';
-const TEXT = '#111827';
-const TEXT_SEC = '#6B7280';
-const TEXT_MUTED = '#9CA3AF';
+const TEXT = '#0B1220';
+const TEXT_SEC = '#64748B';
+const TEXT_MUTED = '#94A3B8';
 const BORDER = '#E5E7EB';
-const STAR_COLOR = '#F97316';
 const GREEN = '#16A34A';
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
-
-function StarRating({ rating }: { rating: number }) {
-  return (
-    <View style={styles.ratingRow}>
-      <Star color={STAR_COLOR} fill={STAR_COLOR} size={13} strokeWidth={0} />
-      <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
-    </View>
-  );
-}
 
 function QuantityStepper({
   quantity,
@@ -95,23 +90,21 @@ function QuantityStepper({
   return (
     <View style={styles.stepper}>
       <TouchableOpacity
-        style={styles.stepMinus}
+        style={styles.stepBtn}
         onPress={onDecrement}
         disabled={busy}
         activeOpacity={0.7}
       >
-        <Minus color={TEXT_SEC} size={14} strokeWidth={2.5} />
+        <Minus color={ORANGE} size={14} strokeWidth={2.6} />
       </TouchableOpacity>
-      <Text style={styles.stepQty}>
-        {busy ? '…' : quantity}
-      </Text>
+      <Text style={styles.stepQty}>{busy ? '…' : quantity}</Text>
       <TouchableOpacity
-        style={styles.stepPlus}
+        style={styles.stepBtn}
         onPress={onIncrement}
         disabled={busy}
         activeOpacity={0.7}
       >
-        <Plus color={WHITE} size={14} strokeWidth={2.5} />
+        <Plus color={ORANGE} size={14} strokeWidth={2.6} />
       </TouchableOpacity>
     </View>
   );
@@ -135,38 +128,25 @@ function CartItemCard({
   onDecrement: () => void;
   onIncrement: () => void;
 }) {
-  // Fallback food image
   const imageUri =
     item.imageUrl ||
     'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=200&h=200&fit=crop';
 
-  // Random-ish rating seeded by item name length
-  const rating = 4.5 + ((item.name.length % 5) * 0.1);
-
-  // Fake "restaurant" label from item name or use a placeholder
-  const byLabel = 'By ' + (item.name.split(' ')[0] || 'Partner');
-
   return (
     <View style={styles.itemCard}>
-      {/* Food Image */}
       <Image
         source={{ uri: imageUri }}
         style={styles.itemImage}
         contentFit="cover"
       />
-
-      {/* Item Info */}
       <View style={styles.itemInfo}>
-        <View style={styles.itemTopRow}>
-          <Text style={styles.itemName} numberOfLines={1}>
-            {item.name}
-          </Text>
-        </View>
-
-        {/* Price + Stepper row */}
+        <Text style={styles.itemName} numberOfLines={2}>
+          {item.name}
+        </Text>
+        <Text style={styles.itemUnitPrice}>₹{item.price.toFixed(0)} each</Text>
         <View style={styles.itemBottomRow}>
           <Text style={styles.itemPrice}>
-            ₹{(item.price * item.quantity).toFixed(2)}
+            ₹{(item.price * item.quantity).toFixed(0)}
           </Text>
           <QuantityStepper
             quantity={item.quantity}
@@ -193,13 +173,17 @@ export function CartScreen() {
   const items = useCartStore((s) => s.items);
   const specialInstructions = useCartStore((s) => s.specialInstructions);
   const discount = useCartStore((s) => s.discount);
+  const couponCode = useCartStore((s) => s.couponCode);
+  const deliveryFee = useCartStore((s) => s.deliveryFee);
+  const tax = useCartStore((s) => s.tax);
+  const deliveryType = useCartStore((s) => s.deliveryType);
   const clearLocal = useCartStore((s) => s.clearCart);
-  const removeLocal = useCartStore((s) => s.removeItem);
-  const setSpecialInstructions = useCartStore((s) => s.setSpecialInstructions);
   const tip = useCartStore((s) => s.tip);
   const setTip = useCartStore((s) => s.setTip);
+  const setDeliveryTypeLocal = useCartStore((s) => s.setDeliveryType);
   const subtotal = useCartStore((s) => s.subtotal());
   const estimatedTotal = useCartStore((s) => s.estimatedTotal());
+  const serverTotal = useCartStore((s) => s.serverTotal);
 
   const location = useDeliveryLocationStore((s) => s.location);
   const profile = useUserProfile();
@@ -209,10 +193,12 @@ export function CartScreen() {
   const [orderPlacementPhase, setOrderPlacementPhase] = useState<PlacementPhase>('none');
 
   const remoteCart = useCart();
-  const updateItem = useUpdateCartItem();
-  const removeItem = useRemoveCartItem();
   const clearRemote = useClearRemoteCart();
   const updateAddress = useUpdateCartDeliveryAddress();
+  const updateDeliveryType = useUpdateCartDeliveryType();
+  const updateTip = useUpdateCartTip();
+  const applyCoupon = useApplyCoupon();
+  const removeCoupon = useRemoveCoupon();
   const validateCart = useValidateCart();
   const saveCart = useSaveCart();
 
@@ -231,9 +217,59 @@ export function CartScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [voucherCode, setVoucherCode] = useState('');
-  const [voucherApplied, setVoucherApplied] = useState(false);
+  const [voucherBusy, setVoucherBusy] = useState(false);
 
-  const DELIVERY_FEE = 2.0;
+  const couponApplied = Boolean(couponCode);
+
+  // Bill is driven only by cart API (hydrated store + live remote cart)
+  const apiCart = remoteCart.data;
+  const billSubtotal =
+    typeof apiCart?.subtotal === 'number' ? apiCart.subtotal : subtotal;
+  const displayDeliveryFee =
+    typeof apiCart?.deliveryFee === 'number'
+      ? apiCart.deliveryFee
+      : Number(deliveryFee) || 0;
+  const displayDiscount =
+    typeof apiCart?.discount === 'number'
+      ? apiCart.discount
+      : Number(discount) || 0;
+  const displayTip =
+    typeof apiCart?.tip === 'number' ? apiCart.tip : Number(tip) || 0;
+  const apiTax =
+    typeof apiCart?.tax === 'number' ? apiCart.tax : Number(tax) || 0;
+  const apiTotal =
+    typeof apiCart?.total === 'number'
+      ? apiCart.total
+      : typeof serverTotal === 'number'
+        ? serverTotal
+        : null;
+
+  // If API total includes tax but tax field is 0, derive the gap from API numbers only
+  const displayTax = (() => {
+    if (apiTax > 0) return apiTax;
+    if (apiTotal != null) {
+      const withoutTax =
+        billSubtotal + displayDeliveryFee + displayTip - displayDiscount;
+      const implied = Math.round((apiTotal - withoutTax) * 100) / 100;
+      if (implied > 0.009) return implied;
+    }
+    return 0;
+  })();
+
+  const displayTotal =
+    apiTotal != null
+      ? Math.max(0, apiTotal)
+      : Math.max(
+          0,
+          Math.round(
+            (billSubtotal +
+              displayDeliveryFee +
+              displayTax +
+              displayTip -
+              displayDiscount) *
+              100
+          ) / 100
+        );
 
   const displayName =
     profile.data?.displayName ||
@@ -252,10 +288,9 @@ export function CartScreen() {
   const addressLabel = location?.label || 'Home';
   const addressLine = location?.formattedAddress || 'Add a delivery address';
 
-  // Voucher discount (simple mock: 10% off if code entered)
-  const voucherDiscount = voucherApplied ? subtotal * 0.10 : 0;
-  const displaySubtotal = subtotal - discount;
-  const displayTotal = displaySubtotal + DELIVERY_FEE - voucherDiscount;
+  useEffect(() => {
+    if (couponCode) setVoucherCode(couponCode);
+  }, [couponCode]);
 
   useEffect(() => {
     if (!location || !isLoggedIn) return;
@@ -304,18 +339,67 @@ export function CartScreen() {
   const syncQty = async (itemId: string, quantity: number) => {
     setBusyId(itemId);
     try {
-      if (quantity <= 0) {
-        removeLocal(itemId);
-        await removeItem.mutateAsync(itemId);
-      } else {
-        useCartStore.getState().setQuantity(itemId, quantity);
-        await updateItem.mutateAsync({ itemId, payload: { quantity } });
+      const ok = await syncCartItemQuantity(itemId, quantity);
+      if (!ok) {
+        // Helper already reverted + alerted; refresh from server for safety
+        await remoteCart.refetch();
       }
-    } catch (e: any) {
-      console.log('Update quantity error:', e);
     } finally {
       setBusyId(null);
     }
+  };
+
+  const requireLogin = (action: string) => {
+    Alert.alert('Sign in required', `Please sign in to ${action}.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign in', onPress: () => router.push('/login') },
+    ]);
+  };
+
+  const handleTipChange = (nextTip: number) => {
+    if (!isLoggedIn) {
+      requireLogin('add a delivery tip');
+      return;
+    }
+
+    const previousTip = tip;
+    setTip(nextTip);
+
+    void updateTip
+      .mutateAsync({ tip: nextTip })
+      .then(() => {
+        void remoteCart.refetch();
+      })
+      .catch((e) => {
+        setTip(previousTip);
+        Alert.alert(
+          'Could not update tip',
+          e instanceof Error ? e.message : 'Tip was not saved. Please try again.'
+        );
+      });
+  };
+
+  const handleDeliveryTypeChange = (type: 'delivery' | 'takeaway') => {
+    if (!isLoggedIn) {
+      requireLogin('change delivery type');
+      return;
+    }
+
+    const previous = deliveryType;
+    setDeliveryTypeLocal(type);
+
+    void updateDeliveryType
+      .mutateAsync({ deliveryType: type })
+      .then(() => {
+        void remoteCart.refetch();
+      })
+      .catch((e) => {
+        setDeliveryTypeLocal(previous);
+        Alert.alert(
+          'Could not update delivery type',
+          e instanceof Error ? e.message : 'Please try again.'
+        );
+      });
   };
 
   const handlePaymentComplete = async (success: boolean, data?: any) => {
@@ -448,7 +532,7 @@ export function CartScreen() {
 
       const order = await createOrder.mutateAsync(payload as any);
       setCurrentOrder(order);
-      const amount = order.total ?? estimatedTotal;
+      const amount = order.total ?? displayTotal;
 
       if (!needsOnlinePayment(mappedMethod)) {
         setOrderPlacementPhase('placed');
@@ -589,8 +673,15 @@ export function CartScreen() {
         onPress: async () => {
           try {
             await clearRemote.mutateAsync();
-          } catch {
             clearLocal();
+          } catch (e) {
+            clearLocal();
+            Alert.alert(
+              'Cleared on device',
+              e instanceof Error
+                ? `Server clear failed: ${e.message}`
+                : 'Server cart may still have items — pull to refresh later.'
+            );
           }
         },
       },
@@ -618,28 +709,71 @@ export function CartScreen() {
   const handleCheckout = async () => {
     try {
       const result = await validateCart.mutateAsync();
+      if (result.cart) {
+        applyServerCartToStore(result.cart);
+      }
       if (!result.valid) {
         const msg =
-          result.issues.map((i: any) => i.message).join('\n') ||
+          result.issues.map((i) => i.message).join('\n') ||
           result.message ||
           'Cart validation failed';
         Alert.alert('Cart needs attention', msg);
-        if (result.cart) remoteCart.refetch();
+        void remoteCart.refetch();
         return;
       }
-    } catch {
-      // allow local checkout
+    } catch (e) {
+      Alert.alert(
+        'Could not validate cart',
+        e instanceof Error
+          ? e.message
+          : 'Check your connection and try again before placing the order.'
+      );
+      return;
     }
     placeOrder();
   };
 
-  const handleApplyVoucher = () => {
-    if (!voucherCode.trim()) {
+  const handleApplyVoucher = async () => {
+    const code = voucherCode.trim();
+    if (!code) {
       Alert.alert('Enter a voucher code');
       return;
     }
-    setVoucherApplied(true);
-    Alert.alert('Voucher Applied', '10% discount applied!');
+    if (!isLoggedIn) {
+      requireLogin('apply a promo code');
+      return;
+    }
+    setVoucherBusy(true);
+    try {
+      await applyCoupon.mutateAsync({ code });
+      Alert.alert('Promo applied', `${code.toUpperCase()} applied to your cart`);
+    } catch (e) {
+      Alert.alert(
+        'Invalid promo code',
+        e instanceof Error ? e.message : 'This code could not be applied'
+      );
+    } finally {
+      setVoucherBusy(false);
+    }
+  };
+
+  const handleRemoveVoucher = async () => {
+    if (!isLoggedIn) {
+      requireLogin('remove a promo code');
+      return;
+    }
+    setVoucherBusy(true);
+    try {
+      await removeCoupon.mutateAsync();
+      setVoucherCode('');
+    } catch (e) {
+      Alert.alert(
+        'Could not remove promo',
+        e instanceof Error ? e.message : 'Try again'
+      );
+    } finally {
+      setVoucherBusy(false);
+    }
   };
 
   // ── Loading / Empty states ──────────────────────────────────────────────
@@ -713,7 +847,7 @@ export function CartScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: 100 + footerPad },
+            { paddingBottom: 110 + footerPad },
           ]}
           refreshControl={
             <RefreshControl
@@ -723,113 +857,213 @@ export function CartScreen() {
             />
           }
         >
-          {/* ── Cart Items ──────────────────────────────────────── */}
+          {/* Address */}
+          <Pressable
+            style={styles.addressCard}
+            onPress={() =>
+              router.push('/profile/addresses' as import('expo-router').Href)
+            }
+          >
+            <View style={styles.addressIcon}>
+              <MapPin color={ORANGE} size={16} strokeWidth={2.4} />
+            </View>
+            <View style={styles.addressBody}>
+              <Text style={styles.addressEyebrow}>Deliver to {addressLabel}</Text>
+              <Text style={styles.addressLine} numberOfLines={1}>
+                {addressLine}
+              </Text>
+            </View>
+            <Text style={styles.addressChange}>Change</Text>
+          </Pressable>
+
+          {/* Items */}
           <View style={styles.section}>
-            {/* Restaurant Info Header */}
-            {restaurant && (
+            {restaurant ? (
               <View style={styles.restaurantHeader}>
-                <Text style={styles.restaurantTitle}>Ordering from</Text>
-                <Text style={styles.restaurantName} numberOfLines={1}>
-                  {restaurant.name}
-                </Text>
-                <View style={styles.restaurantDivider} />
+                <View style={styles.restaurantIcon}>
+                  <Store color={ORANGE} size={16} strokeWidth={2.3} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.restaurantTitle}>Ordering from</Text>
+                  <Text style={styles.restaurantName} numberOfLines={1}>
+                    {restaurant.name}
+                  </Text>
+                </View>
               </View>
-            )}
+            ) : null}
 
             {items.map((item, index) => (
               <View key={item.id}>
+                {index > 0 ? <View style={styles.itemDivider} /> : null}
                 <CartItemCard
                   item={item}
                   busy={busyId === item.id}
                   onDecrement={() => syncQty(item.id, item.quantity - 1)}
                   onIncrement={() => syncQty(item.id, item.quantity + 1)}
                 />
-                {index < items.length - 1 && <View style={styles.itemDivider} />}
               </View>
             ))}
 
-            {/* View More Items Button */}
-            <View style={styles.addMoreWrap}>
+            <TouchableOpacity
+              style={styles.addMoreBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (restaurant?.id) {
+                  router.push(`/restaurants/${restaurant.id}`);
+                } else {
+                  router.push('/home');
+                }
+              }}
+            >
+              <Plus color={ORANGE} size={16} strokeWidth={2.5} />
+              <Text style={styles.addMoreText}>Add more items</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Delivery type */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Fulfillment</Text>
+            <View style={styles.deliveryTypeRow}>
               <TouchableOpacity
-                style={styles.addMoreBtn}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (restaurant?.id) {
-                    router.push(`/restaurants/${restaurant.id}`);
-                  } else {
-                    router.push('/home');
-                  }
-                }}
+                style={[
+                  styles.deliveryTypeChip,
+                  deliveryType === 'delivery' && styles.deliveryTypeChipOn,
+                ]}
+                onPress={() => handleDeliveryTypeChange('delivery')}
+                activeOpacity={0.8}
               >
-                <Plus color={ORANGE} size={18} strokeWidth={2.5} />
-                <Text style={styles.addMoreText}>View more items</Text>
+                <Bike
+                  color={deliveryType === 'delivery' ? ORANGE : TEXT_SEC}
+                  size={16}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[
+                    styles.deliveryTypeText,
+                    deliveryType === 'delivery' && styles.deliveryTypeTextOn,
+                  ]}
+                >
+                  Delivery
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.deliveryTypeChip,
+                  deliveryType === 'takeaway' && styles.deliveryTypeChipOn,
+                ]}
+                onPress={() => handleDeliveryTypeChange('takeaway')}
+                activeOpacity={0.8}
+              >
+                <Store
+                  color={deliveryType === 'takeaway' ? ORANGE : TEXT_SEC}
+                  size={16}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[
+                    styles.deliveryTypeText,
+                    deliveryType === 'takeaway' && styles.deliveryTypeTextOn,
+                  ]}
+                >
+                  Takeaway
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* ── Voucher Code ─────────────────────────────────────── */}
+          <DeliveryPreferences tip={tip} setTip={handleTipChange} />
+
+          {/* Promo */}
           <View style={styles.voucherCard}>
-            <View style={styles.voucherLeft}>
-              <View style={styles.voucherIconWrap}>
-                <Tag color={TEXT_SEC} size={18} strokeWidth={2} />
-              </View>
-              <TextInput
-                style={styles.voucherInput}
-                placeholder="Enter your voucher code"
-                placeholderTextColor={TEXT_MUTED}
-                value={voucherCode}
-                onChangeText={setVoucherCode}
-                returnKeyType="done"
-                onSubmitEditing={handleApplyVoucher}
-                editable={!voucherApplied}
-              />
+            <View style={styles.voucherIconWrap}>
+              <Tag color={ORANGE} size={16} strokeWidth={2.2} />
             </View>
+            <TextInput
+              style={styles.voucherInput}
+              placeholder="Promo code"
+              placeholderTextColor={TEXT_MUTED}
+              value={voucherCode}
+              onChangeText={setVoucherCode}
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                void handleApplyVoucher();
+              }}
+              editable={!couponApplied && !voucherBusy}
+              autoCapitalize="characters"
+            />
             <TouchableOpacity
-              onPress={voucherApplied ? () => {
-                setVoucherApplied(false);
-                setVoucherCode('');
-              } : handleApplyVoucher}
+              style={styles.voucherBtn}
+              onPress={() => {
+                if (voucherBusy) return;
+                if (couponApplied) void handleRemoveVoucher();
+                else void handleApplyVoucher();
+              }}
               activeOpacity={0.7}
+              disabled={voucherBusy}
             >
-              <ChevronRight color={TEXT_SEC} size={20} strokeWidth={2} />
+              {voucherBusy ? (
+                <ActivityIndicator color={ORANGE} size="small" />
+              ) : (
+                <Text style={styles.voucherAction}>
+                  {couponApplied ? 'Remove' : 'Apply'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* ── Bill Summary ─────────────────────────────────────── */}
+          {/* Bill */}
           <View style={styles.billCard}>
-            {/* Subtotal */}
+            <Text style={styles.cardTitle}>Bill details</Text>
+
             <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Subtotal:</Text>
-              <Text style={styles.billValue}>₹{displaySubtotal.toFixed(2)}</Text>
+              <Text style={styles.billLabel}>
+                Item total (
+                {items.reduce((n, i) => n + i.quantity, 0)} items)
+              </Text>
+              <Text style={styles.billValue}>₹{billSubtotal.toFixed(2)}</Text>
             </View>
 
-            <View style={styles.billDivider} />
-
-            {/* Delivery Fee */}
             <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Delivery Fee:</Text>
-              <Text style={styles.billValue}>₹{DELIVERY_FEE.toFixed(2)}</Text>
+              <Text style={styles.billLabel}>Delivery fee</Text>
+              {displayDeliveryFee > 0 ? (
+                <Text style={styles.billValue}>
+                  ₹{displayDeliveryFee.toFixed(2)}
+                </Text>
+              ) : (
+                <Text style={[styles.billValue, styles.billFree]}>FREE</Text>
+              )}
             </View>
 
-            {/* Voucher discount */}
-            {voucherApplied && (
-              <>
-                <View style={styles.billDivider} />
-                <View style={styles.billRow}>
-                  <Text style={[styles.billLabel, { color: GREEN }]}>Voucher Discount:</Text>
-                  <Text style={[styles.billValue, { color: GREEN }]}>
-                    -₹{voucherDiscount.toFixed(2)}
-                  </Text>
-                </View>
-              </>
-            )}
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Taxes & charges</Text>
+              <Text style={styles.billValue}>₹{displayTax.toFixed(2)}</Text>
+            </View>
+
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Delivery tip</Text>
+              <Text style={styles.billValue}>
+                {displayTip > 0 ? `₹${displayTip.toFixed(2)}` : '—'}
+              </Text>
+            </View>
+
+            {displayDiscount > 0 ? (
+              <View style={styles.billRow}>
+                <Text style={[styles.billLabel, { color: GREEN }]}>
+                  {couponCode ? `Promo · ${couponCode}` : 'Discount'}
+                </Text>
+                <Text style={[styles.billValue, { color: GREEN }]}>
+                  −₹{displayDiscount.toFixed(2)}
+                </Text>
+              </View>
+            ) : null}
 
             <View style={styles.billSeparator} />
 
-            {/* Total */}
             <View style={styles.billRow}>
-              <Text style={styles.billTotalLabel}>Total Amount:</Text>
-              <Text style={styles.billTotalValue}>₹{displayTotal.toFixed(2)}</Text>
+              <Text style={styles.billTotalLabel}>To pay</Text>
+              <Text style={styles.billTotalValue}>
+                ₹{displayTotal.toFixed(2)}
+              </Text>
             </View>
           </View>
         </ScrollView>
@@ -839,21 +1073,26 @@ export function CartScreen() {
           <TouchableOpacity
             style={styles.checkoutBtn}
             onPress={handleCheckout}
-            disabled={validateCart.isPending || paying}
+            disabled={
+              validateCart.isPending ||
+              paying ||
+              voucherBusy ||
+              Boolean(busyId) ||
+              applyCoupon.isPending ||
+              removeCoupon.isPending
+            }
             activeOpacity={0.9}
           >
-            {/* Left price pill */}
-            <View style={styles.checkoutPriceWrap}>
+            <View>
+              <Text style={styles.checkoutPrice}>₹{displayTotal.toFixed(2)}</Text>
+              <Text style={styles.checkoutSub}>TOTAL</Text>
+            </View>
+            <View style={styles.checkoutLabelWrap}>
               {validateCart.isPending || paying ? (
                 <ActivityIndicator color={WHITE} size="small" />
               ) : (
-                <Text style={styles.checkoutPrice}>₹{displayTotal.toFixed(2)}</Text>
+                <Text style={styles.checkoutLabel}>Place order</Text>
               )}
-            </View>
-
-            {/* Right label */}
-            <View style={styles.checkoutLabelWrap}>
-              <Text style={styles.checkoutLabel}>Checkout</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -902,10 +1141,14 @@ export function CartScreen() {
           }}
           onPay={() => { }}
           itemCount={items.length}
-          total={estimatedTotal}
-          savings={discount}
+          total={displayTotal}
+          savings={displayDiscount}
           restaurantName={restaurant?.name || ''}
-          deliveryTime="35-45 mins"
+          deliveryTime={
+            typeof restaurant?.deliveryTime === 'string'
+              ? restaurant.deliveryTime
+              : undefined
+          }
           addressLabel={addressLabel}
           addressText={addressLine}
           savedMethods={paymentMethods.data}
@@ -995,13 +1238,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 10,
     backgroundColor: WHITE,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER,
   },
   iconBtn: {
     width: 44,
@@ -1027,64 +1267,118 @@ const styles = StyleSheet.create({
   // ── Scroll ──
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 14,
+    paddingTop: 12,
+    gap: 12,
+  },
+
+  addressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  addressIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressBody: {
+    flex: 1,
+  },
+  addressEyebrow: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: TEXT,
+  },
+  addressLine: {
+    marginTop: 2,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: TEXT_SEC,
+  },
+  addressChange: {
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: ORANGE,
+  },
+
+  card: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 12,
+  },
+  cardTitle: {
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: TEXT,
+    marginBottom: 2,
   },
 
   // ── Section card (items) ──
   section: {
     backgroundColor: WHITE,
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   restaurantHeader: {
-    padding: 16,
-    paddingBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER,
+  },
+  restaurantIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   restaurantTitle: {
     fontFamily: fonts.uiMedium,
-    fontSize: 12,
+    fontSize: 11,
     color: TEXT_SEC,
-    marginBottom: 2,
   },
   restaurantName: {
     fontFamily: fonts.displayBold,
-    fontSize: 16,
+    fontSize: 15,
     color: TEXT,
-    marginBottom: 12,
-  },
-  restaurantDivider: {
-    height: 1,
-    backgroundColor: BORDER,
-    width: '100%',
   },
   itemDivider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: BORDER,
     marginHorizontal: 14,
-  },
-  addMoreWrap: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
   },
   addMoreBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    margin: 12,
+    marginTop: 4,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#FFF5EE',
+    backgroundColor: '#FFF7ED',
   },
   addMoreText: {
     fontFamily: fonts.uiBold,
-    fontSize: 14,
+    fontSize: 13,
     color: ORANGE,
   },
 
@@ -1096,42 +1390,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 12,
     backgroundColor: '#F3F4F6',
   },
   itemInfo: {
     flex: 1,
-    gap: 4,
-  },
-  itemTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 2,
   },
   itemName: {
     fontFamily: fonts.displayBold,
-    fontSize: 15,
+    fontSize: 14,
     color: TEXT,
-    flex: 1,
-    marginRight: 8,
   },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  ratingText: {
-    fontFamily: fonts.uiBold,
-    fontSize: 13,
-    color: STAR_COLOR,
-  },
-  itemByLine: {
-    fontFamily: fonts.uiMedium,
+  itemUnitPrice: {
+    fontFamily: fonts.ui,
     fontSize: 12,
     color: TEXT_MUTED,
-    marginTop: 1,
   },
   itemBottomRow: {
     flexDirection: 'row',
@@ -1149,46 +1425,55 @@ const styles = StyleSheet.create({
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 30,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    backgroundColor: '#FFF7ED',
+    height: 34,
     overflow: 'hidden',
-    height: 36,
   },
-  stepMinus: {
+  stepBtn: {
     width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: BORDER,
   },
   stepQty: {
-    minWidth: 28,
+    minWidth: 26,
     textAlign: 'center',
-    fontFamily: fonts.displayBold,
-    fontSize: 15,
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
     color: TEXT,
-    paddingHorizontal: 4,
-  },
-  stepPlus: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: ORANGE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: ORANGE,
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
   },
 
-  itemDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: BORDER,
-    marginHorizontal: 14,
+  deliveryTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  deliveryTypeChip: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#FAFAFA',
+  },
+  deliveryTypeChipOn: {
+    borderColor: ORANGE,
+    backgroundColor: '#FFF7ED',
+  },
+  deliveryTypeText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 13,
+    color: TEXT_SEC,
+  },
+  deliveryTypeTextOn: {
+    color: ORANGE,
+    fontFamily: fonts.uiBold,
   },
 
   // ── Voucher Card ──
@@ -1197,26 +1482,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: WHITE,
     borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  voucherLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   voucherIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#FFF7ED',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1225,21 +1501,27 @@ const styles = StyleSheet.create({
     fontFamily: fonts.uiMedium,
     fontSize: 14,
     color: TEXT,
-    paddingVertical: 0,
+    paddingVertical: 8,
+  },
+  voucherBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  voucherAction: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: ORANGE,
   },
 
   // ── Bill Card ──
   billCard: {
     backgroundColor: WHITE,
     borderRadius: 16,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 16,
-    gap: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   billRow: {
     flexDirection: 'row',
@@ -1247,27 +1529,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   billLabel: {
-    fontFamily: fonts.uiMedium,
-    fontSize: 14,
+    fontFamily: fonts.ui,
+    fontSize: 13,
     color: TEXT_SEC,
   },
   billValue: {
-    fontFamily: fonts.uiBold,
-    fontSize: 14,
+    fontFamily: fonts.uiSemi,
+    fontSize: 13,
     color: TEXT,
   },
-  billDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: BORDER,
+  billFree: {
+    color: GREEN,
+    fontFamily: fonts.uiBold,
   },
   billSeparator: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 2,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: BORDER,
+    marginVertical: 4,
   },
   billTotalLabel: {
     fontFamily: fonts.displayBold,
-    fontSize: 16,
+    fontSize: 15,
     color: TEXT,
   },
   billTotalValue: {
@@ -1283,50 +1565,46 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
     backgroundColor: WHITE,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: BORDER,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 16,
   },
   checkoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: ORANGE_DARK,
-    borderRadius: 50,
-    height: 58,
-    padding: 4,
-    width: '100%',
-  },
-  checkoutPriceWrap: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 110,
+    backgroundColor: ORANGE,
+    borderRadius: 16,
+    minHeight: 56,
+    paddingLeft: 18,
+    paddingRight: 8,
+    paddingVertical: 8,
   },
   checkoutPrice: {
     fontFamily: fonts.displayBold,
-    fontSize: 16,
+    fontSize: 17,
     color: WHITE,
+  },
+  checkoutSub: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.6,
+    marginTop: 1,
   },
   checkoutLabelWrap: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: WHITE,
-    borderRadius: 50,
-    height: '100%',
-    paddingHorizontal: 28,
+    borderRadius: 12,
+    minHeight: 40,
+    paddingHorizontal: 18,
   },
   checkoutLabel: {
-    fontFamily: fonts.displayBold,
-    fontSize: 16,
-    color: TEXT,
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: ORANGE_DARK,
   },
 
   // ── Overflow Menu ──

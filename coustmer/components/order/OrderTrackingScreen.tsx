@@ -303,11 +303,17 @@ export function OrderTrackingScreen() {
   useEffect(() => {
     if (newOrder === 'true') {
       const clearTimer = setTimeout(async () => {
-        clearCart();
         try {
           const { cartApi } = await import('@/lib/cart/api');
           await cartApi.clearCart();
-        } catch { }
+        } catch (error) {
+          console.warn(
+            'Failed to clear remote cart after order:',
+            error instanceof Error ? error.message : error
+          );
+        } finally {
+          clearCart();
+        }
       }, 500);
 
       return () => clearTimeout(clearTimer);

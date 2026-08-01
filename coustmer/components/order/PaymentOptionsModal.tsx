@@ -16,7 +16,7 @@ type Props = {
   total: number;
   savings: number;
   restaurantName: string;
-  deliveryTime: string;
+  deliveryTime?: string;
   addressLabel: string;
   addressText: string;
   onPay: (method: string) => void;
@@ -94,7 +94,12 @@ export function PaymentOptionsModal({
             <View style={styles.addressInfo}>
               <Text style={styles.addressRow} numberOfLines={1}>
                 <Text style={styles.addressName}>{restaurantName}</Text>
-                <Text style={styles.addressDesc}> | Delivery in: {deliveryTime}</Text>
+                {deliveryTime ? (
+                  <Text style={styles.addressDesc}>
+                    {' '}
+                    | Delivery in: {deliveryTime}
+                  </Text>
+                ) : null}
               </Text>
               <Text style={styles.addressRow} numberOfLines={1}>
                 <Text style={styles.addressName}>{addressLabel}</Text>
