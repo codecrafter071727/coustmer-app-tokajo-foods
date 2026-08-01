@@ -338,7 +338,7 @@ export function RestaurantBrowseScreen() {
         style={styles.container}
       >
         <ScreenHeader
-          title={activeCategory ? activeCategory.label : 'Restaurants'}
+          title={activeCategory ? activeCategory.label : 'All restaurants'}
           subtitle={subtitle}
         />
 

@@ -1,11 +1,13 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Bell, Map as MapIcon, MapPin, Menu, Search } from 'lucide-react-native';
+import { Bell, MapPin, Search, UtensilsCrossed } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SmoothPressable } from '@/components/common/SmoothPressable';
 import { fonts } from '@/constants/typography';
 import type { Deal, HomeBanner } from '@/lib/customer/types';
+import { useUserProfile } from '@/lib/profile/hooks';
+import { useAuthStore } from '@/store/auth-store';
 
 type Props = {
   topInset?: number;
@@ -31,6 +33,17 @@ export function SwiggyHomeChrome({
   onLocationPress,
 }: Props) {
   const router = useRouter();
+  const authUser = useAuthStore((s) => s.user);
+  const profile = useUserProfile();
+  const photoUrl = profile.data?.profilePhotoUrl;
+  const initials = (
+    [authUser?.firstName, authUser?.lastName]
+      .filter(Boolean)
+      .map((p) => p![0])
+      .join('') ||
+    authUser?.email?.[0] ||
+    'U'
+  ).toUpperCase().slice(0, 2);
 
   const locationText = isDetectingLocation
     ? 'Detecting…'
@@ -57,19 +70,29 @@ export function SwiggyHomeChrome({
 
       {/* ── Top bar ──────────────────────────────────── */}
       <View style={styles.topBar}>
-        {/* Menu / Hamburger */}
         <SmoothPressable
-          style={styles.iconCircle}
+          style={styles.profileBtn}
           onPress={() => router.push('/profile')}
+          accessibilityLabel="Profile"
         >
-          <Menu color="#FFFFFF" size={20} strokeWidth={2.2} />
+          {photoUrl ? (
+            <Image
+              source={{ uri: photoUrl }}
+              style={styles.profileAvatar}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={styles.profileFallback}>
+              <Text style={styles.profileInitials}>{initials}</Text>
+            </View>
+          )}
         </SmoothPressable>
 
         {/* Delivery location */}
         <SmoothPressable style={styles.locationWrap} onPress={onLocationPress} pressScale={0.96}>
           <Text style={styles.locationLabel}>Delivery location</Text>
           <View style={styles.locationRow}>
-            <MapPin color="#F97316" size={14} strokeWidth={3} />
+            <MapPin color="#F97316" size={12} strokeWidth={3} />
             <Text style={styles.locationText} numberOfLines={1}>
               {locationText}
             </Text>
@@ -112,8 +135,20 @@ export function SwiggyHomeChrome({
           </Text>
         </Pressable>
 
-        <SmoothPressable style={styles.mapCircle}>
-          <MapIcon color="#EA580C" size={20} strokeWidth={2.4} />
+        <SmoothPressable
+          style={styles.browseBtn}
+          onPress={() => router.push('/restaurants')}
+          accessibilityLabel="Browse all restaurants"
+          pressScale={0.92}
+        >
+          <LinearGradient
+            colors={['#FF8A4C', '#EA580C']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.browseBtnGrad}
+          >
+            <UtensilsCrossed color="#FFFFFF" size={20} strokeWidth={2.4} />
+          </LinearGradient>
         </SmoothPressable>
       </View>
     </View>
@@ -147,13 +182,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  profileAvatar: {
+    width: 42,
+    height: 42,
+  },
+  profileFallback: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F97316',
+  },
+  profileInitials: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: fonts.displayBold,
+    letterSpacing: 0.4,
+  },
   locationWrap: {
     flex: 1,
     alignItems: 'center',
   },
   locationLabel: {
     color: 'rgba(255,255,255,0.92)',
-    fontSize: 12,
+    fontSize: 9,
     fontFamily: fonts.uiBold,
     marginBottom: 2,
     letterSpacing: 0.2,
@@ -165,7 +228,7 @@ const styles = StyleSheet.create({
   },
   locationText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 13,
     fontFamily: fonts.displayBold,
     maxWidth: 200,
   },
@@ -240,11 +303,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: fonts.uiSemi,
   },
-  mapCircle: {
+  browseBtn: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  browseBtnGrad: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
