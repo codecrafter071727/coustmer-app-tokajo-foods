@@ -672,7 +672,7 @@ export default function HomeScreen() {
 
 
 
-      {/* Sticky compact category strip when scrolled past */}
+      {/* Sticky category strip only (filters scroll away) */}
       <Animated.View
         style={[
           styles.pinOverlay,
@@ -683,6 +683,7 @@ export default function HomeScreen() {
       >
         <HomeFiltersBar
           compact
+          categoriesOnly
           filters={homeFilters}
           onChange={onFiltersChange}
           onClear={onClearFilters}

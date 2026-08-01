@@ -21,6 +21,8 @@ type Props = {
   onClear: () => void;
   allRestaurants?: Restaurant[];
   compact?: boolean;
+  /** Sticky strip: cuisine chips only — hide Filters / Sort / quick chips. */
+  categoriesOnly?: boolean;
   style?: object;
 };
 
@@ -30,6 +32,7 @@ export function HomeFiltersBar({
   onClear,
   allRestaurants = [],
   compact = false,
+  categoriesOnly = false,
   style,
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -151,6 +154,7 @@ export function HomeFiltersBar({
         </ScrollView>
       )}
 
+      {categoriesOnly ? null : (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -352,7 +356,9 @@ export function HomeFiltersBar({
           </Text>
         </Pressable>
       </ScrollView>
+      )}
 
+      {categoriesOnly ? null : (
       <HomeFilterSheet
         visible={sheetOpen}
         filters={filters}
@@ -361,6 +367,7 @@ export function HomeFiltersBar({
         onClose={() => setSheetOpen(false)}
         onApply={onChange}
       />
+      )}
     </View>
   );
 }
@@ -371,8 +378,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   wrapCompact: {
-    gap: 8,
-    paddingBottom: 8,
+    gap: 0,
+    paddingBottom: 10,
+    marginBottom: 0,
   },
   cuisineRow: {
     paddingHorizontal: 16,
