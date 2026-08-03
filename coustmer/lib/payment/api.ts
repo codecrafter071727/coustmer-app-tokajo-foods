@@ -293,10 +293,14 @@ export const paymentApi = {
         orderId: payload.orderId,
         gatewayPaymentId: payload.gatewayPaymentId,
         gatewayOrderId: payload.gatewayOrderId,
+        gatewaySignature:
+          payload.gatewaySignature ??
+          payload.razorpay_signature ??
+          payload.signature,
         razorpay_payment_id: payload.razorpay_payment_id ?? payload.gatewayPaymentId,
         razorpay_order_id: payload.razorpay_order_id ?? payload.gatewayOrderId,
         razorpay_signature: payload.razorpay_signature ?? payload.signature,
-        signature: payload.signature,
+        signature: payload.signature ?? payload.gatewaySignature,
         status: payload.status,
         transactionId: payload.transactionId ?? payload.gatewayPaymentId,
       },
@@ -304,6 +308,12 @@ export const paymentApi = {
         payment_id: payload.paymentId,
         order_id: payload.orderId,
         transaction_id: payload.transactionId ?? payload.gatewayPaymentId,
+        gateway_payment_id: payload.gatewayPaymentId,
+        gateway_order_id: payload.gatewayOrderId,
+        gateway_signature:
+          payload.gatewaySignature ??
+          payload.razorpay_signature ??
+          payload.signature,
       },
     ];
 
@@ -366,6 +376,7 @@ export const paymentApi = {
         type: payload.type,
         label: payload.label,
         token: payload.token,
+        gatewayToken: payload.gatewayToken ?? payload.token,
         cardNumber: payload.cardNumber,
         expiryMonth: payload.expiryMonth,
         expiryYear: payload.expiryYear,
@@ -377,6 +388,7 @@ export const paymentApi = {
       },
       {
         methodType: payload.type,
+        gateway_token: payload.gatewayToken ?? payload.token,
         upi_id: payload.upiId,
         card_number: payload.cardNumber,
         exp_month: payload.expiryMonth,

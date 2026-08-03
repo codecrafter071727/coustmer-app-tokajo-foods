@@ -54,6 +54,7 @@ export function simulatePaymentSuccess(orderId: string, amount: number) {
     status: 'success',
     gatewayPaymentId: `gateway_${Date.now()}`,
     gatewayOrderId: `order_${Date.now()}`,
+    gatewaySignature: `sig_test_${Date.now()}`,
   };
 }
 

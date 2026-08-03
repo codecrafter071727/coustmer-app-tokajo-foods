@@ -7,6 +7,7 @@ import {
   Check,
   Headset,
   MapPin,
+  RotateCcw,
   Store,
   Star,
   Truck,
@@ -401,6 +402,26 @@ export function OrderDetailScreen() {
             </Text>
           ) : null}
         </View>
+
+        {!isActive ? (
+          <Pressable
+            style={styles.refundLink}
+            onPress={() =>
+              router.push({
+                pathname: '/orders/[orderId]/refunds',
+                params: { orderId: data.id },
+              })
+            }
+          >
+            <RotateCcw color={ORANGE} size={16} strokeWidth={2.4} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.refundLinkTitle}>Refunds</Text>
+              <Text style={styles.refundLinkSub}>
+                Request a refund or check status
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       <View
@@ -744,6 +765,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: MUTED,
     textAlign: 'right',
+  },
+  refundLink: {
+    marginTop: 14,
+    marginHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#FFE4CC',
+  },
+  refundLinkTitle: {
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: INK,
+  },
+  refundLinkSub: {
+    marginTop: 2,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
   },
   stickyFooter: {
     position: 'absolute',

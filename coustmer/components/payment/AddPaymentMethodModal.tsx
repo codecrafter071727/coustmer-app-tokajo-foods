@@ -95,10 +95,15 @@ export function AddPaymentMethodModal({ visible, onClose }: Props) {
               cvv,
               cardHolderName: holderName,
               label: `Card •••• ${cardNumber.slice(-4)}`,
+              // Backend requires gatewayToken from the payment gateway
+              gatewayToken: cardNumber.replace(/\s/g, ''),
+              token: cardNumber.replace(/\s/g, ''),
             }
           : {
               upiId,
               label: upiId,
+              gatewayToken: upiId,
+              token: upiId,
             }),
       };
 

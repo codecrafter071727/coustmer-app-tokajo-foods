@@ -45,6 +45,7 @@ export function PaymentDetailScreen() {
         orderId: data.orderId,
         gatewayPaymentId: txnId || data.gatewayPaymentId,
         gatewayOrderId: data.gatewayOrderId ?? data.razorpayOrderId,
+        gatewaySignature: signature || undefined,
         transactionId: txnId || data.gatewayPaymentId,
         signature: signature || undefined,
         razorpay_payment_id: txnId || data.gatewayPaymentId,

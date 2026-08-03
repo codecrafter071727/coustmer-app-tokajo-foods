@@ -12,6 +12,7 @@ import {
   Headset,
   MapPin,
   Phone,
+  Star,
   Store,
 } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
@@ -40,6 +41,7 @@ import { WebView } from 'react-native-webview';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
+import { useOrderDeliveryPartner } from '@/lib/delivery/hooks';
 import { GOOGLE_MAPS_API_KEY } from '@/lib/google-maps';
 import { useOrder, useOrderTracking, useReorder } from '@/lib/order/hooks';
 import { toE164IndianMobile } from '@/lib/order/phone';
@@ -319,6 +321,16 @@ export function OrderTrackingScreen() {
   const o = order.data;
   const t = tracking.data;
 
+  const combinedStatusEarly = o?.status ?? t?.status;
+  const trackingActive =
+    !combinedStatusEarly || isActiveOrderStatus(combinedStatusEarly);
+
+  const partnerQuery = useOrderDeliveryPartner(id, {
+    enabled: Boolean(id) && trackingActive,
+    refetchInterval: trackingActive ? 12_000 : false,
+  });
+  const partner = partnerQuery.data;
+
   const [distanceInfo, setDistanceInfo] = useState<{
     dist: string;
     time: string;
@@ -351,16 +363,29 @@ export function OrderTrackingScreen() {
   const completed = isOrderCompleted(combinedStatus);
   const cancelled = isTerminalCancelled(combinedStatus);
   const partnerAssigned = Boolean(
-    t?.deliveryPartnerName ||
+    partner?.name ||
+      partner?.phone ||
+      t?.deliveryPartnerName ||
       (o?.raw?.deliveryPartnerName as string | undefined)
   );
   const partnerName =
+    partner?.name ||
     t?.deliveryPartnerName ||
     (o?.raw?.deliveryPartnerName as string | undefined) ||
     (active ? 'Finding a partner' : undefined);
   const partnerPhone =
+    partner?.phone ||
     t?.deliveryPartnerPhone ||
     (o?.raw?.deliveryPartnerPhone as string | undefined);
+  const partnerRating =
+    partner && partner.rating > 0 ? partner.rating.toFixed(1) : null;
+  const partnerVehicle = partner
+    ? [partner.vehicleType, partner.vehicleNumber].filter(Boolean).join(' · ')
+    : '';
+  const partnerLat =
+    partner?.currentLocation?.lat ?? t?.deliveryPartnerLat;
+  const partnerLng =
+    partner?.currentLocation?.lng ?? t?.deliveryPartnerLng;
 
   const restLat = t?.restaurantLat ?? 26.2183;
   const restLng = t?.restaurantLng ?? 78.1828;
@@ -374,8 +399,8 @@ export function OrderTrackingScreen() {
       restLng,
       custLat,
       custLng,
-      partnerLat: t?.deliveryPartnerLat,
-      partnerLng: t?.deliveryPartnerLng,
+      partnerLat,
+      partnerLng,
       restName: o?.restaurantName || 'Restaurant',
       apiKey: GOOGLE_MAPS_API_KEY,
     });
@@ -384,8 +409,8 @@ export function OrderTrackingScreen() {
     restLng,
     custLat,
     custLng,
-    t?.deliveryPartnerLat,
-    t?.deliveryPartnerLng,
+    partnerLat,
+    partnerLng,
     o?.restaurantName,
   ]);
 
@@ -806,13 +831,42 @@ export function OrderTrackingScreen() {
                   <Animated.View
                     style={[styles.partnerAvatar, !partnerAssigned && pulseStyle]}
                   >
-                    <Bike color={ORANGE} size={22} strokeWidth={2.3} />
+                    {partner?.imageUrl ? (
+                      <Image
+                        source={{ uri: partner.imageUrl }}
+                        style={styles.partnerAvatarImage}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <Bike color={ORANGE} size={22} strokeWidth={2.3} />
+                    )}
                   </Animated.View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.partnerEyebrow}>DELIVERY PARTNER</Text>
                     <Text style={styles.partnerName} numberOfLines={1}>
                       {partnerName}
                     </Text>
+                    {partnerAssigned && (partnerRating || partnerVehicle) ? (
+                      <View style={styles.partnerMetaRow}>
+                        {partnerRating ? (
+                          <View style={styles.partnerRatingPill}>
+                            <Star
+                              color="#F59E0B"
+                              fill="#F59E0B"
+                              size={11}
+                            />
+                            <Text style={styles.partnerRatingText}>
+                              {partnerRating}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {partnerVehicle ? (
+                          <Text style={styles.partnerVehicle} numberOfLines={1}>
+                            {partnerVehicle}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
                     <Text style={styles.partnerPhone} numberOfLines={1}>
                       {partnerPhone
                         ? partnerPhone
@@ -1362,6 +1416,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FFE4CC',
+    overflow: 'hidden',
+  },
+  partnerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   partnerEyebrow: {
     fontFamily: fonts.uiBold,
@@ -1374,6 +1433,33 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displayBold,
     fontSize: 16,
     color: INK,
+  },
+  partnerMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  partnerRatingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  partnerRatingText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 11,
+    color: '#92400E',
+  },
+  partnerVehicle: {
+    flex: 1,
+    fontFamily: fonts.uiMedium,
+    fontSize: 12,
+    color: MUTED,
+    textTransform: 'capitalize',
   },
   partnerPhone: {
     marginTop: 2,

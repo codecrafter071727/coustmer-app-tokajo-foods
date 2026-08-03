@@ -37,32 +37,63 @@ export function PaymentGatewayWebView({
 
   const handleNavigationChange = (navState: WebViewNavigation) => {
     setCanGoBack(navState.canGoBack);
-    
-    // Check for payment completion URLs
-    const url = navState.url.toLowerCase();
-    
-    // Success indicators
+
+    const url = navState.url;
+    const lower = url.toLowerCase();
+
+    const parseGatewayParams = (rawUrl: string) => {
+      try {
+        const parsed = new URL(rawUrl);
+        const q = parsed.searchParams;
+        return {
+          url: rawUrl,
+          paymentId:
+            q.get('paymentId') ||
+            q.get('payment_id') ||
+            undefined,
+          gatewayPaymentId:
+            q.get('gatewayPaymentId') ||
+            q.get('razorpay_payment_id') ||
+            q.get('payment_id') ||
+            undefined,
+          gatewayOrderId:
+            q.get('gatewayOrderId') ||
+            q.get('razorpay_order_id') ||
+            q.get('order_id') ||
+            undefined,
+          gatewaySignature:
+            q.get('gatewaySignature') ||
+            q.get('razorpay_signature') ||
+            q.get('signature') ||
+            undefined,
+          razorpay_payment_id: q.get('razorpay_payment_id') || undefined,
+          razorpay_order_id: q.get('razorpay_order_id') || undefined,
+          razorpay_signature: q.get('razorpay_signature') || undefined,
+        };
+      } catch {
+        return { url: rawUrl };
+      }
+    };
+
     if (
-      url.includes('success') ||
-      url.includes('complete') ||
-      url.includes('payment-success') ||
-      url.includes('thankyou') ||
-      url.includes('confirmation')
+      lower.includes('success') ||
+      lower.includes('complete') ||
+      lower.includes('payment-success') ||
+      lower.includes('thankyou') ||
+      lower.includes('confirmation')
     ) {
-      onPaymentComplete(true, { url: navState.url });
+      onPaymentComplete(true, parseGatewayParams(url));
       return;
     }
-    
-    // Failure indicators
+
     if (
-      url.includes('fail') ||
-      url.includes('error') ||
-      url.includes('cancel') ||
-      url.includes('payment-failed') ||
-      url.includes('declined')
+      lower.includes('fail') ||
+      lower.includes('error') ||
+      lower.includes('cancel') ||
+      lower.includes('payment-failed') ||
+      lower.includes('declined')
     ) {
-      onPaymentComplete(false, { url: navState.url });
-      return;
+      onPaymentComplete(false, parseGatewayParams(url));
     }
   };
 

@@ -237,6 +237,7 @@ export function OrderSummaryScreen() {
           orderId: currentOrder?.id,
           gatewayPaymentId: simulatedResult.gatewayPaymentId,
           gatewayOrderId: simulatedResult.gatewayOrderId,
+          gatewaySignature: simulatedResult.gatewaySignature,
           status: 'success',
         });
       } else if (data?.paymentId || data?.gatewayPaymentId) {
@@ -245,6 +246,11 @@ export function OrderSummaryScreen() {
           orderId: currentOrder?.id,
           gatewayPaymentId: data.gatewayPaymentId,
           gatewayOrderId: data.gatewayOrderId,
+          gatewaySignature: data.gatewaySignature || data.razorpay_signature,
+          razorpay_payment_id: data.razorpay_payment_id,
+          razorpay_order_id: data.razorpay_order_id,
+          razorpay_signature: data.razorpay_signature,
+          signature: data.gatewaySignature || data.razorpay_signature,
         });
       }
       setOrderPlacementPhase('placed');

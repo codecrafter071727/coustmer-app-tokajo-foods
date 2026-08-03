@@ -76,6 +76,8 @@ export type VerifyPaymentPayload = {
   orderId?: string;
   gatewayPaymentId?: string;
   gatewayOrderId?: string;
+  /** Preferred by payment-service validation */
+  gatewaySignature?: string;
   razorpay_payment_id?: string;
   razorpay_order_id?: string;
   razorpay_signature?: string;
@@ -104,6 +106,8 @@ export type SavePaymentMethodPayload = {
   label?: string;
   /** Card token / gateway method id when available */
   token?: string;
+  /** Alias expected by payment-service (`gatewayToken`) */
+  gatewayToken?: string;
   cardNumber?: string;
   expiryMonth?: number;
   expiryYear?: number;

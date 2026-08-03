@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
   ChevronRight,
+  CreditCard,
   Gift,
   Headset,
   LogOut,
@@ -300,6 +301,13 @@ export function ProfileHubScreen() {
               title="Tokajo wallet"
               trailing={`₹${balance.toFixed(0)}`}
               onPress={() => router.push('/profile/wallet')}
+            />
+            <Row
+              icon={CreditCard}
+              title="Payments"
+              onPress={() =>
+                router.push('/payments' as import('expo-router').Href)
+              }
             />
             <Row
               icon={MonitorSmartphone}

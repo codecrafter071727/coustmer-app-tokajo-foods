@@ -526,6 +526,12 @@ export function CartScreen() {
               orderId: currentOrder.id,
               gatewayPaymentId: data?.gatewayPaymentId || data?.paymentId,
               gatewayOrderId: data?.gatewayOrderId,
+              gatewaySignature:
+                data?.gatewaySignature || data?.razorpay_signature,
+              razorpay_payment_id: data?.razorpay_payment_id,
+              razorpay_order_id: data?.razorpay_order_id,
+              razorpay_signature: data?.razorpay_signature,
+              signature: data?.gatewaySignature || data?.razorpay_signature,
               status: 'success',
             });
           }

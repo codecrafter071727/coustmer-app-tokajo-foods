@@ -214,6 +214,21 @@ export function OrderIssuesScreen() {
             </Text>
           </View>
 
+          <Pressable
+            style={styles.refundCta}
+            onPress={() =>
+              router.push({
+                pathname: '/orders/[orderId]/refunds',
+                params: { orderId: resolvedOrderId || id },
+              })
+            }
+          >
+            <Text style={styles.refundCtaTitle}>Request a refund</Text>
+            <Text style={styles.refundCtaSub}>
+              Money-back requests for this order
+            </Text>
+          </Pressable>
+
           <Text style={styles.sectionLabel}>What’s wrong?</Text>
           <View style={styles.typeGrid}>
             {ORDER_ISSUE_TYPES.map((item) => {
@@ -410,6 +425,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: MUTED,
     lineHeight: 19,
+  },
+  refundCta: {
+    backgroundColor: ORANGE_SOFT,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#FFD8BF',
+  },
+  refundCtaTitle: {
+    fontFamily: fonts.uiBold,
+    fontSize: 15,
+    color: ORANGE,
+  },
+  refundCtaSub: {
+    marginTop: 3,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
   },
   sectionLabel: {
     fontFamily: fonts.uiBold,
