@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import { Heart, Clock, Star, Bike } from 'lucide-react-native';
 
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
+import { CustomerRecommendations } from '@/components/customer/CustomerRecommendations';
 import { fonts } from '@/constants/typography';
 import type { HomeFilterState } from '@/lib/home/filters';
 import type { Restaurant } from '@/lib/restaurant/types';
@@ -15,6 +16,8 @@ type Props = {
   filters: HomeFilterState;
   onFiltersChange: (next: HomeFilterState) => void;
   onClearFilters: () => void;
+  /** City restaurants used when recommended API is empty */
+  fallbackRestaurants?: Restaurant[];
 };
 
 export function CategoriesSection({
@@ -23,6 +26,7 @@ export function CategoriesSection({
   filters,
   onFiltersChange,
   onClearFilters,
+  fallbackRestaurants = [],
 }: Props) {
   const router = useRouter();
   const list = restaurants;
@@ -42,17 +46,13 @@ export function CategoriesSection({
         allRestaurants={allRestaurants}
       />
 
-      {list.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyTitle}>No matches</Text>
-          <Text style={styles.emptyText}>
-            Try another cuisine or clear filters to see more restaurants.
-          </Text>
-          <Pressable style={styles.emptyBtn} onPress={onClearFilters}>
-            <Text style={styles.emptyBtnText}>Clear filters</Text>
-          </Pressable>
-        </View>
-      ) : (
+      <CustomerRecommendations
+        fallbackRestaurants={
+          fallbackRestaurants.length ? fallbackRestaurants : allRestaurants
+        }
+      />
+
+      {list.length === 0 ? null : (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

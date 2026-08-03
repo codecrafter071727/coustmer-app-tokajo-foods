@@ -41,6 +41,7 @@ import {
   useDeals,
   useHomeFeed,
   useOffersFeed,
+  useRecommended,
 } from '@/lib/customer/hooks';
 import { useFavoriteToggle } from '@/lib/customer/useFavoriteToggle';
 import {
@@ -151,14 +152,13 @@ export default function HomeScreen() {
   const home = useHomeFeed();
   const deals = useDeals();
   const offers = useOffersFeed();
+  const recommended = useRecommended();
   const profile = useCustomerProfile();
   const discovery = useHomeDiscovery(city);
   const { favoriteIds, toggleFavorite } = useFavoriteToggle();
 
   const greeting =
     user?.firstName?.trim() || user?.email?.split('@')[0] || 'foodie';
-
-
 
   const feed = useInfiniteRestaurants(
     {
@@ -186,6 +186,47 @@ export default function HomeScreen() {
     () => applyHomeFilters(baseRestaurants, homeFilters),
     [baseRestaurants, homeFilters]
   );
+
+  /** IDs from AI recommended — keep other rails from cloning that sequence */
+  const recommendedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of recommended.data ?? []) {
+      if (r?.id) ids.add(String(r.id));
+    }
+    for (const r of home.data?.forYou ?? []) {
+      if (r?.id) ids.add(String(r.id));
+    }
+    return ids;
+  }, [recommended.data, home.data?.forYou]);
+
+  /** Deal rail: prefer partners with offers, else different sort; skip recommended first */
+  const hotDealRestaurants = useMemo(() => {
+    const withOffer = restaurants.filter(
+      (r) => typeof r.offer === 'string' && r.offer.trim().length > 0
+    );
+    const byPrice = [...restaurants].sort((a, b) => {
+      const ap = a.priceForTwo ?? a.costForTwo ?? 0;
+      const bp = b.priceForTwo ?? b.costForTwo ?? 0;
+      return bp - ap;
+    });
+    const pool = withOffer.length >= 3 ? withOffer : byPrice;
+    const withoutRec = pool.filter((r) => !recommendedIds.has(String(r.id)));
+    const picked = (withoutRec.length >= 4 ? withoutRec : pool).slice(0, 10);
+    return picked;
+  }, [restaurants, recommendedIds]);
+
+  /** Top rail: highest rated first (different order than feed / deals) */
+  const topRestaurants = useMemo(() => {
+    return [...restaurants].sort((a, b) => {
+      const ar = typeof a.rating === 'number' ? a.rating : 0;
+      const br = typeof b.rating === 'number' ? b.rating : 0;
+      if (br !== ar) return br - ar;
+      const ac = a.reviewCount ?? 0;
+      const bc = b.reviewCount ?? 0;
+      if (bc !== ac) return bc - ac;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [restaurants]);
 
   const openRestaurant = (id: string) => {
     router.push({
@@ -506,6 +547,7 @@ export default function HomeScreen() {
               onClear={onClearFilters}
               allRestaurants={baseRestaurants}
             />
+            <CustomerRecommendations fallbackRestaurants={restaurants} />
             <Text style={styles.filteredTitle}>
               {restaurants.length > 0
                 ? `${restaurants.length} restaurant${restaurants.length === 1 ? '' : 's'} found`
@@ -540,20 +582,21 @@ export default function HomeScreen() {
       ) : (
         <>
           <CategoriesSection
-            restaurants={restaurants.slice(0, 12)}
+            restaurants={[]}
             filters={homeFilters}
             onFiltersChange={onFiltersChange}
             onClearFilters={onClearFilters}
             allRestaurants={baseRestaurants}
+            fallbackRestaurants={restaurants}
           />
 
-          {restaurants.length > 0 ? (
+          {hotDealRestaurants.length > 0 ? (
             <View key="hot-deals-v5">
               <Text style={[styles.sectionHead, styles.hotDealsHead]}>
                 <Text style={styles.sectionHeadDark}>Hot deals </Text>
                 <Text style={styles.sectionHeadAccent}>%</Text>
               </Text>
-              <FeaturedRestaurants restaurants={restaurants.slice(0, 10)} />
+              <FeaturedRestaurants restaurants={hotDealRestaurants} />
             </View>
           ) : null}
 
@@ -580,13 +623,11 @@ export default function HomeScreen() {
 
           <OrderAgainSection />
 
-          <CustomerRecommendations />
-
-          {restaurants.length > 0 || (feed.isLoading && !!city) ? (
+          {topRestaurants.length > 0 || (feed.isLoading && !!city) ? (
             <PopularRestaurantsSection
-              restaurants={restaurants}
+              restaurants={topRestaurants}
               totalCount={
-                feed.data?.pages?.[0]?.meta?.total ?? restaurants.length
+                feed.data?.pages?.[0]?.meta?.total ?? topRestaurants.length
               }
               favoriteIds={favoriteIds}
               onToggleFavorite={(id) => {
@@ -595,7 +636,7 @@ export default function HomeScreen() {
               }}
               onPressRestaurant={openRestaurant}
               loadingMore={feed.isFetchingNextPage}
-              loading={feed.isLoading && restaurants.length === 0}
+              loading={feed.isLoading && topRestaurants.length === 0}
             />
           ) : null}
         </>

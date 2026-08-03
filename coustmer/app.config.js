@@ -8,7 +8,7 @@ const apiUrl =
 const config = {
   name: 'TOKAJO FOODS',
   slug: 'Food-Delivery-App',
-  version: '1.0.0',
+  version: '1.0.1',
   scheme: 'fooddeliveryapp',
   orientation: 'portrait',
   icon: './assets/icon.png',
@@ -59,6 +59,7 @@ const config = {
   },
   android: {
     package: 'com.fooddeliveryapp.customer',
+    versionCode: 2,
     softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: {
       foregroundImage: './assets/android-icon-foreground.png',

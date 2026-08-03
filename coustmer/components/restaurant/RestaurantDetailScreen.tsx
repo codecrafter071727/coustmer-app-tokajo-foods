@@ -969,10 +969,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {
-    fontFamily: fonts.display,
-    fontSize: 22,
+    fontFamily: fonts.displayBold,
+    fontSize: 20,
     color: INK,
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
   },
   sectionSub: {
     marginTop: 4,
@@ -1059,10 +1059,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   categoryTitle: {
-    fontFamily: fonts.display,
-    fontSize: 20,
+    fontFamily: fonts.displayBold,
+    fontSize: 18,
     color: INK,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   categorySub: {
     marginTop: 2,

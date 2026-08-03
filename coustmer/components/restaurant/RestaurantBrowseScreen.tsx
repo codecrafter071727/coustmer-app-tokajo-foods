@@ -38,7 +38,6 @@ import {
   useSearchRestaurants,
 } from '@/lib/search/hooks';
 import {
-  useDeliveryCoords,
   useDeliveryLocationStore,
 } from '@/store/delivery-location-store';
 
@@ -53,7 +52,6 @@ export function RestaurantBrowseScreen() {
     params.cuisine && params.cuisine !== 'all' ? params.cuisine : ''
   );
   const deliveryLocation = useDeliveryLocationStore((s) => s.location);
-  const coords = useDeliveryCoords();
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
 
   const city = useMemo(() => {
@@ -88,8 +86,7 @@ export function RestaurantBrowseScreen() {
   const searchQuery = useSearchRestaurants(
     {
       q: debouncedSearch,
-      lat: coords?.lat,
-      lng: coords?.lng,
+      // Do not send lat/lng with text `q` — search-service rejects geoNear + text.
       sort: '-createdAt',
       limit: 40,
     },

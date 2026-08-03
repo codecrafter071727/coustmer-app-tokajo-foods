@@ -1,6 +1,10 @@
 /**
- * Search Service.
- * Gateway: /api/v1/search-service
+ * Search Service (public).
+ * Gateway prefix: /api/v1/search-service
+ * Routes: GET /restaurants | /dishes | /combined | /suggestions | /health
+ *
+ * Note: backend rejects text (`q`) + geo (`lat`/`lng`) in the same query
+ * ("text and geoNear not allowed"). Client omits geo when `q` is set.
  */
 
 export type PaginationMeta = {

@@ -58,18 +58,41 @@ async function request<T>(
 }
 
 function mapProfile(data: Record<string, unknown>): CustomerProfile {
+  const favRaw =
+    data.favoriteRestaurants ??
+    data.favourites ??
+    data.favorites ??
+    data.favoriteRestaurantIds;
+  const favoriteRestaurants = Array.isArray(favRaw)
+    ? favRaw.map((x) =>
+        typeof x === 'string'
+          ? x
+          : String(
+              (x as { _id?: string; id?: string })?._id ??
+                (x as { id?: string })?.id ??
+                ''
+            )
+      ).filter(Boolean)
+    : [];
+
   return {
     id: String(data._id ?? data.id ?? ''),
-    userId: String(data.userId ?? ''),
-    totalOrders: Number(data.totalOrders ?? 0),
-    totalSpend: Number(data.totalSpend ?? 0),
-    averageOrderValue: Number(data.averageOrderValue ?? 0),
-    favoriteRestaurants: (data.favoriteRestaurants as string[]) ?? [],
-    favoriteDishes: (data.favoriteDishes as string[]) ?? [],
-    recentSearches: (data.recentSearches as string[]) ?? [],
-    recentRestaurants: (data.recentRestaurants as string[]) ?? [],
-    tier: String(data.tier ?? 'bronze'),
-    loyaltyPoints: Number(data.loyaltyPoints ?? 0),
+    userId: String(data.userId ?? data.customerId ?? ''),
+    totalOrders: Number(data.totalOrders ?? data.ordersCount ?? 0),
+    totalSpend: Number(data.totalSpend ?? data.spend ?? 0),
+    averageOrderValue: Number(data.averageOrderValue ?? data.aov ?? 0),
+    favoriteRestaurants,
+    favoriteDishes: Array.isArray(data.favoriteDishes)
+      ? (data.favoriteDishes as string[]).map(String)
+      : [],
+    recentSearches: Array.isArray(data.recentSearches)
+      ? (data.recentSearches as string[]).map(String)
+      : [],
+    recentRestaurants: Array.isArray(data.recentRestaurants)
+      ? (data.recentRestaurants as string[]).map(String)
+      : [],
+    tier: String(data.tier ?? data.loyaltyTier ?? 'bronze'),
+    loyaltyPoints: Number(data.loyaltyPoints ?? data.points ?? 0),
     onboardingCompleted: Boolean(data.onboardingCompleted ?? false),
     onboardingStep: Number(data.onboardingStep ?? 0),
   };
@@ -115,12 +138,38 @@ function unwrapList(payload: unknown): Record<string, unknown>[] {
     record.items ??
     record.results ??
     record.tickets ??
+    record.favorites ??
+    record.restaurants ??
+    record.recommendations ??
+    record.trending ??
+    record.forYou ??
+    record.newlyAdded ??
+    record.featured ??
+    record.featuredRestaurants ??
     record.data;
   if (Array.isArray(nested)) return nested as Record<string, unknown>[];
   if (nested && typeof nested === 'object') {
     const inner = nested as Record<string, unknown>;
-    const list = inner.deals ?? inner.banners ?? inner.offers ?? inner.items;
+    const list =
+      inner.deals ??
+      inner.banners ??
+      inner.offers ??
+      inner.items ??
+      inner.favorites ??
+      inner.restaurants ??
+      inner.recommendations;
     if (Array.isArray(list)) return list as Record<string, unknown>[];
+  }
+  return [];
+}
+
+function pickRestaurantList(
+  data: Record<string, unknown>,
+  ...keys: string[]
+): RestaurantCard[] {
+  for (const key of keys) {
+    const list = unwrapList(data[key]);
+    if (list.length) return list.map(mapRestaurantCard);
   }
   return [];
 }
@@ -190,13 +239,35 @@ export const customerApi = {
     const res = await request<HomeFeed & Record<string, unknown>>(
       `${CUSTOMER_BASE}/home`
     );
-    const data = (res.data ?? {}) as Record<string, unknown>;
-    const banners = unwrapList(data.banners).map(mapBanner);
+    const data = (res.data ?? res ?? {}) as Record<string, unknown>;
+    const banners = unwrapList(
+      data.banners ?? data.banner ?? data.promos
+    ).map(mapBanner);
+
     return {
       banners,
-      trending: unwrapList(data.trending).map(mapRestaurantCard),
-      forYou: unwrapList(data.forYou).map(mapRestaurantCard),
-      newlyAdded: unwrapList(data.newlyAdded).map(mapRestaurantCard),
+      trending: pickRestaurantList(
+        data,
+        'trending',
+        'popular',
+        'popularRestaurants',
+        'featured'
+      ),
+      forYou: pickRestaurantList(
+        data,
+        'forYou',
+        'recommended',
+        'recommendations',
+        'featuredRestaurants',
+        'personalized'
+      ),
+      newlyAdded: pickRestaurantList(
+        data,
+        'newlyAdded',
+        'new',
+        'recentlyAdded',
+        'newRestaurants'
+      ),
     };
   },
 
@@ -224,7 +295,6 @@ export const customerApi = {
       const { restaurantOffersApi } = await import('@/lib/restaurant/offers-api');
       
       const { restaurants } = await restaurantApi.getAllRestaurants({ limit: 100 });
-console.log("Fetched " + restaurants.length + " restaurants for deals fallback");
       const offersPromises = restaurants.map(r => restaurantOffersApi.getOffers(r.id).catch(() => ({ offers: [] })));
       const results = await Promise.all(offersPromises);
       
@@ -289,14 +359,36 @@ console.log("Fetched " + restaurants.length + " restaurants for deals fallback")
 
   /** GET /customers/recommended */
   getRecommended: async (): Promise<Recommendation[]> => {
-    const res = await request<Recommendation[]>(`${CUSTOMER_BASE}/recommended`);
-    return Array.isArray(res.data) ? res.data : [];
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/recommended`);
+      const payload = (res.data ?? res) as unknown;
+      if (Array.isArray(payload)) {
+        return payload.map((row) =>
+          mapRestaurantCard((row ?? {}) as Record<string, unknown>)
+        );
+      }
+      if (payload && typeof payload === 'object') {
+        const obj = payload as Record<string, unknown>;
+        return pickRestaurantList(
+          obj,
+          'recommendations',
+          'restaurants',
+          'forYou',
+          'items',
+          'data'
+        );
+      }
+      return unwrapList(payload).map(mapRestaurantCard);
+    } catch {
+      return [];
+    }
   },
 
   /** GET /customers/me */
   getProfile: async (): Promise<CustomerProfile> => {
     const res = await request<Record<string, unknown>>(`${CUSTOMER_BASE}/me`);
-    return mapProfile(res.data ?? {});
+    const data = (res.data ?? res ?? {}) as Record<string, unknown>;
+    return mapProfile(data);
   },
 
   /** GET /customers/me/favorites */

@@ -10,6 +10,7 @@ import type {
   CreateTicketPayload,
   RateTicketPayload,
 } from '@/lib/customer/types';
+import { useAuthStore } from '@/store/auth-store';
 
 export const customerKeys = {
   all: ['customer'] as const,
@@ -26,20 +27,28 @@ export const customerKeys = {
   ticket: (id: string) => [...customerKeys.all, 'ticket', id] as const,
 };
 
+function useIsAuthed() {
+  return useAuthStore((s) => Boolean(s.token && s.user));
+}
+
 export function useCustomerServiceHealth() {
   return useQuery({
     queryKey: customerKeys.health(),
     queryFn: customerApi.health,
-    refetchInterval: 30000, // Check every 30 seconds
+    refetchInterval: 30000,
     retry: 3,
     retryDelay: 5000,
   });
 }
 
 export function useHomeFeed() {
+  const authed = useIsAuthed();
   return useQuery({
     queryKey: customerKeys.home(),
     queryFn: customerApi.getHome,
+    enabled: authed,
+    staleTime: 60_000,
+    retry: 1,
   });
 }
 
@@ -47,36 +56,52 @@ export function useDeals() {
   return useQuery({
     queryKey: customerKeys.deals(),
     queryFn: customerApi.getDeals,
+    staleTime: 60_000,
+    retry: 1,
   });
 }
 
 /** Home offer ticker — merges banners + deals from multiple customer APIs */
 export function useOffersFeed() {
+  const authed = useIsAuthed();
   return useQuery({
     queryKey: customerKeys.offers(),
     queryFn: customerApi.getOffersFeed,
+    enabled: authed,
     staleTime: 60_000,
   });
 }
 
 export function useRecommended() {
+  const authed = useIsAuthed();
   return useQuery({
     queryKey: customerKeys.recommended(),
     queryFn: customerApi.getRecommended,
+    enabled: authed,
+    staleTime: 60_000,
+    retry: 1,
   });
 }
 
 export function useCustomerProfile() {
+  const authed = useIsAuthed();
   return useQuery({
     queryKey: customerKeys.profile(),
     queryFn: customerApi.getProfile,
+    enabled: authed,
+    staleTime: 60_000,
+    retry: 1,
   });
 }
 
 export function useFavorites() {
+  const authed = useIsAuthed();
   return useQuery({
     queryKey: customerKeys.favorites(),
     queryFn: customerApi.getFavorites,
+    enabled: authed,
+    staleTime: 30_000,
+    retry: 1,
   });
 }
 

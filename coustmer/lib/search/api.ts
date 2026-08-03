@@ -438,8 +438,10 @@ function restaurantNameMatches(restaurant: SearchRestaurant, q: string) {
   if (!needle) return false;
   return (
     restaurant.name.toLowerCase().includes(needle) ||
+    restaurant.description?.toLowerCase().includes(needle) === true ||
     restaurant.city?.toLowerCase().includes(needle) === true ||
-    restaurant.address?.toLowerCase().includes(needle) === true
+    restaurant.address?.toLowerCase().includes(needle) === true ||
+    restaurant.cuisines?.some((c) => c.toLowerCase().includes(needle)) === true
   );
 }
 
@@ -708,9 +710,80 @@ async function restaurantServiceSearch(
   }
 }
 
+/**
+ * Backend MongoDB text indexes cannot run with $geoNear in the same query.
+ * Only attach lat/lng when there is no text query.
+ */
+function geoParams(params: {
+  q?: string;
+  lat?: number;
+  lng?: number;
+}): { lat?: number; lng?: number } {
+  const hasText = Boolean(params.q?.trim());
+  if (hasText) return {};
+  if (
+    typeof params.lat !== 'number' ||
+    typeof params.lng !== 'number' ||
+    Number.isNaN(params.lat) ||
+    Number.isNaN(params.lng)
+  ) {
+    return {};
+  }
+  return { lat: params.lat, lng: params.lng };
+}
+
+/** GET /restaurants — full-text + filters. */
+async function searchServiceRestaurants(
+  params: SearchRestaurantsParams
+): Promise<SearchRestaurantsResult | null> {
+  try {
+    const geo = geoParams(params);
+    const res = await request<unknown>(
+      `${SEARCH_SERVICE}/restaurants${buildQuery({
+        q: params.q,
+        cuisine: params.cuisine,
+        lat: geo.lat,
+        lng: geo.lng,
+        sort: params.sort,
+        page: params.page,
+        limit: params.limit ?? 20,
+      })}`
+    );
+
+    const data = asRecord(res.data);
+    const restaurants = extractList(res.data, [
+      'restaurants',
+      'results',
+      'docs',
+      'items',
+    ])
+      .map(mapSearchRestaurant)
+      .filter((r) => r.id);
+
+    return {
+      restaurants,
+      meta: extractMeta(res.data, res.meta) ?? {
+        total:
+          typeof data.total === 'number' ? data.total : restaurants.length,
+        page: typeof data.page === 'number' ? data.page : params.page ?? 1,
+        limit:
+          typeof data.limit === 'number'
+            ? data.limit
+            : params.limit ?? restaurants.length,
+        totalPages:
+          typeof data.totalPages === 'number' ? data.totalPages : undefined,
+      },
+      query: (data.query as string) || params.q,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** GET /dishes — menu item full-text search. */
 async function searchServiceDishes(
   params: SearchDishesParams
-): Promise<SearchDish[]> {
+): Promise<SearchDishesResult | null> {
   try {
     const res = await request<unknown>(
       `${SEARCH_SERVICE}/dishes${buildQuery({
@@ -722,22 +795,49 @@ async function searchServiceDishes(
         limit: params.limit ?? 20,
       })}`
     );
-    return extractList(res.data, ['dishes', 'items', 'results', 'docs']).map(
-      mapSearchDish
-    );
+
+    const data = asRecord(res.data);
+    const dishes = extractList(res.data, [
+      'dishes',
+      'items',
+      'results',
+      'docs',
+      'menuItems',
+    ])
+      .map(mapSearchDish)
+      .filter((d) => d.id || d.name);
+
+    return {
+      dishes,
+      meta: extractMeta(res.data, res.meta) ?? {
+        total: typeof data.total === 'number' ? data.total : dishes.length,
+        page: typeof data.page === 'number' ? data.page : params.page ?? 1,
+        limit:
+          typeof data.limit === 'number'
+            ? data.limit
+            : params.limit ?? dishes.length,
+        totalPages:
+          typeof data.totalPages === 'number' ? data.totalPages : undefined,
+      },
+      query: (data.query as string) || params.q,
+    };
   } catch {
-    return [];
+    return null;
   }
 }
 
+/** GET /combined — restaurants + dishes for search dropdown / screen. */
 async function searchServiceCombined(
   params: SearchCombinedParams
 ): Promise<SearchCombinedResult | null> {
   try {
+    const geo = geoParams(params);
     const res = await request<unknown>(
       `${SEARCH_SERVICE}/combined${buildQuery({
         q: params.q,
         cuisine: params.cuisine,
+        lat: geo.lat,
+        lng: geo.lng,
         veg:
           params.veg === undefined
             ? undefined
@@ -754,16 +854,200 @@ async function searchServiceCombined(
       restaurants: extractList(res.data, [
         'restaurants',
         'restaurantResults',
-      ]).map(mapSearchRestaurant),
-      dishes: extractList(res.data, ['dishes', 'items', 'menuItems']).map(
-        mapSearchDish
-      ),
+        'results',
+      ])
+        .map(mapSearchRestaurant)
+        .filter((r) => r.id),
+      dishes: extractList(res.data, [
+        'dishes',
+        'items',
+        'menuItems',
+        'dishResults',
+      ])
+        .map(mapSearchDish)
+        .filter((d) => d.id || d.name),
       query: (data.query as string) || params.q,
       meta: extractMeta(res.data, res.meta),
     };
   } catch {
     return null;
   }
+}
+
+/** GET /suggestions — autocomplete. */
+async function searchServiceSuggestions(
+  params: SearchSuggestionsParams
+): Promise<SearchSuggestion[]> {
+  try {
+    const res = await request<unknown>(
+      `${SEARCH_SERVICE}/suggestions${buildQuery({
+        q: params.q,
+        limit: params.limit ?? 10,
+      })}`
+    );
+    return extractList(res.data, [
+      'suggestions',
+      'results',
+      'items',
+      'data',
+    ])
+      .map(mapSearchSuggestion)
+      .filter((s) => s.text.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Local fallback when search-service index is empty or unavailable. */
+async function fallbackRestaurants(
+  params: SearchRestaurantsParams
+): Promise<SearchRestaurant[]> {
+  const q = params.q?.trim() ?? '';
+  const limit = params.limit ?? 30;
+  const cuisineKey = params.cuisine?.trim() || q;
+
+  if (!cuisineKey) return [];
+
+  // Name / restaurant-service search first (fast, authoritative for restaurant names).
+  const [nameHits, catalog] = await Promise.all([
+    q
+      ? restaurantServiceSearch({ ...params, q, limit }).catch(
+          () => [] as SearchRestaurant[]
+        )
+      : Promise.resolve([] as SearchRestaurant[]),
+    loadRestaurantCatalog().catch(() => [] as SearchRestaurant[]),
+  ]);
+
+  const catalogHits = catalog.filter((r) =>
+    q
+      ? restaurantNameMatches(r, q)
+      : params.cuisine
+        ? restaurantNameMatches(r, params.cuisine) ||
+          r.cuisines?.some((c) =>
+            c.toLowerCase().includes(params.cuisine!.toLowerCase())
+          )
+        : false
+  );
+
+  let restaurants = rankRestaurants(
+    mergeRestaurants(nameHits, catalogHits),
+    cuisineKey
+  );
+
+  // Optional menu enrichment — never blocks name hits.
+  try {
+    const evidence = await searchByMenuEvidence(cuisineKey, limit);
+    restaurants = rankRestaurants(
+      mergeRestaurants(restaurants, evidence.restaurants),
+      cuisineKey
+    );
+  } catch {
+    // ignore
+  }
+
+  return restaurants.slice(0, limit);
+}
+
+async function fallbackCombined(
+  q: string,
+  limit: number,
+  veg?: boolean
+): Promise<SearchCombinedResult> {
+  // Restaurant name hits first (fast). Do NOT wait on menu scanning.
+  const [nameHits, catalog] = await Promise.all([
+    restaurantServiceSearch({ q, limit }).catch(() => [] as SearchRestaurant[]),
+    loadRestaurantCatalog().catch(() => [] as SearchRestaurant[]),
+  ]);
+
+  const catalogNameHits = catalog.filter((r) => restaurantNameMatches(r, q));
+  let restaurants = rankRestaurants(
+    mergeRestaurants(nameHits, catalogNameHits),
+    q
+  ).slice(0, limit);
+
+  let dishes: SearchDish[] = [];
+  try {
+    const evidence = await searchByMenuEvidence(q, limit, veg);
+    restaurants = rankRestaurants(
+      mergeRestaurants(restaurants, evidence.restaurants),
+      q
+    ).slice(0, limit);
+    dishes = evidence.dishes;
+    if (veg) dishes = dishes.filter((d) => d.isVeg !== false);
+  } catch {
+    // Menu evidence is optional enrichment.
+  }
+
+  return {
+    restaurants,
+    dishes: dishes.slice(0, limit),
+    query: q,
+    meta: { total: restaurants.length + dishes.length },
+  };
+}
+
+async function fallbackSuggestions(
+  q: string,
+  limit: number
+): Promise<SearchSuggestion[]> {
+  const [evidence, index, nameHits] = await Promise.all([
+    searchByMenuEvidence(q, 8).catch(() => ({
+      restaurants: [] as SearchRestaurant[],
+      dishes: [] as SearchDish[],
+    })),
+    loadMenuIndex().catch(() => [] as RestaurantMenuIndex[]),
+    restaurantServiceSearch({ q, limit: 6 }).catch(
+      () => [] as SearchRestaurant[]
+    ),
+  ]);
+
+  const categorySuggestions: SearchSuggestion[] = [];
+  const seenCategories = new Set<string>();
+  for (const entry of index) {
+    for (const cat of entry.categories) {
+      if (!categoryMatchesQuery(cat.name, q)) continue;
+      const key = cat.name.toLowerCase();
+      if (seenCategories.has(key)) continue;
+      seenCategories.add(key);
+      categorySuggestions.push({
+        id: `cat-${key}`,
+        text: cat.name,
+        type: 'cuisine',
+      });
+    }
+  }
+
+  const restaurants = mergeRestaurants(evidence.restaurants, nameHits);
+
+  const local: SearchSuggestion[] = [
+    ...evidence.dishes.slice(0, 5).map((d) => ({
+      id: `dish-${d.restaurantId}-${d.id}`,
+      text: d.name,
+      type: 'dish' as const,
+      restaurantId: d.restaurantId,
+      dishId: d.id,
+      imageUrl: d.imageUrl,
+    })),
+    ...categorySuggestions.slice(0, 3),
+    ...restaurants.slice(0, 4).map((r) => ({
+      id: `rest-${r.id}`,
+      text: r.name,
+      type: 'restaurant' as const,
+      restaurantId: r.id,
+      imageUrl: r.imageUrl || r.coverUrl,
+    })),
+  ];
+
+  const seen = new Set<string>();
+  const out: SearchSuggestion[] = [];
+  for (const item of local) {
+    const key = `${item.type}:${item.text.toLowerCase()}:${item.restaurantId ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export const searchApi = {
@@ -784,8 +1068,7 @@ export const searchApi = {
   },
 
   /**
-   * Restaurant search based on menu evidence:
-   * only restaurants that have the category/dish (or name match).
+   * GET /restaurants — prefers search-service; falls back to restaurant + menu index.
    */
   searchRestaurants: async (
     params: SearchRestaurantsParams
@@ -793,64 +1076,66 @@ export const searchApi = {
     const q = params.q?.trim() ?? '';
     const limit = params.limit ?? 30;
 
-    if (!q && params.cuisine) {
-      // Cuisine-only: restaurants that actually have that menu category.
-      const evidence = await searchByMenuEvidence(params.cuisine, limit);
-      return {
-        restaurants: evidence.restaurants,
-        meta: { total: evidence.restaurants.length, page: 1, limit },
-        query: params.cuisine,
-      };
-    }
-
-    if (!q) {
+    if (!q && !params.cuisine) {
       return { restaurants: [], meta: { total: 0 }, query: '' };
     }
 
-    const [evidence, nameHits] = await Promise.all([
-      searchByMenuEvidence(q, limit),
-      restaurantServiceSearch({ ...params, q, limit }).catch(
-        () => [] as SearchRestaurant[]
-      ),
-    ]);
+    const remotePromise = searchServiceRestaurants({
+      ...params,
+      q: q || undefined,
+      limit,
+    });
+    const fallbackPromise = fallbackRestaurants({ ...params, q, limit });
 
-    // Keep name-search hits only when they also appear in menu evidence,
-    // OR when the restaurant name itself matches the query.
-    const evidenceIds = new Set(evidence.restaurants.map((r) => r.id));
-    const nameOnly = nameHits.filter(
-      (r) => restaurantNameMatches(r, q) && !evidenceIds.has(r.id)
-    );
+    const remote = await remotePromise;
+    if (remote && remote.restaurants.length > 0) {
+      return {
+        ...remote,
+        restaurants: q
+          ? rankRestaurants(remote.restaurants, q).slice(0, limit)
+          : remote.restaurants.slice(0, limit),
+        query: remote.query || q || params.cuisine,
+      };
+    }
 
-    const restaurants = rankRestaurants(
-      mergeRestaurants(evidence.restaurants, nameOnly),
-      q
-    ).slice(0, limit);
-
+    const restaurants = await fallbackPromise;
     return {
       restaurants,
       meta: { total: restaurants.length, page: 1, limit },
-      query: q,
+      query: q || params.cuisine,
     };
   },
 
-  /** Dishes that actually exist on restaurant menus. */
+  /**
+   * GET /dishes — prefers search-service; falls back to menu evidence.
+   */
   searchDishes: async (
     params: SearchDishesParams
   ): Promise<SearchDishesResult> => {
     const q = params.q?.trim() ?? '';
     const limit = params.limit ?? 24;
 
-    const [remote, evidence] = await Promise.all([
-      searchServiceDishes(params),
-      q
-        ? searchByMenuEvidence(q, limit, params.veg)
-        : Promise.resolve({
-            restaurants: [] as SearchRestaurant[],
-            dishes: [] as SearchDish[],
-          }),
-    ]);
+    const remotePromise = searchServiceDishes({
+      ...params,
+      q: q || undefined,
+      limit,
+    });
+    const fallbackPromise = q
+      ? searchByMenuEvidence(q, limit, params.veg).catch(() => ({
+          dishes: [] as SearchDish[],
+          restaurants: [] as SearchRestaurant[],
+        }))
+      : Promise.resolve({
+          dishes: [] as SearchDish[],
+          restaurants: [] as SearchRestaurant[],
+        });
 
-    let dishes = mergeDishes(remote, evidence.dishes);
+    const remote = await remotePromise;
+    let dishes =
+      remote && remote.dishes.length > 0
+        ? remote.dishes
+        : (await fallbackPromise).dishes;
+
     if (params.veg) {
       dishes = dishes.filter((d) => d.isVeg !== false);
     }
@@ -858,15 +1143,19 @@ export const searchApi = {
       dishes = dishes.filter((d) => d.restaurantId === params.restaurantId);
     }
 
+    dishes = mergeDishes(dishes).slice(0, limit);
+
     return {
-      dishes: dishes.slice(0, limit),
-      meta: { total: dishes.length },
-      query: q,
+      dishes,
+      meta: remote?.meta ?? { total: dishes.length },
+      query: remote?.query || q,
     };
   },
 
   /**
-   * Combined search: restaurants + dishes proven by menu category/dish presence.
+   * GET /combined — primary path for Search screen.
+   * Always merges restaurant-service name search so typed restaurant names
+   * (e.g. "Saurabh") appear even when search-service index is empty.
    */
   searchCombined: async (
     params: SearchCombinedParams
@@ -878,57 +1167,55 @@ export const searchApi = {
 
     const limit = params.limit ?? 24;
 
-    const [remote, evidence] = await Promise.all([
-      searchServiceCombined(params),
-      searchByMenuEvidence(q, limit, params.veg),
+    // Fast path in parallel: search-service + restaurant name search.
+    const [remote, nameHits] = await Promise.all([
+      searchServiceCombined({ ...params, q, limit }),
+      restaurantServiceSearch({ q, limit }).catch(
+        () => [] as SearchRestaurant[]
+      ),
     ]);
 
-    // Remote search-service hits are kept only if we can verify them in menu
-    // evidence, OR for restaurant name matches.
-    const evidenceRestaurantIds = new Set(
-      evidence.restaurants.map((r) => r.id)
-    );
-    const remoteRestaurants = (remote?.restaurants ?? []).filter(
-      (r) =>
-        evidenceRestaurantIds.has(r.id) || restaurantNameMatches(r, q)
-    );
+    let restaurants = mergeRestaurants(remote?.restaurants ?? [], nameHits);
+    let dishes = remote?.dishes ?? [];
 
-    let dishes = mergeDishes(remote?.dishes ?? [], evidence.dishes);
+    // If still thin, enrich from catalog names + menu evidence.
+    if (restaurants.length === 0 || dishes.length === 0) {
+      const fallback = await fallbackCombined(q, limit, params.veg);
+      restaurants = mergeRestaurants(restaurants, fallback.restaurants);
+      dishes = mergeDishes(dishes, fallback.dishes);
+    }
+
     if (params.veg) {
       dishes = dishes.filter((d) => d.isVeg !== false);
+      restaurants = restaurants.filter((r) => r.isPureVeg !== false);
     }
 
-    // Any restaurant that has a matching dish must appear in restaurant list.
+    const byId = new Map(restaurants.map((r) => [r.id, r]));
     for (const dish of dishes) {
-      if (!dish.restaurantId || evidenceRestaurantIds.has(dish.restaurantId)) {
-        continue;
-      }
-      const fromRemote = (remote?.restaurants ?? []).find(
-        (r) => r.id === dish.restaurantId
-      );
-      if (fromRemote) {
-        evidence.restaurants.push(fromRemote);
-        evidenceRestaurantIds.add(fromRemote.id);
-      }
+      if (!dish.restaurantId || byId.has(dish.restaurantId)) continue;
+      byId.set(dish.restaurantId, {
+        id: dish.restaurantId,
+        name: dish.restaurantName || 'Restaurant',
+        imageUrl: dish.imageUrl,
+      });
     }
 
-    const restaurants = rankRestaurants(
-      mergeRestaurants(evidence.restaurants, remoteRestaurants),
-      q
-    ).slice(0, limit);
+    restaurants = rankRestaurants(Array.from(byId.values()), q).slice(0, limit);
+    dishes = mergeDishes(dishes).slice(0, limit);
 
     return {
       restaurants,
-      dishes: dishes.slice(0, limit),
+      dishes,
       query: remote?.query || q,
       meta: {
         total: restaurants.length + dishes.length,
+        ...(remote?.meta ?? {}),
       },
     };
   },
 
   /**
-   * Suggestions from real menu categories + dishes + restaurant names.
+   * GET /suggestions — autocomplete; falls back to local catalog evidence.
    */
   getSuggestions: async (
     params: SearchSuggestionsParams
@@ -937,80 +1224,21 @@ export const searchApi = {
     if (!q) return { suggestions: [], query: '' };
 
     const limit = params.limit ?? 10;
+    const remotePromise = searchServiceSuggestions({ q, limit });
+    const fallbackPromise = fallbackSuggestions(q, limit);
 
-    const remotePromise = (async (): Promise<SearchSuggestion[]> => {
-      try {
-        const res = await request<unknown>(
-          `${SEARCH_SERVICE}/suggestions${buildQuery({ q, limit })}`
-        );
-        return extractList(res.data, [
-          'suggestions',
-          'results',
-          'items',
-          'data',
-        ])
-          .map(mapSearchSuggestion)
-          .filter((s) => s.text.length > 0);
-      } catch {
-        return [];
-      }
-    })();
-
-    const [remote, evidence, index] = await Promise.all([
-      remotePromise,
-      searchByMenuEvidence(q, 8),
-      loadMenuIndex(),
-    ]);
-
-    const categorySuggestions: SearchSuggestion[] = [];
-    const seenCategories = new Set<string>();
-    for (const entry of index) {
-      for (const cat of entry.categories) {
-        if (!categoryMatchesQuery(cat.name, q)) continue;
-        const key = cat.name.toLowerCase();
-        if (seenCategories.has(key)) continue;
-        seenCategories.add(key);
-        categorySuggestions.push({
-          id: `cat-${key}`,
-          text: cat.name,
-          type: 'cuisine',
-        });
-      }
+    const remote = await remotePromise;
+    if (remote.length > 0) {
+      return { suggestions: remote.slice(0, limit), query: q };
     }
 
-    const localSuggestions: SearchSuggestion[] = [
-      ...evidence.dishes.slice(0, 5).map((d) => ({
-        id: `dish-${d.restaurantId}-${d.id}`,
-        text: d.name,
-        type: 'dish' as const,
-        restaurantId: d.restaurantId,
-        dishId: d.id,
-        imageUrl: d.imageUrl,
-      })),
-      ...categorySuggestions.slice(0, 3),
-      ...evidence.restaurants.slice(0, 4).map((r) => ({
-        id: `rest-${r.id}`,
-        text: r.name,
-        type: 'restaurant' as const,
-        restaurantId: r.id,
-        imageUrl: r.imageUrl || r.coverUrl,
-      })),
-    ];
-
-    const seen = new Set<string>();
-    const suggestions: SearchSuggestion[] = [];
-    for (const item of [...localSuggestions, ...remote]) {
-      const key = `${item.type}:${item.text.toLowerCase()}:${item.restaurantId ?? ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      suggestions.push(item);
-      if (suggestions.length >= limit) break;
-    }
-
-    return { suggestions, query: q };
+    return {
+      suggestions: await fallbackPromise,
+      query: q,
+    };
   },
 
-  /** Warm restaurant + menu evidence catalogs on search screen mount. */
+  /** Warm restaurant + menu evidence catalogs (fallback path) on search mount. */
   prefetchCatalog: async (): Promise<{
     restaurants: number;
     dishes: number;

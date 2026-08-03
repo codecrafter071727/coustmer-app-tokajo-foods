@@ -23,8 +23,8 @@ export const searchKeys = {
   catalog: () => [...searchKeys.all, 'catalog'] as const,
 };
 
-/** Debounce a string for search inputs (default 200ms). */
-export function useDebouncedValue<T>(value: T, delayMs = 200): T {
+/** Debounce a string for search inputs (default 220ms). */
+export function useDebouncedValue<T>(value: T, delayMs = 220): T {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export function useDebouncedValue<T>(value: T, delayMs = 200): T {
   return debounced;
 }
 
-/** Warm restaurant catalog so "Mole" → Molecule is instant. */
+/** Warm restaurant catalog so fallback search stays snappy. */
 export function usePrefetchSearchCatalog() {
   return useQuery({
     queryKey: searchKeys.catalog(),
@@ -56,7 +56,7 @@ export function useSearchServiceHealth(enabled = false) {
   });
 }
 
-/** GET /restaurants (+ robust local fallback) */
+/** GET /restaurants (?q=&cuisine=&lat=&lng=&sort=) */
 export function useSearchRestaurants(
   params: SearchRestaurantsParams,
   options?: { enabled?: boolean }
@@ -68,11 +68,12 @@ export function useSearchRestaurants(
     queryFn: () => searchApi.searchRestaurants(params),
     enabled: (options?.enabled ?? true) && hasQuery,
     staleTime: 20_000,
+    retry: 1,
     placeholderData: (prev) => prev,
   });
 }
 
-/** GET /dishes */
+/** GET /dishes (?q=&restaurantId=&veg=) */
 export function useSearchDishes(
   params: SearchDishesParams,
   options?: { enabled?: boolean }
@@ -84,11 +85,12 @@ export function useSearchDishes(
     queryFn: () => searchApi.searchDishes(params),
     enabled: (options?.enabled ?? true) && hasQuery,
     staleTime: 20_000,
+    retry: 1,
     placeholderData: (prev) => prev,
   });
 }
 
-/** Combined search — primary search screen query. Starts from 1 char. */
+/** GET /combined — primary Search screen query. Starts from 1 char. */
 export function useSearchCombined(
   params: SearchCombinedParams,
   options?: { enabled?: boolean }
@@ -100,11 +102,12 @@ export function useSearchCombined(
     queryFn: () => searchApi.searchCombined({ ...params, q }),
     enabled: (options?.enabled ?? true) && q.length >= 1,
     staleTime: 12_000,
+    retry: 1,
     placeholderData: (prev) => prev,
   });
 }
 
-/** Autocomplete suggestions — starts from 1 char. */
+/** GET /suggestions — autocomplete from 1 char. */
 export function useSearchSuggestions(
   params: SearchSuggestionsParams,
   options?: { enabled?: boolean }
@@ -116,6 +119,7 @@ export function useSearchSuggestions(
     queryFn: () => searchApi.getSuggestions({ ...params, q }),
     enabled: (options?.enabled ?? true) && q.length >= 1,
     staleTime: 8_000,
+    retry: 1,
     placeholderData: (prev) => prev,
   });
 }

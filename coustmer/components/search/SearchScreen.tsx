@@ -43,14 +43,21 @@ import {
   useDebouncedValue,
   usePrefetchSearchCatalog,
   useSearchCombined,
+  useSearchRestaurants,
+  useSearchSuggestions,
 } from '@/lib/search/hooks';
 import {
   loadLocalRecentSearches,
   pushLocalRecentSearch,
 } from '@/lib/search/recent';
-import type { SearchDish, SearchRestaurant } from '@/lib/search/types';
+import type {
+  SearchDish,
+  SearchRestaurant,
+  SearchSuggestion,
+} from '@/lib/search/types';
 import { expandSearchQuery } from '@/lib/search/expandQuery';
 import { getVarietiesForQuery } from '@/lib/search/varieties';
+import { useDeliveryCoords } from '@/store/delivery-location-store';
 import { useVegPreferenceStore } from '@/store/veg-preference-store';
 
 const PLACEHOLDERS = [
@@ -161,8 +168,9 @@ export function SearchScreen() {
   const setVegMode = useVegPreferenceStore((s) => s.setMode);
   const vegActive = vegMode === 'pure_veg';
   const { isFavorite, toggleFavorite } = useFavoriteToggle();
+  const coords = useDeliveryCoords();
 
-  const debounced = useDebouncedValue(query.trim(), 120);
+  const debounced = useDebouncedValue(query.trim(), 220);
   /** "piz" → "Pizza" so live typing (no Enter) opens the full dish results UI. */
   const searchQ = useMemo(() => expandSearchQuery(debounced), [debounced]);
   usePrefetchSearchCatalog();
@@ -192,13 +200,67 @@ export function SearchScreen() {
   }, []);
 
   const combined = useSearchCombined(
-    { q: searchQ, limit: 30, veg: vegActive || undefined },
+    {
+      q: searchQ,
+      limit: 30,
+      veg: vegActive || undefined,
+      // Passed for future geo ranking; API strips lat/lng whenever `q` is set
+      // (backend rejects text + geoNear in one query).
+      lat: coords?.lat,
+      lng: coords?.lng,
+    },
     { enabled: searchQ.length >= 1 }
+  );
+
+  /** Direct restaurant-service name search — guarantees "Saurabh" etc. show up. */
+  const restaurantSearch = useSearchRestaurants(
+    { q: searchQ, limit: 30 },
+    { enabled: searchQ.length >= 1 }
+  );
+
+  const suggestionsQuery = useSearchSuggestions(
+    { q: debounced, limit: 8 },
+    { enabled: debounced.length >= 1 && searchQ.length >= 1 }
   );
 
   const remember = useCallback(async (term: string) => {
     await pushLocalRecentSearch(term);
   }, []);
+
+  const applySuggestion = useCallback(
+    (item: SearchSuggestion) => {
+      const text = item.text.trim();
+      if (!text) return;
+
+      if (item.type === 'restaurant' && item.restaurantId) {
+        void remember(text);
+        Keyboard.dismiss();
+        router.push({
+          pathname: '/restaurants/[restaurantId]',
+          params: { restaurantId: item.restaurantId },
+        });
+        return;
+      }
+
+      if (item.type === 'dish' && item.restaurantId) {
+        void remember(text);
+        Keyboard.dismiss();
+        router.push({
+          pathname: '/restaurants/[restaurantId]',
+          params: {
+            restaurantId: item.restaurantId,
+            ...(item.dishId ? { itemId: item.dishId } : {}),
+            itemName: text,
+          },
+        });
+        return;
+      }
+
+      setQuery(text);
+      void remember(text);
+    },
+    [remember, router]
+  );
 
   const openRestaurant = (id: string, name?: string) => {
     if (!id) return;
@@ -229,7 +291,18 @@ export function SearchScreen() {
     [searchQ]
   );
 
-  const restaurantsRaw = combined.data?.restaurants ?? [];
+  const restaurantsRaw = useMemo(() => {
+    const fromRestaurants = restaurantSearch.data?.restaurants ?? [];
+    const fromCombined = combined.data?.restaurants ?? [];
+    if (!fromRestaurants.length) return fromCombined;
+    if (!fromCombined.length) return fromRestaurants;
+    const map = new Map<string, SearchRestaurant>();
+    for (const r of [...fromRestaurants, ...fromCombined]) {
+      if (r?.id && !map.has(r.id)) map.set(r.id, r);
+    }
+    return Array.from(map.values());
+  }, [restaurantSearch.data?.restaurants, combined.data?.restaurants]);
+
   const dishesRaw = combined.data?.dishes ?? [];
 
   const cyclingPlaceholderText = useCyclingPlaceholder();
@@ -237,7 +310,8 @@ export function SearchScreen() {
   const restaurants = useMemo(() => {
     let list = restaurantsRaw;
     if (vegActive || activeFilter === 'pure_veg') {
-      list = list.filter((r) => r.isPureVeg);
+      // Keep unknown pure-veg status; only drop known non-veg.
+      list = list.filter((r) => r.isPureVeg !== false);
     }
     if (activeVariety) {
       const v = varieties.find((x) => x.id === activeVariety)?.label.toLowerCase();
@@ -291,8 +365,17 @@ export function SearchScreen() {
 
   const featured = restaurants.slice(0, 5);
   const showResults = query.trim().length > 0;
+  const suggestions = suggestionsQuery.data?.suggestions ?? [];
   const isLoading =
-    combined.isFetching && restaurantsRaw.length === 0 && dishesRaw.length === 0;
+    (combined.isFetching || restaurantSearch.isFetching) &&
+    restaurantsRaw.length === 0 &&
+    dishesRaw.length === 0;
+  const showError =
+    combined.isError &&
+    restaurantSearch.isError &&
+    !isLoading &&
+    restaurantsRaw.length === 0 &&
+    dishesRaw.length === 0;
 
   const goBack = () => {
     Keyboard.dismiss();
@@ -529,9 +612,59 @@ export function SearchScreen() {
                 </ScrollView>
               ) : null}
 
+              {suggestions.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.suggestionRow}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {suggestions.map((s) => (
+                    <Pressable
+                      key={s.id}
+                      style={styles.suggestionChip}
+                      onPress={() => applySuggestion(s)}
+                    >
+                      <Text style={styles.suggestionText} numberOfLines={1}>
+                        {s.text}
+                      </Text>
+                      {s.type && s.type !== 'query' ? (
+                        <Text style={styles.suggestionType}>
+                          {s.type === 'restaurant'
+                            ? 'Restaurant'
+                            : s.type === 'dish'
+                              ? 'Dish'
+                              : s.type === 'cuisine'
+                                ? 'Cuisine'
+                                : ''}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
               {isLoading ? (
                 <View style={styles.loadingBox}>
                   <ActivityIndicator color={authTheme.brand} />
+                </View>
+              ) : null}
+
+              {showError ? (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyTitle}>Search is unavailable</Text>
+                  <Text style={styles.emptySub}>
+                    Check your connection and try again
+                  </Text>
+                  <Pressable
+                    style={styles.retryBtn}
+                    onPress={() => {
+                      void combined.refetch();
+                      void restaurantSearch.refetch();
+                    }}
+                  >
+                    <Text style={styles.retryText}>Retry</Text>
+                  </Pressable>
                 </View>
               ) : null}
 
@@ -1075,6 +1208,34 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
+  suggestionRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    gap: 8,
+    alignItems: 'center',
+  },
+  suggestionChip: {
+    maxWidth: 200,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: '#F5F5F6',
+    borderWidth: 1,
+    borderColor: '#E8E8EC',
+  },
+  suggestionText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 13,
+    color: '#02060C',
+  },
+  suggestionType: {
+    marginTop: 2,
+    fontFamily: fonts.uiMedium,
+    fontSize: 10,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
   featuredRow: {
     paddingHorizontal: 16,
     paddingBottom: 18,
@@ -1290,5 +1451,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9CA3AF',
     textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: authTheme.brand,
+  },
+  retryText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
   },
 });
