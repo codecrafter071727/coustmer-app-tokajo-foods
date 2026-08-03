@@ -231,9 +231,10 @@ export function isActiveOrderStatus(status?: string) {
 
 export function canCancelOrder(status?: string) {
   if (!status) return false;
-  const s = status.toLowerCase();
+  const s = normalizeOrderStatus(status);
   return [
     'pending',
+    'pending_payment',
     'placed',
     'confirmed',
     'scheduled',
@@ -242,8 +243,8 @@ export function canCancelOrder(status?: string) {
 
 export function canTipOrder(status?: string) {
   if (!status) return false;
-  const s = status.toLowerCase();
-  return ['pending', 'placed'].includes(s);
+  const s = normalizeOrderStatus(status);
+  return ['pending', 'pending_payment', 'placed'].includes(s);
 }
 
 /** Delivered / completed orders can be rated. */

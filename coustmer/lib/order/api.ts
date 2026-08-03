@@ -545,7 +545,13 @@ export const orderApi = {
     const res = await request<unknown>(`${ORDERS_BASE}/active`);
     const list = extractList(res.data);
     if (list.length) return list.map(mapOrder);
-    // Some gateways put the array on the envelope root instead of `data`
+
+    // Backend may return a single active order object in `data`
+    const single = asRecord(res.data);
+    if (single._id || single.id || single.orderNumber) {
+      return [mapOrder(single)];
+    }
+
     return extractList(res).map(mapOrder);
   },
 
@@ -612,21 +618,38 @@ export const orderApi = {
   },
 
   /** POST /orders/:orderId/reorder */
-  reorder: async (orderId: string): Promise<Order> => {
+  reorder: async (
+    orderId: string
+  ): Promise<{ mode: 'cart' | 'order'; order?: Order; message?: string }> => {
     const res = await request<Record<string, unknown>>(
       `${ORDERS_BASE}/${orderId}/reorder`,
       { method: 'POST', body: {} }
     );
-    return mapOrder(asRecord(res.data ?? res));
+    const data = asRecord(res.data ?? res);
+    // Backend often populates the cart instead of placing a new order
+    if (
+      data.cartId ||
+      (Array.isArray(data.items) && !data._id && !data.id && !data.orderNumber)
+    ) {
+      return {
+        mode: 'cart',
+        message: res.message || 'Items added to your cart',
+      };
+    }
+    return {
+      mode: 'order',
+      order: mapOrder(data),
+      message: res.message,
+    };
   },
 
   /** PUT /orders/:orderId/tip */
   updateTip: async (orderId: string, payload: TipPayload): Promise<Order> => {
     const bodies = [
+      { tipAmount: payload.tip, tip: payload.tip, amount: payload.tip },
+      { tipAmount: payload.tip },
       { tip: payload.tip },
       { amount: payload.tip },
-      { tipAmount: payload.tip },
-      { tip: payload.tip, amount: payload.tip },
     ];
 
     let lastError: Error | null = null;

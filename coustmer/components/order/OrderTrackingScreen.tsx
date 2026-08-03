@@ -606,17 +606,31 @@ export function OrderTrackingScreen() {
   };
 
   const handleReorder = () => {
-    Alert.alert('Order again?', 'Place a new order with the same items.', [
+    Alert.alert('Order again?', 'Add the same items to your cart.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Order again',
         onPress: async () => {
           try {
             const next = await reorder.mutateAsync();
-            router.replace({
-              pathname: '/orders/[orderId]/tracking',
-              params: { orderId: next.id, newOrder: 'true' },
-            });
+            if (next.mode === 'order' && next.order?.id) {
+              router.replace({
+                pathname: '/orders/[orderId]/tracking',
+                params: { orderId: next.order.id, newOrder: 'true' },
+              });
+              return;
+            }
+            Alert.alert(
+              'Added to cart',
+              next.message || 'Review your cart to place the order.',
+              [
+                {
+                  text: 'Go to cart',
+                  onPress: () =>
+                    router.push('/cart' as import('expo-router').Href),
+                },
+              ]
+            );
           } catch (e) {
             Alert.alert(
               'Reorder failed',

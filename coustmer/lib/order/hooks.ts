@@ -148,9 +148,12 @@ export function useReorder(orderId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => orderApi.reorder(orderId),
-    onSuccess: (order) => {
-      invalidateOrderQueries(queryClient, order.id);
+    onSuccess: (result) => {
       invalidateOrderQueries(queryClient, orderId);
+      if (result.order?.id) {
+        invalidateOrderQueries(queryClient, result.order.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
     },
   });
 }

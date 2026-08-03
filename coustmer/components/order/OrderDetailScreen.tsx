@@ -5,16 +5,20 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Check,
+  FileText,
   Headset,
+  IndianRupee,
   MapPin,
   RotateCcw,
   Store,
   Star,
   Truck,
+  XCircle,
 } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,11 +30,21 @@ import { LoadingView, ErrorView } from '@/components/common/StateViews';
 import { OrderStatusTimeline } from '@/components/order/OrderStatusTimeline';
 import { VegBadge } from '@/components/restaurant/MenuBadges';
 import { fonts } from '@/constants/typography';
-import { useOrder, useReorder } from '@/lib/order/hooks';
+import {
+  useCancelOrder,
+  useCancelScheduledOrder,
+  useFetchInvoice,
+  useOrder,
+  useReorder,
+  useUpdateTip,
+} from '@/lib/order/hooks';
 import { paymentMethodLabel } from '@/lib/order/payment-labels';
 import {
+  canCancelOrder,
   canRateOrder,
+  canTipOrder,
   isActiveOrderStatus,
+  isScheduledOrder,
   normalizeOrderStatus,
 } from '@/lib/order/types';
 import { useOrderReview } from '@/lib/review/hooks';
@@ -83,6 +97,10 @@ export function OrderDetailScreen() {
 
   const order = useOrder(id);
   const reorder = useReorder(id);
+  const cancelOrder = useCancelOrder(id);
+  const cancelScheduled = useCancelScheduledOrder(id);
+  const updateTip = useUpdateTip(id);
+  const fetchInvoice = useFetchInvoice(id);
   const review = useOrderReview(id, {
     enabled: canRateOrder(order.data?.status),
   });
@@ -162,6 +180,10 @@ export function OrderDetailScreen() {
     normalizeOrderStatus(data.status)
   );
   const hasReviewed = review.data !== null && review.data !== undefined;
+  const scheduled = isScheduledOrder(data);
+  const showCancel = canCancelOrder(data.status) || scheduled;
+  const showTip = canTipOrder(data.status);
+  const showInvoice = completed || cancelled || !isActive;
 
   const address =
     data.deliveryAddress?.formattedAddress ||
@@ -174,18 +196,100 @@ export function OrderDetailScreen() {
       .join(', ') ||
     'Delivery address';
 
+  const handleCancel = () => {
+    Alert.alert(
+      scheduled ? 'Cancel scheduled order?' : 'Cancel this order?',
+      scheduled
+        ? 'This removes the future order.'
+        : 'You can cancel only within the allowed window.',
+      [
+        { text: 'Keep order', style: 'cancel' },
+        {
+          text: 'Cancel order',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (scheduled) {
+                await cancelScheduled.mutateAsync();
+              } else {
+                await cancelOrder.mutateAsync({ reason: 'Cancelled by customer' });
+              }
+              Alert.alert('Cancelled', 'Your order was cancelled.');
+              void order.refetch();
+            } catch (e) {
+              Alert.alert(
+                'Could not cancel',
+                e instanceof Error ? e.message : 'Please try again'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleInvoice = async () => {
+    try {
+      const invoice = await fetchInvoice.mutateAsync();
+      if (invoice.url) {
+        await Linking.openURL(invoice.url);
+        return;
+      }
+      Alert.alert(
+        'Invoice',
+        invoice.message || 'Invoice link is not available yet.'
+      );
+    } catch (e) {
+      Alert.alert(
+        'Invoice unavailable',
+        e instanceof Error ? e.message : 'Could not fetch invoice'
+      );
+    }
+  };
+
+  const handleTip = (amount: number) => {
+    updateTip.mutate(
+      { tip: amount },
+      {
+        onSuccess: () => {
+          void order.refetch();
+          Alert.alert('Tip updated', `Delivery tip set to ₹${amount}`);
+        },
+        onError: (e) =>
+          Alert.alert(
+            'Could not update tip',
+            e instanceof Error ? e.message : 'Please try again'
+          ),
+      }
+    );
+  };
+
   const handleReorder = () => {
-    Alert.alert('Order again?', 'Place a new order with the same items.', [
+    Alert.alert('Order again?', 'Add the same items to your cart.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Order again',
         onPress: async () => {
           try {
             const next = await reorder.mutateAsync();
-            router.replace({
-              pathname: '/orders/[orderId]/tracking',
-              params: { orderId: next.id, newOrder: 'true' },
-            });
+            if (next.mode === 'order' && next.order?.id) {
+              router.replace({
+                pathname: '/orders/[orderId]/tracking',
+                params: { orderId: next.order.id, newOrder: 'true' },
+              });
+              return;
+            }
+            Alert.alert(
+              'Added to cart',
+              next.message || 'Review your cart to place the order.',
+              [
+                {
+                  text: 'Go to cart',
+                  onPress: () =>
+                    router.push('/cart' as import('expo-router').Href),
+                },
+              ]
+            );
           } catch (e) {
             Alert.alert(
               'Reorder failed',
@@ -422,6 +526,74 @@ export function OrderDetailScreen() {
             </View>
           </Pressable>
         ) : null}
+
+        {showTip ? (
+          <View style={styles.tipCard}>
+            <View style={styles.tipHead}>
+              <IndianRupee color={ORANGE} size={16} strokeWidth={2.4} />
+              <Text style={styles.tipTitle}>Add delivery tip</Text>
+            </View>
+            <Text style={styles.tipSub}>
+              Current tip ₹{tip.toFixed(0)}. Change before the restaurant accepts.
+            </Text>
+            <View style={styles.tipRow}>
+              {[0, 20, 30, 50].map((amount) => (
+                <Pressable
+                  key={amount}
+                  style={[
+                    styles.tipChip,
+                    tip === amount && styles.tipChipOn,
+                    updateTip.isPending && styles.tipChipDisabled,
+                  ]}
+                  disabled={updateTip.isPending}
+                  onPress={() => handleTip(amount)}
+                >
+                  <Text
+                    style={[
+                      styles.tipChipText,
+                      tip === amount && styles.tipChipTextOn,
+                    ]}
+                  >
+                    {amount === 0 ? 'No tip' : `₹${amount}`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.actionsGrid}>
+          {showInvoice ? (
+            <Pressable
+              style={styles.actionTile}
+              onPress={handleInvoice}
+              disabled={fetchInvoice.isPending}
+            >
+              {fetchInvoice.isPending ? (
+                <ActivityIndicator color={ORANGE} />
+              ) : (
+                <FileText color={ORANGE} size={18} strokeWidth={2.3} />
+              )}
+              <Text style={styles.actionTileText}>Invoice</Text>
+            </Pressable>
+          ) : null}
+          {showCancel ? (
+            <Pressable
+              style={styles.actionTile}
+              onPress={handleCancel}
+              disabled={cancelOrder.isPending || cancelScheduled.isPending}
+            >
+              {cancelOrder.isPending || cancelScheduled.isPending ? (
+                <ActivityIndicator color="#DC2626" />
+              ) : (
+                <XCircle color="#DC2626" size={18} strokeWidth={2.3} />
+              )}
+              <Text style={[styles.actionTileText, { color: '#DC2626' }]}>
+                {scheduled ? 'Cancel schedule' : 'Cancel order'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       </ScrollView>
 
       <View
@@ -789,6 +961,84 @@ const styles = StyleSheet.create({
     fontFamily: fonts.ui,
     fontSize: 12,
     color: MUTED,
+  },
+  tipCard: {
+    marginTop: 14,
+    marginHorizontal: 16,
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FFE4CC',
+  },
+  tipHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tipTitle: {
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: INK,
+  },
+  tipSub: {
+    marginTop: 6,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
+    lineHeight: 17,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  tipChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+  },
+  tipChipOn: {
+    backgroundColor: ORANGE_SOFT,
+    borderWidth: 1,
+    borderColor: '#FFD8BF',
+  },
+  tipChipDisabled: {
+    opacity: 0.6,
+  },
+  tipChipText: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 13,
+    color: MUTED,
+  },
+  tipChipTextOn: {
+    color: ORANGE,
+    fontFamily: fonts.uiBold,
+  },
+  actionsGrid: {
+    marginTop: 14,
+    marginHorizontal: 16,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionTile: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 14,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: LINE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+  },
+  actionTileText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: INK,
   },
   stickyFooter: {
     position: 'absolute',

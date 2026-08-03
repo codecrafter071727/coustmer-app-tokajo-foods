@@ -28,9 +28,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
-import { useCreateTicket, useTickets } from '@/lib/customer/hooks';
-import type { SupportCategory, SupportTicket } from '@/lib/customer/types';
-import { useOrder } from '@/lib/order/hooks';
+import { useTickets } from '@/lib/customer/hooks';
+import type { SupportTicket } from '@/lib/customer/types';
+import {
+  useOrder,
+  useOrderIssues,
+  useReportIssue,
+} from '@/lib/order/hooks';
 import { ORDER_ISSUE_TYPES } from '@/lib/order/types';
 
 const ORANGE = '#FF6A00';
@@ -54,12 +58,7 @@ const ISSUE_ICONS: Record<
   other: AlertTriangle,
 };
 
-/** Map UI issue chips → support ticket category */
-function issueToCategory(issueType: string): SupportCategory {
-  if (issueType === 'late_delivery') return 'delivery_issue';
-  if (issueType === 'other') return 'other';
-  return 'order_issue';
-}
+/** Map UI issue chips → display label only (order-service uses type string) */
 
 function formatIssueWhen(iso?: string) {
   if (!iso) return '';
@@ -100,8 +99,9 @@ export function OrderIssuesScreen() {
   ).trim();
 
   const order = useOrder(id);
+  const issuesQuery = useOrderIssues(id);
+  const reportIssue = useReportIssue(id);
   const ticketsQuery = useTickets();
-  const createTicket = useCreateTicket();
 
   const [type, setType] = useState<string>(ORDER_ISSUE_TYPES[0].value);
   const [description, setDescription] = useState('');
@@ -122,6 +122,8 @@ export function OrderIssuesScreen() {
     return all.filter((t) => ticketMatchesOrder(t, resolvedOrderId));
   }, [ticketsQuery.data?.tickets, resolvedOrderId]);
 
+  const orderIssues = issuesQuery.data ?? [];
+
   const submit = async () => {
     if (!resolvedOrderId) {
       Alert.alert(
@@ -139,33 +141,18 @@ export function OrderIssuesScreen() {
       return;
     }
 
-    const category = issueToCategory(type);
-    const subject = `${typeLabel} · #${orderLabel}`;
-
     try {
-      const ticket = await createTicket.mutateAsync({
-        category,
-        subject,
-        description: description.trim(),
+      await reportIssue.mutateAsync({
         orderId: resolvedOrderId,
+        type,
+        description: description.trim(),
       });
       setDescription('');
       Alert.alert(
-        'Ticket created',
-        'Our support team will look into it shortly.',
-        [
-          {
-            text: 'View ticket',
-            onPress: () =>
-              router.push({
-                pathname: '/support/[ticketId]',
-                params: { ticketId: ticket.id },
-              }),
-          },
-          { text: 'OK', style: 'cancel' },
-        ]
+        'Issue reported',
+        'We received your report for this order.'
       );
-      void ticketsQuery.refetch();
+      void issuesQuery.refetch();
     } catch (e) {
       Alert.alert(
         'Could not submit',
@@ -210,7 +197,7 @@ export function OrderIssuesScreen() {
           <View style={styles.hero}>
             <Text style={styles.heroTitle}>Report an issue</Text>
             <Text style={styles.heroSub}>
-              Creates a support ticket for this order so our team can help.
+              Files against this order via Order Service so ops can act fast.
             </Text>
           </View>
 
@@ -279,21 +266,83 @@ export function OrderIssuesScreen() {
             <Pressable
               style={[
                 styles.submitBtn,
-                createTicket.isPending && styles.disabled,
+                reportIssue.isPending && styles.disabled,
               ]}
               onPress={submit}
-              disabled={createTicket.isPending}
+              disabled={reportIssue.isPending}
             >
-              {createTicket.isPending ? (
+              {reportIssue.isPending ? (
                 <ActivityIndicator color={WHITE} />
               ) : (
-                <Text style={styles.submitText}>Submit ticket</Text>
+                <Text style={styles.submitText}>Submit issue</Text>
               )}
             </Pressable>
           </View>
 
           <View style={styles.historyHead}>
-            <Text style={styles.sectionLabel}>Tickets for this order</Text>
+            <Text style={styles.sectionLabel}>Issues for this order</Text>
+            {orderIssues.length ? (
+              <Text style={styles.countPill}>{orderIssues.length}</Text>
+            ) : null}
+          </View>
+
+          {issuesQuery.isLoading ? (
+            <LoadingView label="Loading issues…" />
+          ) : issuesQuery.isError ? (
+            <ErrorView
+              message={
+                issuesQuery.error instanceof Error
+                  ? issuesQuery.error.message
+                  : 'Failed to load issues'
+              }
+              onRetry={() => void issuesQuery.refetch()}
+            />
+          ) : !orderIssues.length ? (
+            <View style={styles.emptyCard}>
+              <CheckCircle2 color={GREEN} size={28} strokeWidth={2.2} />
+              <Text style={styles.emptyTitle}>No issues yet</Text>
+              <Text style={styles.emptySub}>
+                If something goes wrong with this order, report it here.
+              </Text>
+            </View>
+          ) : (
+            orderIssues.map((issue) => {
+              const tone = statusTone(issue.status);
+              return (
+                <View key={issue.id} style={styles.issueCard}>
+                  <View style={styles.issueTop}>
+                    <Text style={styles.issueType} numberOfLines={1}>
+                      {ORDER_ISSUE_TYPES.find((t) => t.value === issue.type)
+                        ?.label ||
+                        issue.type ||
+                        'Issue'}
+                    </Text>
+                    <View
+                      style={[styles.statusChip, { backgroundColor: tone.bg }]}
+                    >
+                      <Text style={[styles.statusText, { color: tone.text }]}>
+                        {tone.label}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.issueDesc} numberOfLines={3}>
+                    {issue.description}
+                  </Text>
+                  {issue.createdAt ? (
+                    <View style={styles.metaRow}>
+                      <Clock3 color={MUTED} size={13} strokeWidth={2.2} />
+                      <Text style={styles.metaText}>
+                        {formatIssueWhen(issue.createdAt)}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })
+          )}
+
+          <View style={styles.historyHead}>
+            <Text style={styles.sectionLabel}>Support tickets</Text>
             {orderTickets.length ? (
               <Text style={styles.countPill}>{orderTickets.length}</Text>
             ) : null}
@@ -301,21 +350,12 @@ export function OrderIssuesScreen() {
 
           {ticketsQuery.isLoading ? (
             <LoadingView label="Loading tickets…" />
-          ) : ticketsQuery.isError ? (
-            <ErrorView
-              message={
-                ticketsQuery.error instanceof Error
-                  ? ticketsQuery.error.message
-                  : 'Failed to load tickets'
-              }
-              onRetry={() => void ticketsQuery.refetch()}
-            />
           ) : !orderTickets.length ? (
             <View style={styles.emptyCard}>
-              <CheckCircle2 color={GREEN} size={28} strokeWidth={2.2} />
-              <Text style={styles.emptyTitle}>No tickets yet</Text>
+              <MessageSquare color={MUTED} size={24} strokeWidth={2.2} />
+              <Text style={styles.emptyTitle}>No support tickets</Text>
               <Text style={styles.emptySub}>
-                If something goes wrong with this order, report it here.
+                Broader help requests appear under Help & Support.
               </Text>
             </View>
           ) : (
@@ -347,16 +387,6 @@ export function OrderIssuesScreen() {
                   <Text style={styles.issueDesc} numberOfLines={3}>
                     {ticket.description}
                   </Text>
-                  <View style={styles.issueMeta}>
-                    <Clock3 color={MUTED} size={13} strokeWidth={2.3} />
-                    <Text style={styles.metaText}>
-                      {formatIssueWhen(ticket.createdAt)}
-                    </Text>
-                    <MessageSquare color={MUTED} size={13} strokeWidth={2.3} />
-                    <Text style={styles.metaText}>
-                      {(ticket.messages?.length ?? 0) + 1} msgs
-                    </Text>
-                  </View>
                 </Pressable>
               );
             })
@@ -622,6 +652,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
   },
   metaText: {
     fontFamily: fonts.ui,

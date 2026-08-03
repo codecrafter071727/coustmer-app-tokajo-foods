@@ -1,32 +1,75 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
-import {
-  ChevronLeft,
-  X,
-} from 'lucide-react-native';
-import { useState } from 'react';
+import { ChevronLeft, X } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ErrorView, LoadingView, EmptyView } from '@/components/common/StateViews';
+import {
+  EmptyView,
+  ErrorView,
+  LoadingView,
+} from '@/components/common/StateViews';
 import { SmoothPressable } from '@/components/common/SmoothPressable';
 import { OrderCard } from '@/components/order/OrderCard';
 import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
-import { useOrders } from '@/lib/order/hooks';
+import {
+  useActiveOrders,
+  useOrders,
+  useScheduledOrders,
+} from '@/lib/order/hooks';
+import type { Order } from '@/lib/order/types';
 
 const PAGE_BG = '#FFFFFF';
 const TEXT_DARK = '#202020';
 const BANNER_BG = '#F9F1EB';
 const BANNER_ICON_BG = '#F3744B';
 
+type Tab = 'all' | 'active' | 'scheduled';
+
 export function OrdersHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [bannerVisible, setBannerVisible] = useState(true);
+  const [tab, setTab] = useState<Tab>('all');
 
   const all = useOrders({ limit: 50 });
-  const orders = all.data?.orders ?? [];
+  const active = useActiveOrders({ refetchInterval: 15_000 });
+  const scheduled = useScheduledOrders();
+
+  const orders: Order[] = useMemo(() => {
+    if (tab === 'active') return active.data ?? [];
+    if (tab === 'scheduled') return scheduled.data ?? [];
+    return all.data?.orders ?? [];
+  }, [tab, all.data?.orders, active.data, scheduled.data]);
+
+  const isLoading =
+    tab === 'all'
+      ? all.isLoading
+      : tab === 'active'
+        ? active.isLoading
+        : scheduled.isLoading;
+  const isError =
+    tab === 'all'
+      ? all.isError
+      : tab === 'active'
+        ? active.isError
+        : scheduled.isError;
+  const error =
+    tab === 'all'
+      ? all.error
+      : tab === 'active'
+        ? active.error
+        : scheduled.error;
+  const refreshing =
+    all.isRefetching || active.isRefetching || scheduled.isRefetching;
+
+  const refetch = () => {
+    void all.refetch();
+    void active.refetch();
+    void scheduled.refetch();
+  };
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -36,19 +79,49 @@ export function OrdersHubScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <SmoothPressable onPress={goBack} style={styles.backBtn} pressScale={0.9} hitSlop={8}>
+        <SmoothPressable
+          onPress={goBack}
+          style={styles.backBtn}
+          pressScale={0.9}
+          hitSlop={8}
+        >
           <ChevronLeft color={TEXT_DARK} size={24} strokeWidth={2.5} />
         </SmoothPressable>
         <Text style={styles.title}>Your orders</Text>
         <View style={styles.headerRight} />
       </View>
 
-      {all.isLoading ? (
+      <View style={styles.tabs}>
+        {(
+          [
+            { key: 'all', label: 'All' },
+            { key: 'active', label: 'Active' },
+            { key: 'scheduled', label: 'Scheduled' },
+          ] as const
+        ).map((item) => {
+          const on = tab === item.key;
+          return (
+            <Pressable
+              key={item.key}
+              style={[styles.tab, on && styles.tabOn]}
+              onPress={() => setTab(item.key)}
+            >
+              <Text style={[styles.tabText, on && styles.tabTextOn]}>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {isLoading ? (
         <LoadingView label="Loading orders…" />
-      ) : all.isError ? (
+      ) : isError ? (
         <ErrorView
-          message={all.error instanceof Error ? all.error.message : 'Failed to load orders'}
-          onRetry={all.refetch}
+          message={
+            error instanceof Error ? error.message : 'Failed to load orders'
+          }
+          onRetry={refetch}
         />
       ) : (
         <FlatList
@@ -58,14 +131,14 @@ export function OrdersHubScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
-              refreshing={all.isRefetching}
-              onRefresh={all.refetch}
+              refreshing={refreshing}
+              onRefresh={refetch}
               tintColor={authTheme.brand}
             />
           }
           ListHeaderComponent={
             <View style={styles.listHeader}>
-              {bannerVisible && (
+              {bannerVisible && tab === 'all' ? (
                 <View style={styles.banner}>
                   <View style={styles.bannerContent}>
                     <View style={styles.bannerGridMock}>
@@ -79,27 +152,36 @@ export function OrdersHubScreen() {
                         <View style={styles.gridCell} />
                         <View style={styles.gridCell} />
                       </View>
-                      <View style={styles.gridRow}>
-                        <View style={styles.gridCell} />
-                        <View style={styles.gridCell} />
-                        <View style={styles.gridCell} />
-                      </View>
-                      <View style={styles.gridRow}>
-                        <View style={styles.gridCell} />
-                        <View style={styles.gridCell} />
-                        <View style={styles.gridCell} />
-                      </View>
                     </View>
                     <Text style={styles.bannerText}>See how it works</Text>
                   </View>
-                  <Pressable hitSlop={10} onPress={() => setBannerVisible(false)} style={styles.bannerClose}>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => setBannerVisible(false)}
+                    style={styles.bannerClose}
+                  >
                     <X color="#303030" size={16} strokeWidth={2} />
                   </Pressable>
                 </View>
-              )}
+              ) : null}
             </View>
           }
-          ListEmptyComponent={<EmptyView title="No orders yet" subtitle="Place an order to see it here." />}
+          ListEmptyComponent={
+            <EmptyView
+              title={
+                tab === 'active'
+                  ? 'No active orders'
+                  : tab === 'scheduled'
+                    ? 'No scheduled orders'
+                    : 'No orders yet'
+              }
+              subtitle={
+                tab === 'all'
+                  ? 'Place an order to see it here.'
+                  : 'Pull to refresh.'
+              }
+            />
+          }
           renderItem={({ item }) => <OrderCard order={item} />}
         />
       )}
@@ -135,6 +217,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displayBold,
     fontSize: 20,
     color: TEXT_DARK,
+  },
+  tabs: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  tab: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+  },
+  tabOn: {
+    backgroundColor: '#FFF1E8',
+  },
+  tabText: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  tabTextOn: {
+    fontFamily: fonts.uiBold,
+    color: BANNER_ICON_BG,
   },
   list: {
     paddingHorizontal: 20,
