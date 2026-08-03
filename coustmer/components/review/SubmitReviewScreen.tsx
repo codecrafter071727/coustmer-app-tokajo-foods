@@ -1,16 +1,17 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator,
+import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View } from 'react-native';
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/common/ScreenHeader';
@@ -26,6 +27,11 @@ import {
 } from '@/lib/review/hooks';
 
 const RATING_LABELS = ['', 'Poor', 'Okay', 'Good', 'Great', 'Excellent'];
+
+function goBackSafe(router: ReturnType<typeof useRouter>) {
+  if (router.canGoBack()) router.back();
+  else router.replace('/orders');
+}
 
 export function SubmitReviewScreen() {
   const router = useRouter();
@@ -61,7 +67,7 @@ export function SubmitReviewScreen() {
         orderId: id,
       });
       Alert.alert('Thanks!', 'Your review was submitted.', [
-        { text: 'OK', onPress: () => { if (router.canGoBack()) { if (router.canGoBack()) { router.back(); } else { router.replace('/'); } } else { router.replace('/'); } } },
+        { text: 'OK', onPress: () => goBackSafe(router) },
       ]);
     } catch (e) {
       Alert.alert('Could not submit', getApiErrorMessage(e));
@@ -97,10 +103,7 @@ export function SubmitReviewScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.container}>
-          <ScreenHeader
-            title="Rate your order"
-            subtitle={restaurantName}
-          />
+          <ScreenHeader title="Rate your order" subtitle={restaurantName} />
 
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -114,15 +117,16 @@ export function SubmitReviewScreen() {
                 {existing.data.comment ? (
                   <Text style={styles.doneComment}>{existing.data.comment}</Text>
                 ) : null}
-                <Pressable style={styles.secondaryBtn} onPress={() => { if (router.canGoBack()) { if (router.canGoBack()) { router.back(); } else { router.replace('/'); } } else { router.replace('/'); } }}>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={() => goBackSafe(router)}
+                >
                   <Text style={styles.secondaryBtnText}>Back to order</Text>
                 </Pressable>
               </View>
             ) : !canRateOrder(order.data.status) ? (
               <View style={styles.doneCard}>
-                <Text style={styles.doneTitle}>
-                  You can rate after delivery
-                </Text>
+                <Text style={styles.doneTitle}>You can rate after delivery</Text>
                 <Text style={styles.hint}>
                   Reviews unlock once your order is delivered.
                 </Text>
@@ -132,7 +136,11 @@ export function SubmitReviewScreen() {
                 <View style={styles.card}>
                   <Text style={styles.label}>How was the food?</Text>
                   <View style={styles.starsWrap}>
-                    <StarRatingInput value={rating} onChange={setRating} size={36} />
+                    <StarRatingInput
+                      value={rating}
+                      onChange={setRating}
+                      size={36}
+                    />
                   </View>
                   <Text style={styles.ratingLabel}>
                     {RATING_LABELS[rating] ?? ''}

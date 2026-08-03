@@ -44,6 +44,7 @@ export function useNotifications(
     staleTime: 15_000,
     refetchOnMount: 'always',
     refetchInterval: options?.refetchInterval ?? false,
+    retry: 1,
   });
 }
 
@@ -63,6 +64,7 @@ export function useUnreadNotificationCount(options?: {
     refetchInterval: options?.refetchInterval ?? 12_000,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
+    retry: 1,
     select: (data) => data.count,
   });
 }

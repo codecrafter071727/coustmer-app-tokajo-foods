@@ -1,6 +1,17 @@
 /**
  * Review & Rating Service.
- * Gateway: /api/v1/review-service
+ * Gateway prefix: /api/v1/review-service
+ *
+ * Customer-facing:
+ *   GET  /health
+ *   GET  /restaurants/:id/reviews
+ *   GET  /restaurants/:id/reviews/stats
+ *   POST /restaurants/:id/reviews          (auth, post-order)
+ *   GET  /orders/:orderId/review          (auth)
+ *
+ * Owner/admin only (not used in customer app):
+ *   POST /restaurants/:id/reviews/:reviewId/reply
+ *   DELETE /restaurants/:id/reviews/:reviewId
  */
 
 export type PaginationMeta = {
@@ -9,6 +20,12 @@ export type PaginationMeta = {
   limit?: number;
   totalPages?: number;
   hasNext?: boolean;
+};
+
+export type ReviewOwnerReply = {
+  text: string;
+  repliedAt?: string;
+  repliedBy?: string;
 };
 
 export type RestaurantReview = {
@@ -20,6 +37,8 @@ export type RestaurantReview = {
   rating: number;
   comment?: string;
   title?: string;
+  /** Owner/admin reply (Swiggy/Zomato-style). */
+  reply?: ReviewOwnerReply;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -80,6 +80,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
+      // Kick out partner accounts that somehow remained stored locally.
+      if (authApi.isBlockedPartnerRole(user.role)) {
+        await clearAuthStorage();
+        useDeliveryLocationStore.getState().unbindUser();
+        set({ token: null, user: null, isHydrated: true });
+        return;
+      }
+
       useDeliveryLocationStore.getState().bindUser(user.id);
       set({ token, user, isHydrated: true });
     } catch {

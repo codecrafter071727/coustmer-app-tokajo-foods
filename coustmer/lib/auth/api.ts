@@ -13,9 +13,15 @@ import type {
   RegisterPayload,
   ResetPasswordPayload,
 } from '@/lib/auth/types';
+import {
+  assertCustomerAccount,
+  isPartnerRole,
+  normalizeUserRole,
+} from '@/lib/auth/types';
 
 /** Live API mounts auth under user-service (not /auth at root). */
 const AUTH_BASE = '/api/v1/user-service/auth';
+const USERS_ME = '/api/v1/user-service/users/me';
 
 /** Cookie session auth — no JWT in response body. */
 export const SESSION_AUTH_TOKEN = 'session';
@@ -27,6 +33,10 @@ function mapApiUser(data: Record<string, unknown>): AuthUser {
     firstName: (data.firstName as string) || undefined,
     lastName: (data.lastName as string) || undefined,
     phone: (data.phone as string) || undefined,
+    role:
+      normalizeUserRole(
+        data.role ?? data.userType ?? data.type ?? data.accountType
+      ) || undefined,
     emailVerified: Boolean(data.isEmailVerified ?? data.emailVerified ?? false),
   };
 }
@@ -40,9 +50,13 @@ function normalizeAuthResponse(data: unknown): AuthResponse {
     (payload.accessToken as string) ||
     (payload.access_token as string) ||
     (nested?.token as string) ||
+    (nested?.accessToken as string) ||
     SESSION_AUTH_TOKEN;
 
-  const userSource = (nested ?? payload.user ?? payload) as Record<string, unknown>;
+  const userSource = (nested?.user ??
+    nested ??
+    payload.user ??
+    payload) as Record<string, unknown>;
   const user = mapApiUser(userSource);
 
   if (!user.id || !user.email) {
@@ -125,13 +139,67 @@ async function apiRequest<T>(
   }
 }
 
+/** Best-effort logout so a rejected partner session is not left open. */
+async function revokeSessionQuietly() {
+  try {
+    await apiRequest<unknown>(`${AUTH_BASE}/logout`, { method: 'POST' });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Ensure the authenticated account is a customer.
+ * If login response omitted role, fetch /users/me.
+ */
+async function ensureCustomerAuth(
+  response: AuthResponse
+): Promise<AuthResponse> {
+  let role = response.user.role;
+
+  if (!role) {
+    try {
+      const me = await apiRequest<{
+        data?: Record<string, unknown>;
+        role?: string;
+      }>(USERS_ME);
+      const source = (me.data ?? me) as Record<string, unknown>;
+      role =
+        normalizeUserRole(
+          source.role ?? source.userType ?? source.type ?? source.accountType
+        ) || undefined;
+    } catch {
+      // If profile fetch fails, keep going with whatever we have.
+    }
+  }
+
+  try {
+    assertCustomerAccount(role);
+  } catch (error) {
+    await revokeSessionQuietly();
+    throw error;
+  }
+
+  return {
+    ...response,
+    user: {
+      ...response.user,
+      role: role || 'customer',
+    },
+  };
+}
+
 export const authApi = {
   register: async (payload: RegisterPayload) => {
     const data = await apiRequest<unknown>(`${AUTH_BASE}/register`, {
       method: 'POST',
-      body: payload,
+      body: {
+        ...payload,
+        // Always register as a customer in this app.
+        role: 'customer',
+      },
     });
-    return normalizeAuthResponse(data);
+    return ensureCustomerAuth(normalizeAuthResponse(data));
   },
 
   login: async (payload: LoginPayload) => {
@@ -139,7 +207,7 @@ export const authApi = {
       method: 'POST',
       body: payload,
     });
-    return normalizeAuthResponse(data);
+    return ensureCustomerAuth(normalizeAuthResponse(data));
   },
 
   sendOtp: async (payload: OtpSendPayload) => {
@@ -162,7 +230,7 @@ export const authApi = {
         purpose: payload.purpose ?? 'login',
       },
     });
-    return normalizeAuthResponse(data);
+    return ensureCustomerAuth(normalizeAuthResponse(data));
   },
 
   forgotPassword: async (payload: ForgotPasswordPayload) => {
@@ -224,4 +292,7 @@ export const authApi = {
     });
     return normalizeMessageResponse(data);
   },
+
+  /** True when a stored/session user must not use the customer app. */
+  isBlockedPartnerRole: isPartnerRole,
 };

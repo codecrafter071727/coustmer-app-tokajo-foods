@@ -109,6 +109,7 @@ export function HomeHeader({
   const router = useRouter();
   const unreadNotifications = useUnreadNotificationCount({
     refetchInterval: 12_000,
+    enabled: true,
   });
   const unreadCount = unreadNotifications.data ?? 0;
   const title = deliveryTitle || deliveryLine;

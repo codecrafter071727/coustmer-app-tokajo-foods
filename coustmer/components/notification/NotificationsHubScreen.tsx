@@ -35,6 +35,7 @@ import {
   useUnreadNotificationCount,
 } from '@/lib/notification/hooks';
 import type { AppNotification } from '@/lib/notification/types';
+import { useAuthStore } from '@/store/auth-store';
 
 type Filter = 'all' | 'unread';
 
@@ -80,6 +81,8 @@ export function NotificationsHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Filter>('all');
+  const token = useAuthStore((s) => s.token);
+  const authed = Boolean(token);
 
   const listQuery = useNotifications(
     {
@@ -87,9 +90,12 @@ export function NotificationsHubScreen() {
       limit: 50,
       unread: filter === 'unread' ? true : undefined,
     },
-    { refetchInterval: 20_000 }
+    { refetchInterval: 20_000, enabled: authed }
   );
-  const unreadCount = useUnreadNotificationCount({ refetchInterval: 12_000 });
+  const unreadCount = useUnreadNotificationCount({
+    refetchInterval: 12_000,
+    enabled: authed,
+  });
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
   const deleteOne = useDeleteNotification();

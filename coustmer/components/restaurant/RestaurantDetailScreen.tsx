@@ -33,6 +33,7 @@ import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { CartFloatingBar } from '@/components/order/CartFloatingBar';
 import { MenuItemRow } from '@/components/restaurant/MenuItemRow';
 import { MenuItemDetailSheet } from '@/components/restaurant/MenuItemDetailSheet';
+import { RestaurantReviewsPanel } from '@/components/review/RestaurantReviewsPanel';
 import { fonts } from '@/constants/typography';
 import { addMenuItemToCart } from '@/lib/order/add-to-cart';
 import {
@@ -41,6 +42,7 @@ import {
   useRestaurantOffers,
 } from '@/lib/restaurant/hooks';
 import type { MenuItem } from '@/lib/restaurant/types';
+import { useRestaurantReviewStats } from '@/lib/review/hooks';
 
 const ORANGE = '#F97316';
 const INK = '#0B1220';
@@ -77,6 +79,9 @@ export function RestaurantDetailScreen() {
   const [stickyCats, setStickyCats] = useState(false);
 
   const restaurant = useRestaurant(id);
+  const reviewStats = useRestaurantReviewStats(id, {
+    enabled: Boolean(id),
+  });
   const menu = useFullMenu(id, {
     name: restaurant.data?.name,
     cuisines: restaurant.data?.cuisines,
@@ -236,9 +241,17 @@ export function RestaurantDetailScreen() {
   const logo = r.logoUrl || r.imageUrl;
   const restaurantName = r.name || 'Restaurant';
   const ratingText =
-    typeof r.rating === 'number' ? r.rating.toFixed(1) : '4.7';
+    reviewStats.data && reviewStats.data.average > 0
+      ? reviewStats.data.average.toFixed(1)
+      : typeof r.rating === 'number' && r.rating > 0
+        ? r.rating.toFixed(1)
+        : '—';
   const reviewsCount =
-    typeof r.reviewCount === 'number' ? `${r.reviewCount}+` : '500+';
+    reviewStats.data && reviewStats.data.total > 0
+      ? `${reviewStats.data.total}`
+      : typeof r.reviewCount === 'number' && r.reviewCount > 0
+        ? `${r.reviewCount}`
+        : 'New';
   const locationText = r.address || r.city || 'Near you';
   const eta = r.deliveryTime || '25–35 min';
   const cuisineLine = (r.cuisines || []).slice(0, 3).join(' · ') || 'Multi cuisine';
@@ -622,30 +635,7 @@ export function RestaurantDetailScreen() {
         ) : null}
 
         {tab === 'Reviews' ? (
-          <View style={styles.panelPad}>
-            <View style={styles.reviewHero}>
-              <Text style={styles.reviewScore}>{ratingText}</Text>
-              <View>
-                <View style={styles.starsRow}>
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <Star
-                      key={i}
-                      color="#FBBF24"
-                      fill="#FBBF24"
-                      size={16}
-                    />
-                  ))}
-                </View>
-                <Text style={styles.reviewMeta}>
-                  Based on {reviewsCount} ratings
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.emptySub}>
-              Full review feed is coming soon. Ratings above are from recent
-              orders.
-            </Text>
-          </View>
+          <RestaurantReviewsPanel restaurantId={id} />
         ) : null}
 
         {tab === 'Info' ? (

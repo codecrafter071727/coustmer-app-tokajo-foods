@@ -43,6 +43,7 @@ export function useRestaurantReviews(
     queryFn: () => reviewApi.getRestaurantReviews(restaurantId, params),
     enabled: Boolean(restaurantId) && (options?.enabled ?? true),
     staleTime: 30_000,
+    retry: 1,
   });
 }
 
@@ -56,6 +57,7 @@ export function useRestaurantReviewStats(
     queryFn: () => reviewApi.getRestaurantReviewStats(restaurantId),
     enabled: Boolean(restaurantId) && (options?.enabled ?? true),
     staleTime: 30_000,
+    retry: 1,
   });
 }
 

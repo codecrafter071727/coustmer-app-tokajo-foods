@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SmoothPressable } from '@/components/common/SmoothPressable';
 import { fonts } from '@/constants/typography';
 import type { Deal, HomeBanner } from '@/lib/customer/types';
+import { useUnreadNotificationCount } from '@/lib/notification/hooks';
 import { useUserProfile } from '@/lib/profile/hooks';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -34,7 +35,13 @@ export function SwiggyHomeChrome({
 }: Props) {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const profile = useUserProfile();
+  const unreadNotifications = useUnreadNotificationCount({
+    enabled: Boolean(token),
+    refetchInterval: 12_000,
+  });
+  const unreadCount = unreadNotifications.data ?? 0;
   const photoUrl = profile.data?.profilePhotoUrl;
   const initials = (
     [authUser?.firstName, authUser?.lastName]
@@ -103,8 +110,20 @@ export function SwiggyHomeChrome({
         <SmoothPressable
           style={styles.iconCircle}
           onPress={() => router.push('/notifications')}
+          accessibilityLabel={
+            unreadCount > 0
+              ? `Notifications, ${unreadCount} unread`
+              : 'Notifications'
+          }
         >
           <Bell color="#FFFFFF" size={20} strokeWidth={2.2} />
+          {unreadCount > 0 ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          ) : null}
         </SmoothPressable>
       </View>
 
@@ -181,6 +200,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#0B1220',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontFamily: fonts.uiBold,
+    lineHeight: 11,
   },
   profileBtn: {
     width: 42,

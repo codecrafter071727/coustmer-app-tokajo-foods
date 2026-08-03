@@ -55,6 +55,19 @@ function ReviewCard({ review }: { review: RestaurantReview }) {
       {review.comment ? (
         <Text style={styles.comment}>{review.comment}</Text>
       ) : null}
+      {review.reply?.text ? (
+        <View style={styles.replyBox}>
+          <Text style={styles.replyLabel}>
+            {review.reply.repliedBy?.trim() || 'Restaurant'} replied
+          </Text>
+          <Text style={styles.replyText}>{review.reply.text}</Text>
+          {review.reply.repliedAt ? (
+            <Text style={styles.replyDate}>
+              {formatDate(review.reply.repliedAt)}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -320,6 +333,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: authTheme.textMuted,
+  },
+  replyBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderLeftWidth: 3,
+    borderLeftColor: authTheme.brand,
+  },
+  replyLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: authTheme.text,
+    marginBottom: 4,
+  },
+  replyText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: authTheme.textMuted,
+  },
+  replyDate: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '600',
+    color: authTheme.textDim,
   },
   empty: {
     alignItems: 'center',

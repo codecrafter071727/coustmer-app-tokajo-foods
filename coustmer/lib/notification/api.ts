@@ -48,7 +48,11 @@ async function request<T>(
       typeof payload === 'object' &&
       ('data' in (payload as object) || 'success' in (payload as object))
     ) {
-      return payload as Envelope<T>;
+      const envelope = payload as Envelope<T>;
+      if (envelope.success === false) {
+        throw new Error(envelope.message || 'Notification service unavailable');
+      }
+      return envelope;
     }
 
     return { success: true, data: payload as T };
@@ -178,7 +182,11 @@ export const notificationApi = {
 
     return {
       notifications: extractList(res.data).map(mapNotification).filter((n) => n.id),
-      meta: res.meta,
+      meta:
+        res.meta ||
+        (res.data && typeof res.data === 'object'
+          ? ((res.data as Record<string, unknown>).meta as PaginationMeta | undefined)
+          : undefined),
     };
   },
 
