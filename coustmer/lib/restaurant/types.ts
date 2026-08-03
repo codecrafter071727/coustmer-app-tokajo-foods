@@ -16,9 +16,11 @@ export type Restaurant = {
   rating?: number;
   reviewCount?: number;
   cuisines?: string[];
+  tags?: string[];
   deliveryTime?: string;
   priceForTwo?: number;
   costForTwo?: number;
+  priceRange?: string;
   distance?: number;
   isOpen?: boolean;
   address?: string;
@@ -26,6 +28,16 @@ export type Restaurant = {
   offer?: string;
   status?: string;
   isPureVeg?: boolean;
+  isFeatured?: boolean;
+  isPromoted?: boolean;
+  fssaiLicense?: string;
+  minOrderValue?: number;
+  freeDeliveryThreshold?: number;
+  maxDeliveryRadius?: number;
+  packagingCharge?: number;
+  isCashOnDelivery?: boolean;
+  isOnlinePayment?: boolean;
+  acceptScheduledOrders?: boolean;
   lat?: number;
   lng?: number;
   images?: string[];
@@ -51,10 +63,16 @@ export type MenuItem = {
   categoryId?: string;
   categoryName?: string;
   isVeg?: boolean;
+  isVegan?: boolean;
   isAvailable?: boolean;
+  isBestSeller?: boolean;
+  isRecommended?: boolean;
+  isNew?: boolean;
+  spiceLevel?: string;
   rating?: number;
   reviewCount?: number;
   tags?: string[];
+  sortOrder?: number;
   [key: string]: unknown;
 };
 

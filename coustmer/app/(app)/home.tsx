@@ -62,7 +62,7 @@ import {
 import { resolvePlaceFromCoords } from '@/lib/location/resolve-place';
 import { useDeliveryLocationInit } from '@/lib/location/use-delivery-location-init';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
-import { useInfiniteRestaurants } from '@/lib/restaurant/hooks';
+import { useInfiniteRestaurants, useNearbyRestaurants } from '@/lib/restaurant/hooks';
 import { useAuthStore } from '@/store/auth-store';
 import {
   useDeliveryCoords,
@@ -169,18 +169,37 @@ export default function HomeScreen() {
     { enabled: Boolean(city) }
   );
 
-  const baseRestaurants = useMemo(() => {
-    const rows = feed.data?.pages.flatMap((p) => p.restaurants) ?? [];
-    if (!city) return [];
+  const nearby = useNearbyRestaurants(
+    coords?.lat && coords?.lng
+      ? { lat: coords.lat, lng: coords.lng, radius: 15, limit: 40 }
+      : null
+  );
 
-    let matched = rows.filter((r) => restaurantMatchesCity(r, city));
+  const baseRestaurants = useMemo(() => {
+    const nearbyRows = nearby.data?.restaurants ?? [];
+    const rows = feed.data?.pages.flatMap((p) => p.restaurants) ?? [];
+
+    // Prefer geo nearby when available (Swiggy/Zomato style), then fill from city list
+    const byId = new Map<string, (typeof rows)[number]>();
+    for (const r of nearbyRows) {
+      if (r.id) byId.set(r.id, r);
+    }
+    for (const r of rows) {
+      if (r.id && !byId.has(r.id)) byId.set(r.id, r);
+    }
+    const merged = [...byId.values()];
+
+    if (!city && nearbyRows.length === 0) return [];
+
+    let matched = city
+      ? merged.filter((r) => restaurantMatchesCity(r, city))
+      : merged;
     if (matched.length === 0) {
-      const hasLocationFields = rows.some((r) => r.city || r.address);
-      if (!hasLocationFields) matched = rows;
-      else return [];
+      const hasLocationFields = merged.some((r) => r.city || r.address);
+      if (!hasLocationFields || nearbyRows.length > 0) matched = merged;
     }
     return matched;
-  }, [feed.data?.pages, city]);
+  }, [feed.data?.pages, nearby.data?.restaurants, city]);
 
   const restaurants = useMemo(
     () => applyHomeFilters(baseRestaurants, homeFilters),
@@ -237,6 +256,7 @@ export default function HomeScreen() {
 
   const refreshing =
     feed.isRefetching ||
+    nearby.isRefetching ||
     home.isRefetching ||
     deals.isRefetching ||
     offers.isRefetching ||
@@ -244,6 +264,7 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
     feed.refetch();
+    nearby.refetch();
     home.refetch();
     deals.refetch();
     offers.refetch();

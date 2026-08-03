@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Clock, MapPin, Star, UtensilsCrossed } from 'lucide-react-native';
+import { Clock, Leaf, MapPin, Star, UtensilsCrossed } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { authTheme } from '@/constants/auth-theme';
@@ -14,12 +14,14 @@ type Props = {
 
 export function RestaurantListCard({ restaurant, onPress }: Props) {
   const cuisines = restaurant.cuisines?.slice(0, 3).join(' • ');
+  const cost =
+    restaurant.costForTwo ?? restaurant.priceForTwo;
 
   return (
-    <Pressable 
-      style={styles.card} 
+    <Pressable
+      style={styles.card}
       onPressIn={() => prefetchRestaurantMenu(restaurant.id)}
-      onPress={onPress} 
+      onPress={onPress}
       disabled={!onPress}
     >
       <View style={styles.imageWrap}>
@@ -34,12 +36,24 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             <UtensilsCrossed color="#C4520A" size={32} />
           </LinearGradient>
         )}
-        {typeof restaurant.rating === 'number' ? (
+        {typeof restaurant.rating === 'number' && restaurant.rating > 0 ? (
           <View style={styles.ratingBadge}>
             <Star color="#FFFFFF" fill="#FFFFFF" size={11} />
-            <Text style={styles.ratingText}>{restaurant.rating.toFixed(1)}</Text>
+            <Text style={styles.ratingText}>
+              {restaurant.rating.toFixed(1)}
+            </Text>
+            {typeof restaurant.reviewCount === 'number' &&
+            restaurant.reviewCount > 0 ? (
+              <Text style={styles.ratingCount}>
+                ({restaurant.reviewCount})
+              </Text>
+            ) : null}
           </View>
-        ) : null}
+        ) : (
+          <View style={[styles.ratingBadge, styles.ratingNew]}>
+            <Text style={styles.ratingText}>NEW</Text>
+          </View>
+        )}
         {restaurant.isOpen === false ? (
           <View style={styles.closedOverlay}>
             <View style={styles.closedBadge}>
@@ -47,12 +61,24 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             </View>
           </View>
         ) : null}
+        {restaurant.isPromoted ? (
+          <View style={styles.promotedBadge}>
+            <Text style={styles.promotedText}>Ad</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.name} numberOfLines={1}>
-          {restaurant.name}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {restaurant.name}
+          </Text>
+          {restaurant.isPureVeg ? (
+            <View style={styles.vegBadge}>
+              <Leaf color="#15803D" size={11} strokeWidth={2.5} />
+            </View>
+          ) : null}
+        </View>
         {cuisines ? (
           <Text style={styles.cuisines} numberOfLines={1}>
             {cuisines}
@@ -65,19 +91,28 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
               <Text style={styles.meta}>{restaurant.deliveryTime}</Text>
             </View>
           ) : null}
-          {typeof restaurant.priceForTwo === 'number' ? (
-            <Text style={styles.meta}>₹{restaurant.priceForTwo} for two</Text>
+          {typeof cost === 'number' ? (
+            <Text style={styles.meta}>₹{cost} for two</Text>
           ) : null}
           {typeof restaurant.distance === 'number' ? (
             <View style={styles.metaChip}>
               <MapPin color={authTheme.textMuted} size={12} />
-              <Text style={styles.meta}>{restaurant.distance.toFixed(1)} km</Text>
+              <Text style={styles.meta}>
+                {restaurant.distance.toFixed(1)} km
+              </Text>
             </View>
           ) : null}
         </View>
         {restaurant.offer ? (
           <View style={styles.offerRow}>
             <Text style={styles.offerText}>{restaurant.offer}</Text>
+          </View>
+        ) : restaurant.freeDeliveryThreshold &&
+          restaurant.freeDeliveryThreshold > 0 ? (
+          <View style={styles.offerRow}>
+            <Text style={styles.offerText}>
+              Free delivery above ₹{restaurant.freeDeliveryThreshold}
+            </Text>
           </View>
         ) : null}
       </View>
@@ -125,10 +160,18 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 7,
   },
+  ratingNew: {
+    backgroundColor: '#F97316',
+  },
   ratingText: {
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '800',
+  },
+  ratingCount: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 10,
+    fontWeight: '600',
   },
   closedOverlay: {
     position: 'absolute',
@@ -154,15 +197,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.3,
   },
+  promotedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  promotedText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   body: {
     flex: 1,
     padding: 12,
     justifyContent: 'center',
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   name: {
+    flex: 1,
     color: authTheme.text,
     fontSize: 16,
     fontWeight: '800',
+  },
+  vegBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#15803D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
   },
   cuisines: {
     color: authTheme.textMuted,

@@ -53,6 +53,7 @@ const POPULAR_CARD_W = SCREEN_W * 0.58;
 type TabId = 'Menu' | 'Reviews' | 'Info' | 'Offers';
 
 function isBestseller(item: MenuItem, index: number) {
+  if (item.isBestSeller || item.isRecommended) return true;
   const tags = (item.tags ?? []).map((t) => String(t).toLowerCase());
   if (tags.some((t) => t.includes('best') || t.includes('popular') || t.includes('hit'))) {
     return true;
@@ -645,16 +646,143 @@ export function RestaurantDetailScreen() {
               {r.description ||
                 `${restaurantName} serves ${cuisineLine.toLowerCase()}. Order fresh favourites with live tracking.`}
             </Text>
+
+            {(r.cuisines?.length || r.tags?.length) ? (
+              <>
+                <Text style={[styles.infoLabel, { marginTop: 18 }]}>Cuisines</Text>
+                <View style={styles.infoChips}>
+                  {(r.cuisines?.length ? r.cuisines : r.tags || [])
+                    .slice(0, 8)
+                    .map((c) => (
+                      <View key={c} style={styles.infoChip}>
+                        <Text style={styles.infoChipText}>{c}</Text>
+                      </View>
+                    ))}
+                </View>
+              </>
+            ) : null}
+
             <Text style={[styles.infoLabel, { marginTop: 18 }]}>Address</Text>
             <Text style={styles.infoBody}>{locationText}</Text>
-            {typeof r.priceForTwo === 'number' || typeof r.costForTwo === 'number' ? (
+
+            <View style={styles.infoMetaGrid}>
+              {typeof r.costForTwo === 'number' ||
+              typeof r.priceForTwo === 'number' ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Cost for two</Text>
+                  <Text style={styles.infoMetaValue}>
+                    ₹{r.costForTwo ?? r.priceForTwo}
+                    {r.priceRange ? ` · ${r.priceRange}` : ''}
+                  </Text>
+                </View>
+              ) : null}
+              {r.deliveryTime ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Prep / delivery</Text>
+                  <Text style={styles.infoMetaValue}>{r.deliveryTime}</Text>
+                </View>
+              ) : null}
+              {typeof r.distance === 'number' ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Distance</Text>
+                  <Text style={styles.infoMetaValue}>
+                    {r.distance.toFixed(1)} km
+                  </Text>
+                </View>
+              ) : null}
+              {typeof r.minOrderValue === 'number' && r.minOrderValue > 0 ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Min order</Text>
+                  <Text style={styles.infoMetaValue}>₹{r.minOrderValue}</Text>
+                </View>
+              ) : null}
+              {typeof r.freeDeliveryThreshold === 'number' &&
+              r.freeDeliveryThreshold > 0 ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Free delivery</Text>
+                  <Text style={styles.infoMetaValue}>
+                    above ₹{r.freeDeliveryThreshold}
+                  </Text>
+                </View>
+              ) : null}
+              {typeof r.maxDeliveryRadius === 'number' &&
+              r.maxDeliveryRadius > 0 ? (
+                <View style={styles.infoMetaCard}>
+                  <Text style={styles.infoMetaLabel}>Delivers within</Text>
+                  <Text style={styles.infoMetaValue}>
+                    {r.maxDeliveryRadius} km
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={[styles.infoLabel, { marginTop: 18 }]}>
+              Outlet status
+            </Text>
+            <Text style={styles.infoBody}>
+              {r.isOpen === false
+                ? 'Currently closed / offline'
+                : r.isOpen
+                  ? 'Open now · accepting orders'
+                  : 'Hours may vary'}
+              {r.isPureVeg ? ' · Pure veg' : ''}
+              {r.isPromoted ? ' · Promoted' : ''}
+              {r.isFeatured ? ' · Featured' : ''}
+            </Text>
+
+            <Text style={[styles.infoLabel, { marginTop: 18 }]}>Payments</Text>
+            <Text style={styles.infoBody}>
+              {[
+                r.isOnlinePayment !== false ? 'Online payment' : null,
+                r.isCashOnDelivery !== false ? 'Cash on delivery' : null,
+                r.acceptScheduledOrders ? 'Scheduled orders' : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Standard payment options'}
+            </Text>
+
+            {r.timings ? (
               <>
                 <Text style={[styles.infoLabel, { marginTop: 18 }]}>
-                  Cost for two
+                  Weekly timings
                 </Text>
-                <Text style={styles.infoBody}>
-                  ₹{r.costForTwo ?? r.priceForTwo}
+                {Object.entries(r.timings).map(([day, value]) => {
+                  const dayInfo =
+                    value && typeof value === 'object'
+                      ? (value as Record<string, unknown>)
+                      : {};
+                  const open = dayInfo.isOpen === true;
+                  const slots = Array.isArray(dayInfo.slots)
+                    ? (dayInfo.slots as { open?: string; close?: string }[])
+                    : [];
+                  const slotText = slots
+                    .map((s) =>
+                      s.open && s.close ? `${s.open}–${s.close}` : null
+                    )
+                    .filter(Boolean)
+                    .join(', ');
+                  return (
+                    <View key={day} style={styles.timingRow}>
+                      <Text style={styles.timingDay}>
+                        {day.charAt(0).toUpperCase() + day.slice(1)}
+                      </Text>
+                      <Text style={styles.timingValue}>
+                        {open
+                          ? slotText || 'Open'
+                          : 'Closed'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            ) : null}
+
+            {r.fssaiLicense ? (
+              <>
+                <Text style={[styles.infoLabel, { marginTop: 18 }]}>
+                  FSSAI license
                 </Text>
+                <Text style={styles.infoBody}>{r.fssaiLicense}</Text>
               </>
             ) : null}
           </View>
@@ -1185,6 +1313,70 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: INK,
     lineHeight: 22,
+  },
+  infoChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  infoChip: {
+    backgroundColor: '#FFF7ED',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  infoChipText: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 12,
+    color: '#9A3412',
+  },
+  infoMetaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 16,
+  },
+  infoMetaCard: {
+    width: '47%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  infoMetaLabel: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 11,
+    color: MUTED,
+  },
+  infoMetaValue: {
+    marginTop: 4,
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: INK,
+  },
+  timingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  timingDay: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 13,
+    color: MUTED,
+    width: 100,
+  },
+  timingValue: {
+    flex: 1,
+    textAlign: 'right',
+    fontFamily: fonts.uiMedium,
+    fontSize: 13,
+    color: INK,
   },
   stickyCats: {
     position: 'absolute',

@@ -135,10 +135,34 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
       ? Number((data.settings as Record<string, unknown>).avgPrepTime)
       : undefined;
 
-  const isPureVeg =
-    typeof data.settings === 'object' && data.settings
-      ? Boolean((data.settings as Record<string, unknown>).isPureVeg)
+  const settings =
+    data.settings && typeof data.settings === 'object'
+      ? (data.settings as Record<string, unknown>)
       : undefined;
+
+  const isPureVeg =
+    typeof settings?.isPureVeg === 'boolean'
+      ? settings.isPureVeg
+      : typeof data.isPureVeg === 'boolean'
+        ? data.isPureVeg
+        : undefined;
+
+  const tagsRaw = data.tags;
+  const tags = Array.isArray(tagsRaw)
+    ? (tagsRaw as string[])
+        .map((t) => String(t).replace(/^,+\s*|,+\s*$/g, '').trim())
+        .filter(Boolean)
+    : undefined;
+
+  // Soft-hide deleted restaurants from customer lists
+  if (data.isDeleted === true) {
+    return {
+      id: String(data._id ?? data.id ?? ''),
+      name: String(data.name ?? data.restaurantName ?? 'Restaurant'),
+      status: 'deleted',
+      isOpen: false,
+    };
+  }
 
   return {
     id: String(data._id ?? data.id ?? ''),
@@ -153,10 +177,11 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
         ? data.reviewCount
         : Number(data.totalReviews ?? data.reviews ?? data.totalRatings) || undefined,
     cuisines,
+    tags,
     deliveryTime:
       (data.deliveryTime as string) ||
       (data.avgDeliveryTime as string) ||
-      (typeof prep === 'number' && Number.isFinite(prep)
+      (typeof prep === 'number' && Number.isFinite(prep) && prep > 0
         ? `${prep}–${prep + 10} mins`
         : '25–35 mins'),
     priceForTwo:
@@ -167,19 +192,58 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
       typeof data.costForTwo === 'number'
         ? data.costForTwo
         : Number(data.priceForTwo) || undefined,
+    priceRange: (data.priceRange as string) || undefined,
     distance:
-      typeof data.distance === 'number' ? data.distance : Number(data.distanceKm) || undefined,
+      typeof data.distance === 'number'
+        ? data.distance
+        : Number(data.distanceKm) || undefined,
     isOpen: resolveIsOpen(data),
     address,
     city: (data.city as string) || cityFromAddress || undefined,
     offer: (data.offer as string) || (data.promoText as string) || undefined,
     status: (data.status as string) || (data.verificationStatus as string) || undefined,
     isPureVeg,
+    isFeatured: Boolean(data.isFeatured),
+    isPromoted: Boolean(data.isPromoted),
+    fssaiLicense:
+      (data.fssaiLicense as string) ||
+      (data.fssai as string) ||
+      (data.fssaiNumber as string) ||
+      undefined,
+    minOrderValue: Number(settings?.minimumOrderValue ?? data.minOrderValue) || undefined,
+    freeDeliveryThreshold:
+      Number(settings?.freeDeliveryThreshold ?? data.freeDeliveryThreshold) ||
+      undefined,
+    maxDeliveryRadius:
+      Number(settings?.maxDeliveryRadius ?? data.maxDeliveryRadius) || undefined,
+    packagingCharge:
+      Number(settings?.packagingCharge ?? data.packagingCharge) || undefined,
+    isCashOnDelivery:
+      typeof settings?.isCashOnDelivery === 'boolean'
+        ? settings.isCashOnDelivery
+        : undefined,
+    isOnlinePayment:
+      typeof settings?.isOnlinePayment === 'boolean'
+        ? settings.isOnlinePayment
+        : undefined,
+    acceptScheduledOrders:
+      typeof settings?.acceptScheduledOrders === 'boolean'
+        ? settings.acceptScheduledOrders
+        : undefined,
     lat: typeof data.lat === 'number' ? data.lat : coords?.[1],
     lng: typeof data.lng === 'number' ? data.lng : coords?.[0],
-    images: Array.isArray(data.images) ? data.images.map(String).filter(Boolean).map(resolveMediaUrl).filter((url): url is string => Boolean(url)) : undefined,
-    timings: data.timings && typeof data.timings === 'object' ? (data.timings as Record<string, unknown>) : undefined,
-    settings: data.settings && typeof data.settings === 'object' ? (data.settings as Record<string, unknown>) : undefined,
+    images: Array.isArray(data.images)
+      ? data.images
+          .map(String)
+          .filter(Boolean)
+          .map(resolveMediaUrl)
+          .filter((url): url is string => Boolean(url))
+      : undefined,
+    timings:
+      data.timings && typeof data.timings === 'object'
+        ? (data.timings as Record<string, unknown>)
+        : undefined,
+    settings,
   };
 }
 
@@ -223,6 +287,22 @@ export function mapMenuItem(
     ? (data.tags as unknown[]).map(String).filter(Boolean)
     : undefined;
 
+  const isBestSeller =
+    data.isBestSeller !== undefined
+      ? Boolean(data.isBestSeller)
+      : tags?.some((t) => t.toLowerCase().includes('best')) ?? false;
+  const isRecommended =
+    data.isRecommended !== undefined
+      ? Boolean(data.isRecommended)
+      : tags?.some((t) =>
+          t.toLowerCase().includes('chef') ||
+          t.toLowerCase().includes('recommend')
+        ) ?? false;
+  const isNew =
+    data.isNew !== undefined
+      ? Boolean(data.isNew)
+      : tags?.some((t) => t.toLowerCase() === 'new') ?? false;
+
   const mapped: MenuItem = {
     id: itemId,
     name: itemName,
@@ -232,9 +312,16 @@ export function mapMenuItem(
     categoryId: categoryIdRaw ? String(categoryIdRaw) : undefined,
     categoryName,
     isVeg: data.isVeg !== undefined ? Boolean(data.isVeg) : undefined,
+    isVegan: data.isVegan !== undefined ? Boolean(data.isVegan) : undefined,
     isAvailable:
       data.isAvailable !== undefined ? Boolean(data.isAvailable) : true,
+    isBestSeller,
+    isRecommended,
+    isNew,
+    spiceLevel: (data.spiceLevel as string) || undefined,
     tags,
+    sortOrder:
+      typeof data.sortOrder === 'number' ? data.sortOrder : undefined,
     rating: getMenuItemRating({ ...data, tags }) ?? undefined,
     reviewCount: getMenuItemReviewCount({ ...data, tags }) ?? undefined,
   };
@@ -263,7 +350,7 @@ export function mapOffer(data: Record<string, unknown>): RestaurantOffer {
 }
 
 function isNestedMenuGroup(row: Record<string, unknown>): boolean {
-  return Array.isArray(row.items);
+  return Array.isArray(row.items) || Array.isArray(row.menuItems);
 }
 
 export function normalizeMenu(data: unknown): RestaurantMenu {
@@ -273,17 +360,39 @@ export function normalizeMenu(data: unknown): RestaurantMenu {
 
   const payload = data as Record<string, unknown>;
 
+  // { categories: [...], items: [...] }
   if (Array.isArray(payload.categories) || Array.isArray(payload.items)) {
-    return {
-      categories: Array.isArray(payload.categories)
-        ? payload.categories.map((c) => mapCategory(c as Record<string, unknown>))
-        : [],
-      items: Array.isArray(payload.items)
-        ? payload.items.map((i) => mapMenuItem(i as Record<string, unknown>))
-        : [],
-    };
+    const categories = Array.isArray(payload.categories)
+      ? payload.categories.map((c) => mapCategory(c as Record<string, unknown>))
+      : [];
+    let items = Array.isArray(payload.items)
+      ? payload.items.map((i) => mapMenuItem(i as Record<string, unknown>))
+      : [];
+
+    // Categories may embed items (Swiggy-style grouped menu)
+    if (
+      !items.length &&
+      Array.isArray(payload.categories) &&
+      payload.categories.some(
+        (c) =>
+          c &&
+          typeof c === 'object' &&
+          Array.isArray((c as Record<string, unknown>).items)
+      )
+    ) {
+      for (const raw of payload.categories as Record<string, unknown>[]) {
+        const category = mapCategory(raw);
+        const groupItems = Array.isArray(raw.items) ? raw.items : [];
+        for (const rawItem of groupItems) {
+          items.push(mapMenuItem(rawItem as Record<string, unknown>, category));
+        }
+      }
+    }
+
+    return { categories, items };
   }
 
+  // [{ category, items }] — restaurant-service full menu shape
   if (Array.isArray(data)) {
     if (data.length === 0) {
       return { categories: [], items: [] };
@@ -299,13 +408,23 @@ export function normalizeMenu(data: unknown): RestaurantMenu {
         const category = mapCategory(catRaw);
         categories.push(category);
 
-        const groupItems = Array.isArray(group.items) ? group.items : [];
+        const groupItems = Array.isArray(group.items)
+          ? group.items
+          : Array.isArray(group.menuItems)
+            ? group.menuItems
+            : [];
         for (const rawItem of groupItems) {
           items.push(
             mapMenuItem(rawItem as Record<string, unknown>, category)
           );
         }
       }
+
+      // Stable category order
+      categories.sort(
+        (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+      );
+      items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
       return { categories, items };
     }
@@ -314,6 +433,11 @@ export function normalizeMenu(data: unknown): RestaurantMenu {
       categories: [],
       items: data.map((i) => mapMenuItem(i as Record<string, unknown>)),
     };
+  }
+
+  // { menu: [...] }
+  if (Array.isArray(payload.menu)) {
+    return normalizeMenu(payload.menu);
   }
 
   return { categories: [], items: [] };

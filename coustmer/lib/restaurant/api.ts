@@ -103,7 +103,9 @@ export const restaurantApi = {
       })}`
     );
     return {
-      restaurants: extractRestaurantList(res.data).map(mapRestaurant),
+      restaurants: extractRestaurantList(res.data)
+        .map(mapRestaurant)
+        .filter((r) => r.status !== 'deleted' && r.id),
       meta: res.meta,
     };
   },
@@ -160,7 +162,9 @@ export const restaurantApi = {
       })}`
     );
     return {
-      restaurants: extractRestaurantList(res.data).map(mapRestaurant),
+      restaurants: extractRestaurantList(res.data)
+        .map(mapRestaurant)
+        .filter((r) => r.status !== 'deleted' && r.id),
       meta: res.meta,
     };
   },

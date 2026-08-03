@@ -29,6 +29,7 @@ import {
   FOOD_CATEGORIES,
 } from '@/lib/restaurant/categories';
 import {
+  useNearbyRestaurants,
   useRestaurants,
   useRestaurantsOfferingCategory,
 } from '@/lib/restaurant/hooks';
@@ -38,6 +39,7 @@ import {
   useSearchRestaurants,
 } from '@/lib/search/hooks';
 import {
+  useDeliveryCoords,
   useDeliveryLocationStore,
 } from '@/store/delivery-location-store';
 
@@ -52,6 +54,7 @@ export function RestaurantBrowseScreen() {
     params.cuisine && params.cuisine !== 'all' ? params.cuisine : ''
   );
   const deliveryLocation = useDeliveryLocationStore((s) => s.location);
+  const coords = useDeliveryCoords();
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
 
   const city = useMemo(() => {
@@ -66,6 +69,10 @@ export function RestaurantBrowseScreen() {
   const activeCategory = findCategoryBySlug(selectedCuisine);
   const isCategoryMode = Boolean(selectedCuisine && selectedCuisine !== 'all');
   const isTextSearch = !isCategoryMode && debouncedSearch.length >= 2;
+  const useNearby =
+    !isCategoryMode &&
+    !isTextSearch &&
+    Boolean(coords?.lat && coords?.lng);
 
   useEffect(() => {
     if (params.q) setSearch(params.q);
@@ -93,6 +100,12 @@ export function RestaurantBrowseScreen() {
     { enabled: isTextSearch }
   );
 
+  const nearbyQuery = useNearbyRestaurants(
+    useNearby && coords
+      ? { lat: coords.lat, lng: coords.lng, radius: 20, limit: 50 }
+      : null
+  );
+
   const allQuery = useRestaurants({
     search: undefined,
     city: city || undefined,
@@ -113,6 +126,7 @@ export function RestaurantBrowseScreen() {
         cuisines: r.cuisines,
         deliveryTime: r.deliveryTime,
         priceForTwo: r.priceForTwo,
+        costForTwo: r.costForTwo,
         distance: r.distance,
         isOpen: r.isOpen,
         address: r.address,
@@ -123,12 +137,17 @@ export function RestaurantBrowseScreen() {
         lng: r.lng,
       }));
     }
+    if (useNearby && (nearbyQuery.data?.restaurants?.length ?? 0) > 0) {
+      return nearbyQuery.data?.restaurants ?? [];
+    }
     return allQuery.data?.restaurants ?? [];
   }, [
     isCategoryMode,
     isTextSearch,
+    useNearby,
     categoryQuery.data?.restaurants,
     searchQuery.data?.restaurants,
+    nearbyQuery.data?.restaurants,
     allQuery.data?.restaurants,
   ]);
 
@@ -149,7 +168,9 @@ export function RestaurantBrowseScreen() {
     ? categoryQuery
     : isTextSearch
       ? searchQuery
-      : allQuery;
+      : useNearby && (nearbyQuery.data?.restaurants?.length ?? 0) > 0
+        ? nearbyQuery
+        : allQuery;
 
   const resultCount = isCategoryMode
     ? (categoryQuery.data?.total ?? filteredList.length)
