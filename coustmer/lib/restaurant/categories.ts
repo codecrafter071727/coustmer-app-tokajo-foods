@@ -256,8 +256,8 @@ export const FOOD_CATEGORIES: FoodCategory[] = [
   },
 ];
 
-/** How many categories show in the collapsed strip (excluding the More tile). */
-export const CATEGORY_COLLAPSED_COUNT = 7;
+/** How many categories show before “Show all” on home. */
+export const CATEGORY_COLLAPSED_COUNT = 10;
 
 export function findCategoryBySlug(slug?: string) {
   if (!slug) return undefined;
@@ -271,30 +271,31 @@ export function findCategoryBySlug(slug?: string) {
 }
 
 export function restaurantMatchesCategory(
-  restaurant: { cuisines?: string[]; name?: string },
+  restaurant: {
+    cuisines?: string[];
+    menuCategories?: string[];
+    name?: string;
+  },
   slug: string
 ) {
   if (!slug || slug === 'all') return true;
 
   const category = findCategoryBySlug(slug);
-  if (!category) return false;
+  const needle = (category?.slug ?? slug).toLowerCase().replace(/-/g, ' ');
+  const label = (category?.label ?? slug.replace(/-/g, ' ')).toLowerCase();
 
-  const needle = category.slug.toLowerCase().replace(/-/g, ' ');
-  const label = category.label.toLowerCase();
+  const matchesText = (value: string) => {
+    const cLower = value.toLowerCase();
+    return (
+      cLower.includes(needle) ||
+      cLower.includes(label) ||
+      label.includes(cLower) ||
+      cLower.includes(slug.toLowerCase())
+    );
+  };
 
-  if (
-    restaurant.cuisines?.some((c) => {
-      const cLower = c.toLowerCase();
-      return (
-        cLower.includes(needle) ||
-        cLower.includes(label) ||
-        label.includes(cLower) ||
-        cLower.includes(category.slug.toLowerCase())
-      );
-    })
-  ) {
-    return true;
-  }
+  if (restaurant.cuisines?.some(matchesText)) return true;
+  if (restaurant.menuCategories?.some(matchesText)) return true;
 
   return (restaurant.name ?? '').toLowerCase().includes(needle);
 }
@@ -305,24 +306,90 @@ export function menuCategoryMatchesCuisine(
   cuisineSlug: string
 ): boolean {
   if (!cuisineSlug || cuisineSlug === 'all') return true;
-  const food = findCategoryBySlug(cuisineSlug);
-  if (!food) return false;
 
   const name = String(menuCategory.name ?? '').toLowerCase().trim();
   if (!name) return false;
 
-  const slug = food.slug.toLowerCase();
+  const food = findCategoryBySlug(cuisineSlug);
+  const slug = (food?.slug ?? cuisineSlug).toLowerCase().replace(/_/g, '-');
   const slugWords = slug.replace(/-/g, ' ');
-  const label = food.label.toLowerCase();
+  const label = (food?.label ?? cuisineSlug.replace(/[-_]/g, ' ')).toLowerCase();
 
-  return (
+  // Exact / contained category title match (strict — avoid item-name false positives)
+  if (
     name === label ||
     name === slugWords ||
-    name.includes(label) ||
+    name === slug ||
     name.includes(slugWords) ||
-    label.includes(name) ||
-    name.includes(slug.replace(/-/g, ''))
-  );
+    name.includes(label)
+  ) {
+    return true;
+  }
+
+  // Known menu-category aliases for home chips (Beverages, Starters, …)
+  const aliases: Record<string, string[]> = {
+    beverages: [
+      'beverage',
+      'drink',
+      'drinks',
+      'juice',
+      'juices',
+      'shake',
+      'shakes',
+      'smoothie',
+      'coffee',
+      'tea',
+      'lassi',
+      'mocktail',
+      'softdrink',
+      'soft drink',
+      'hot beverage',
+      'fresh juice',
+    ],
+    starters: ['starter', 'appetizer', 'appetisers', 'snack', 'snacks', 'tikka', 'kabab', 'kebab'],
+    'main-course': ['main course', 'mains', 'main', 'curry', 'curries', 'entree'],
+    desserts: ['dessert', 'sweet', 'sweets', 'ice cream', 'pastry', 'cake'],
+    dessert: ['dessert', 'sweet', 'sweets', 'ice cream', 'pastry', 'cake'],
+    breads: ['bread', 'breads', 'naan', 'roti', 'rice'],
+    'breads-and-rice': ['bread', 'breads', 'naan', 'roti', 'rice'],
+    breakfast: ['breakfast', 'morning'],
+    pizza: ['pizza', 'pizzas'],
+    pizzas: ['pizza', 'pizzas'],
+    biryani: ['biryani', 'biriyani'],
+    'biryani-specials': ['biryani', 'biriyani'],
+    dosa: ['dosa', 'idli', 'vada'],
+    chaat: ['chaat'],
+    thalis: ['thali', 'thalis'],
+    grills: ['grill', 'grills', 'kabab', 'kebab'],
+    'grills-and-kababs': ['grill', 'kabab', 'kebab'],
+  };
+
+  const keys = aliases[slug] ?? aliases[slugWords.replace(/\s+/g, '-')] ?? [];
+  return keys.some((k) => name.includes(k));
+}
+
+/** True if a menu item belongs to the selected home category. */
+export function menuItemMatchesCategory(
+  item: {
+    name?: string;
+    categoryId?: string;
+    categoryName?: string;
+  },
+  cuisineSlug: string,
+  matchedCategoryIds?: Set<string>
+): boolean {
+  if (!cuisineSlug || cuisineSlug === 'all') return true;
+
+  if (item.categoryId && matchedCategoryIds?.has(item.categoryId)) {
+    return true;
+  }
+
+  if (item.categoryName) {
+    return menuCategoryMatchesCuisine({ name: item.categoryName }, cuisineSlug);
+  }
+
+  // No category on item — do not guess from dish name (avoids Butter Chicken under Beverages)
+  return false;
 }
 
 /** Pick the best menu category id for a cuisine filter, or null. */

@@ -8,6 +8,7 @@ import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { CustomerRecommendations } from '@/components/customer/CustomerRecommendations';
 import { fonts } from '@/constants/typography';
 import type { HomeFilterState } from '@/lib/home/filters';
+import { useHomeCategories } from '@/lib/restaurant/hooks';
 import type { Restaurant } from '@/lib/restaurant/types';
 
 type Props = {
@@ -30,20 +31,18 @@ export function CategoriesSection({
 }: Props) {
   const router = useRouter();
   const list = restaurants;
+  const categorySource =
+    allRestaurants.length > 0 ? allRestaurants : fallbackRestaurants;
+  const homeCategories = useHomeCategories(categorySource);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        <Text style={styles.titleDark}>What's </Text>
-        <Text style={styles.titleAccent}>your craving</Text>
-        <Text style={styles.titleDark}> today?</Text>
-      </Text>
-
       <HomeFiltersBar
         filters={filters}
         onChange={onFiltersChange}
         onClear={onClearFilters}
         allRestaurants={allRestaurants}
+        categories={homeCategories.data}
       />
 
       <CustomerRecommendations
@@ -129,24 +128,7 @@ export function CategoriesSection({
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 20,
     paddingBottom: 8,
-  },
-  title: {
-    fontFamily: fonts.displayBold,
-    fontSize: 24,
-    color: '#0B1220',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    letterSpacing: -0.4,
-  },
-  titleDark: {
-    color: '#0B1220',
-    fontFamily: fonts.displayBold,
-  },
-  titleAccent: {
-    color: '#F97316',
-    fontFamily: fonts.displayBold,
   },
   emptyBox: {
     marginHorizontal: 16,

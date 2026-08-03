@@ -42,12 +42,18 @@ import {
   useDeliveryCoords,
   useDeliveryLocationStore,
 } from '@/store/delivery-location-store';
+import { CategoryExploreScreen } from '@/components/restaurant/CategoryExploreScreen';
 
 const BROWSE_CATEGORIES = FOOD_CATEGORIES.filter((c) => c.slug !== 'all');
 
 export function RestaurantBrowseScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ q?: string; cuisine?: string }>();
+  const params = useLocalSearchParams<{
+    q?: string;
+    cuisine?: string;
+    label?: string;
+    view?: string;
+  }>();
 
   const [search, setSearch] = useState(params.q ?? '');
   const [selectedCuisine, setSelectedCuisine] = useState(
@@ -66,7 +72,23 @@ export function RestaurantBrowseScreen() {
     return normalizeCityName(raw);
   }, [deliveryLocation]);
 
-  const activeCategory = findCategoryBySlug(selectedCuisine);
+  const activeCategory = useMemo(() => {
+    if (!selectedCuisine || selectedCuisine === 'all') return undefined;
+    const known = findCategoryBySlug(selectedCuisine);
+    if (known) return known;
+    // Dynamic API category / cuisine slug from home
+    const label = selectedCuisine
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return {
+      label,
+      slug: selectedCuisine,
+      icon: UtensilsCrossed,
+      color: '#EA580C',
+      imageUrl:
+        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=300&h=300&fit=crop&q=80',
+    };
+  }, [selectedCuisine]);
   const isCategoryMode = Boolean(selectedCuisine && selectedCuisine !== 'all');
   const isTextSearch = !isCategoryMode && debouncedSearch.length >= 2;
   const useNearby =
@@ -334,6 +356,27 @@ export function RestaurantBrowseScreen() {
               </Pressable>
             );
           })}
+          {activeCategory &&
+          !BROWSE_CATEGORIES.some((c) => c.slug === activeCategory.slug) ? (
+            <Pressable
+              style={[styles.categoryChip, styles.categoryChipActive]}
+              onPress={() => setSelectedCuisine(activeCategory.slug)}
+            >
+              {activeCategory.imageUrl ? (
+                <Image
+                  source={{ uri: activeCategory.imageUrl }}
+                  style={styles.categoryThumb}
+                  contentFit="cover"
+                />
+              ) : null}
+              <Text
+                style={[styles.categoryChipText, styles.categoryChipTextActive]}
+                numberOfLines={1}
+              >
+                {activeCategory.label}
+              </Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </View>
 
@@ -347,6 +390,16 @@ export function RestaurantBrowseScreen() {
       ) : null}
     </View>
   );
+
+  // Home category chips → dishes from all restaurants (no "Picked for you")
+  if (
+    params.view === 'dishes' &&
+    params.cuisine &&
+    params.cuisine !== 'all' &&
+    params.cuisine !== 'popular'
+  ) {
+    return <CategoryExploreScreen />;
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

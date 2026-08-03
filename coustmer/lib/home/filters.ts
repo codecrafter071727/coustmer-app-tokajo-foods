@@ -1,4 +1,5 @@
 import type { Restaurant } from '@/lib/restaurant/types';
+import { restaurantMatchesCategory } from '@/lib/restaurant/categories';
 
 export type HomeSortId =
   | 'relevance'
@@ -8,15 +9,7 @@ export type HomeSortId =
   | 'cost_low'
   | 'cost_high';
 
-export type HomeCuisineId =
-  | 'popular'
-  | 'fast_food'
-  | 'pizza'
-  | 'biryani'
-  | 'chinese'
-  | 'burger'
-  | 'desserts'
-  | 'south_indian';
+export type HomeCuisineId = string;
 
 export type DishPriceBand = 'any' | 'under_200' | '200_350' | 'above_350';
 
@@ -33,6 +26,7 @@ export type FilterSheetTab =
   | 'trust';
 
 export type HomeFilterState = {
+  /** `popular` or any cuisine / menu-category slug from the API. */
   cuisine: HomeCuisineId;
   sort: HomeSortId;
   ratingBand: RatingBand;
@@ -59,6 +53,7 @@ export const DEFAULT_HOME_FILTERS: HomeFilterState = {
   nearOnly: false,
 };
 
+/** Fallback chips when live categories have not loaded yet. */
 export const HOME_CUISINES: {
   id: HomeCuisineId;
   label: string;
@@ -106,7 +101,7 @@ export const RATING_OPTIONS: { id: RatingBand; label: string }[] = [
   { id: '3.5', label: 'Rated 3.5+' },
 ];
 
-const CUISINE_KEYWORDS: Record<HomeCuisineId, string[]> = {
+const CUISINE_KEYWORDS: Record<string, string[]> = {
   popular: [],
   fast_food: ['fast', 'burger', 'fried', 'sandwich', 'wrap', 'shawarma', 'rolls'],
   pizza: ['pizza', 'pizz'],
@@ -114,6 +109,7 @@ const CUISINE_KEYWORDS: Record<HomeCuisineId, string[]> = {
   chinese: ['chinese', 'noodles', 'momos', 'manchurian', 'hakka'],
   burger: ['burger', 'burgers'],
   desserts: ['dessert', 'cake', 'sweet', 'ice cream', 'bakery', 'pastry', 'waffle'],
+  dessert: ['dessert', 'cake', 'sweet', 'ice cream', 'bakery', 'pastry', 'waffle'],
   south_indian: ['south', 'dosa', 'idli', 'uttapam', 'vada', 'sambar'],
 };
 
@@ -222,9 +218,15 @@ export function hasLowPlasticPackaging(r: Restaurant): boolean {
 
 export function matchesCuisine(r: Restaurant, cuisine: HomeCuisineId): boolean {
   if (!cuisine || cuisine === 'popular') return true;
-  const hay = restaurantText(r);
-  const keys = CUISINE_KEYWORDS[cuisine] ?? [cuisine];
-  return keys.some((k) => hay.includes(k));
+
+  const keys = CUISINE_KEYWORDS[cuisine];
+  if (keys?.length) {
+    const hay = restaurantText(r);
+    if (keys.some((k) => hay.includes(k))) return true;
+  }
+
+  // Dynamic menu / cuisine slugs from GET .../categories
+  return restaurantMatchesCategory(r, cuisine);
 }
 
 function minRatingForBand(band: RatingBand): number {

@@ -1,8 +1,9 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
 import { Heart, Minus, Plus, Share2, X, ChevronRight } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import {
   decrementCartItem,
   incrementCartItem,
 } from '@/lib/order/add-to-cart';
+import { useMenuItem } from '@/lib/restaurant/hooks';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -42,39 +44,66 @@ export function MenuItemDetailSheet({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
-
   const [selectedSize, setSelectedSize] = useState('15 cm ( Half )');
+
+  const itemId = item?.id ?? '';
+  const detailQuery = useMenuItem(restaurantId, itemId);
+
+  // Prefer live GET .../items/:itemId, fall back to list row while loading
+  const displayItem = useMemo((): MenuItem | null => {
+    if (!item) return null;
+    if (detailQuery.data?.id) {
+      return {
+        ...item,
+        ...detailQuery.data,
+        imageUrl: detailQuery.data.imageUrl || item.imageUrl,
+        description: detailQuery.data.description || item.description,
+      };
+    }
+    return item;
+  }, [item, detailQuery.data]);
+
+  useEffect(() => {
+    setFavorited(false);
+    setSelectedSize('15 cm ( Half )');
+  }, [itemId]);
 
   const quantity = useCartStore(
     (s) =>
-      s.items.find((i) => i.id === item?.id || i.menuItemId === item?.id)
-        ?.quantity || 0
+      s.items.find(
+        (i) => i.id === displayItem?.id || i.menuItemId === displayItem?.id
+      )?.quantity || 0
   );
 
   const handleAdd = () => {
-    if (!item) return;
+    if (!displayItem) return;
     playHapticFeedback();
 
     if (quantity === 0) {
-      addMenuItemToCart(item, {
+      addMenuItemToCart(displayItem, {
         id: restaurantId,
         name: restaurantName,
         imageUrl: restaurantImageUrl,
       });
     } else {
-      void incrementCartItem(item.id);
+      void incrementCartItem(displayItem.id);
     }
   };
 
   const handleDecrement = () => {
-    if (!item) return;
+    if (!displayItem) return;
     playHapticFeedback();
-    void decrementCartItem(item.id);
+    void decrementCartItem(displayItem.id);
   };
 
-  if (!item) return null;
+  if (!displayItem) return null;
 
-  const unitPrice = item.price ?? 0;
+  const unitPrice = displayItem.price ?? 0;
+  const description =
+    displayItem.description?.trim() ||
+    (displayItem.allergens?.length
+      ? `Allergens: ${displayItem.allergens.join(', ')}`
+      : undefined);
 
   return (
     <Modal
@@ -86,8 +115,6 @@ export function MenuItemDetailSheet({
     >
       <View style={styles.overlay}>
         <View style={[styles.sheetContainer, { marginTop: insets.top + 120 }]}>
-
-          {/* Floating close button */}
           <View style={styles.closeBtnWrap}>
             <Pressable style={styles.closeBtn} onPress={onClose}>
               <X color="#202020" size={20} strokeWidth={2.5} />
@@ -99,10 +126,13 @@ export function MenuItemDetailSheet({
             contentContainerStyle={styles.scrollContent}
             bounces={false}
           >
-            {/* Hero Image */}
             <View style={styles.heroWrap}>
               <Image
-                source={{ uri: item.imageUrl || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=600&auto=format&fit=crop' }}
+                source={{
+                  uri:
+                    displayItem.imageUrl ||
+                    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=600&auto=format&fit=crop',
+                }}
                 style={styles.heroImg}
                 contentFit="cover"
               />
@@ -122,23 +152,30 @@ export function MenuItemDetailSheet({
                   />
                 </Pressable>
               </View>
+              {detailQuery.isFetching ? (
+                <View style={styles.loadingBadge}>
+                  <ActivityIndicator color="#E87431" size="small" />
+                </View>
+              ) : null}
             </View>
 
-            {/* Details */}
             <View style={styles.detailsBlock}>
               <View style={styles.titleRow}>
-                <Text style={styles.title}>{item.name}</Text>
-                <VegBadge isVeg={item.isVeg} />
+                <Text style={styles.title}>{displayItem.name}</Text>
+                <VegBadge isVeg={displayItem.isVeg} />
               </View>
 
-              <Text style={styles.description}>
-                {item.description || 'Serving size: 15cm - 33 g protein / 678 kcal / 299 g, 30cm - 66 g protein / 1356 kcal / 598 g. Double the paneer, with real mozz cheese. Indulge in hot cheesy paneer melt loaded with paneer, tangy tandoori sauce, fresh veggies and cheese slice. Allergens - contains cereals containing gluten, milk, soy.'}
-              </Text>
+              {description ? (
+                <Text style={styles.description}>{description}</Text>
+              ) : null}
+
+              {displayItem.isBestSeller ? (
+                <Text style={styles.metaChip}>Bestseller</Text>
+              ) : null}
 
               <Text style={styles.priceText}>₹{unitPrice}</Text>
             </View>
 
-            {/* Size Options Mock */}
             <View style={styles.optionsCard}>
               <Text style={styles.optionsTitle}>Size</Text>
 
@@ -147,8 +184,16 @@ export function MenuItemDetailSheet({
                 onPress={() => setSelectedSize('15 cm ( Half )')}
               >
                 <View style={styles.radioContainer}>
-                  <View style={[styles.radioOuter, selectedSize === '15 cm ( Half )' && styles.radioOuterSelected]}>
-                    {selectedSize === '15 cm ( Half )' && <View style={styles.radioInner} />}
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      selectedSize === '15 cm ( Half )' &&
+                        styles.radioOuterSelected,
+                    ]}
+                  >
+                    {selectedSize === '15 cm ( Half )' ? (
+                      <View style={styles.radioInner} />
+                    ) : null}
                   </View>
                   <Text style={styles.optionName}>15 cm ( Half )</Text>
                 </View>
@@ -160,18 +205,24 @@ export function MenuItemDetailSheet({
                 onPress={() => setSelectedSize('30 cm ( Full )')}
               >
                 <View style={styles.radioContainer}>
-                  <View style={[styles.radioOuter, selectedSize === '30 cm ( Full )' && styles.radioOuterSelected]}>
-                    {selectedSize === '30 cm ( Full )' && <View style={styles.radioInner} />}
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      selectedSize === '30 cm ( Full )' &&
+                        styles.radioOuterSelected,
+                    ]}
+                  >
+                    {selectedSize === '30 cm ( Full )' ? (
+                      <View style={styles.radioInner} />
+                    ) : null}
                   </View>
                   <Text style={styles.optionName}>30 cm ( Full )</Text>
                 </View>
                 <Text style={styles.optionPrice}>₹{unitPrice * 2}</Text>
               </Pressable>
             </View>
-
           </ScrollView>
 
-          {/* Bottom Bar */}
           <View style={[styles.bottomBarWrap, { paddingBottom: 12 }]}>
             {quantity === 0 ? (
               <Pressable style={styles.addToCartPillCentered} onPress={handleAdd}>
@@ -180,11 +231,19 @@ export function MenuItemDetailSheet({
             ) : (
               <View style={styles.addToCartPill}>
                 <View style={styles.stepperWrap}>
-                  <Pressable onPress={handleDecrement} style={styles.stepperBtn} hitSlop={10}>
+                  <Pressable
+                    onPress={handleDecrement}
+                    style={styles.stepperBtn}
+                    hitSlop={10}
+                  >
                     <Minus color="#202020" size={16} strokeWidth={2.5} />
                   </Pressable>
                   <Text style={styles.stepperVal}>{quantity}</Text>
-                  <Pressable onPress={handleAdd} style={styles.stepperBtn} hitSlop={10}>
+                  <Pressable
+                    onPress={handleAdd}
+                    style={styles.stepperBtn}
+                    hitSlop={10}
+                  >
                     <Plus color="#202020" size={16} strokeWidth={2.5} />
                   </Pressable>
                 </View>
@@ -197,12 +256,15 @@ export function MenuItemDetailSheet({
                   }}
                 >
                   <Text style={styles.addToCartText}>View Cart</Text>
-                  <ChevronRight color="#FFFFFF" size={20} style={{ marginLeft: 4 }} />
+                  <ChevronRight
+                    color="#FFFFFF"
+                    size={20}
+                    style={{ marginLeft: 4 }}
+                  />
                 </Pressable>
               </View>
             )}
           </View>
-
         </View>
       </View>
     </Modal>
@@ -281,6 +343,17 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  loadingBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   detailsBlock: {
     marginBottom: 24,
   },
@@ -302,6 +375,18 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     lineHeight: 18,
     marginBottom: 16,
+  },
+  metaChip: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFF7ED',
+    color: '#EA580C',
+    fontSize: 12,
+    fontWeight: '700',
+    overflow: 'hidden',
   },
   priceText: {
     fontSize: 22,

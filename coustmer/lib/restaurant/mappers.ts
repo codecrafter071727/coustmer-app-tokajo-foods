@@ -154,6 +154,20 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
         .filter(Boolean)
     : undefined;
 
+  const menuCategoriesRaw = data.categories;
+  const menuCategories = Array.isArray(menuCategoriesRaw)
+    ? menuCategoriesRaw
+        .map((c) => {
+          if (typeof c === 'string') return c.trim();
+          if (c && typeof c === 'object') {
+            const rec = c as Record<string, unknown>;
+            return String(rec.name ?? rec.title ?? '').trim();
+          }
+          return '';
+        })
+        .filter(Boolean)
+    : undefined;
+
   // Soft-hide deleted restaurants from customer lists
   if (data.isDeleted === true) {
     return {
@@ -177,6 +191,7 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
         ? data.reviewCount
         : Number(data.totalReviews ?? data.reviews ?? data.totalRatings) || undefined,
     cuisines,
+    menuCategories,
     tags,
     deliveryTime:
       (data.deliveryTime as string) ||
@@ -324,6 +339,11 @@ export function mapMenuItem(
       typeof data.sortOrder === 'number' ? data.sortOrder : undefined,
     rating: getMenuItemRating({ ...data, tags }) ?? undefined,
     reviewCount: getMenuItemReviewCount({ ...data, tags }) ?? undefined,
+    allergens: Array.isArray(data.allergens)
+      ? (data.allergens as unknown[]).map(String).filter(Boolean)
+      : undefined,
+    totalOrdered:
+      typeof data.totalOrdered === 'number' ? data.totalOrdered : undefined,
   };
 
   return mapped;

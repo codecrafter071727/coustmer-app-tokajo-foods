@@ -16,6 +16,8 @@ export type Restaurant = {
   rating?: number;
   reviewCount?: number;
   cuisines?: string[];
+  /** Menu category labels from restaurant document (e.g. Starters, Beverages) */
+  menuCategories?: string[];
   tags?: string[];
   deliveryTime?: string;
   priceForTwo?: number;
@@ -73,7 +75,20 @@ export type MenuItem = {
   reviewCount?: number;
   tags?: string[];
   sortOrder?: number;
+  allergens?: string[];
+  totalOrdered?: number;
   [key: string]: unknown;
+};
+
+/** Query filters for GET /restaurants/:id/items */
+export type MenuItemListParams = {
+  categoryId?: string;
+  isVeg?: boolean;
+  isBestSeller?: boolean;
+  isAvailable?: boolean;
+  isRecommended?: boolean;
+  isNew?: boolean;
+  search?: string;
 };
 
 export type RestaurantMenu = {

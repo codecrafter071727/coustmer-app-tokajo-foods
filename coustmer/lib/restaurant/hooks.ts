@@ -1,19 +1,22 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
-
 import { restaurantApi } from '@/lib/restaurant/api';
 import { queryClient } from '@/lib/query-client';
 import {
   menuCategoryMatchesCuisine,
+  menuItemMatchesCategory,
   restaurantMatchesCategory,
 } from '@/lib/restaurant/categories';
 import { enrichMenuItems } from '@/lib/restaurant/mappers';
+import { buildHomeCategories } from '@/lib/restaurant/home-categories';
 import { buildSeedMenu, findSeedMenuItem } from '@/lib/restaurant/seed-menu';
 import type {
+  MenuItemListParams,
   NearbyParams,
   Restaurant,
   RestaurantListParams,
 } from '@/lib/restaurant/types';
+import type { HomeCategory } from '@/lib/home/types';
+import { useMemo } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
 export type SeedMenuOptions = {
   name?: string;
@@ -31,7 +34,9 @@ export const restaurantKeys = {
   detail: (id: string) => [...restaurantKeys.all, 'detail', id] as const,
   menu: (id: string) => [...restaurantKeys.all, 'menu', id] as const,
   categories: (id: string) => [...restaurantKeys.all, 'categories', id] as const,
-  items: (id: string) => [...restaurantKeys.all, 'items', id] as const,
+  items: (id: string, filters?: Record<string, unknown>) =>
+    [...restaurantKeys.all, 'items', id, filters ?? {}] as const,
+  itemsPrefix: (id: string) => [...restaurantKeys.all, 'items', id] as const,
   item: (restaurantId: string, itemId: string) =>
     [...restaurantKeys.all, 'item', restaurantId, itemId] as const,
   offers: (id: string) => [...restaurantKeys.all, 'offers', id] as const,
@@ -203,6 +208,162 @@ export function useRestaurantsOfferingCategory(input: {
   });
 }
 
+export type CategoryDish = {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  imageUrl?: string;
+  isVeg?: boolean;
+  isAvailable?: boolean;
+  isBestSeller?: boolean;
+  categoryName?: string;
+  restaurantId: string;
+  restaurantName: string;
+  restaurantImageUrl?: string;
+  deliveryTime?: string;
+  rating?: number;
+};
+
+/**
+ * Menu items across restaurants for a home category chip
+ * (Starters, Beverages, etc.) — Swiggy/Zomato style dish browse.
+ */
+export function useCategoryDishes(input: {
+  cuisine: string;
+  city?: string | null;
+  enabled?: boolean;
+  restaurantLimit?: number;
+}) {
+  const cuisine = input.cuisine.trim();
+  const city = input.city?.trim() || undefined;
+  const restaurantLimit = input.restaurantLimit ?? 12;
+
+  return useQuery({
+    queryKey: [
+      ...restaurantKeys.all,
+      'category-dishes',
+      cuisine,
+      city ?? '',
+      restaurantLimit,
+    ],
+    queryFn: async (): Promise<CategoryDish[]> => {
+      // Load city (or cuisine) restaurants, then keep only those with a matching menu category
+      const { restaurants: listed } = await restaurantApi.getRestaurants({
+        city,
+        sort: '-createdAt',
+        limit: 50,
+        page: 1,
+      });
+
+      let candidates = listed.length
+        ? listed
+        : (
+            await restaurantApi.getRestaurants({
+              cuisine,
+              sort: '-createdAt',
+              limit: 40,
+              page: 1,
+            })
+          ).restaurants;
+
+      if (candidates.length === 0) return [];
+
+      const sample = candidates.slice(0, restaurantLimit);
+      const dishes: CategoryDish[] = [];
+      const chunkSize = 4;
+
+      for (let i = 0; i < sample.length; i += chunkSize) {
+        const chunk = sample.slice(i, i + chunkSize);
+        const rows = await Promise.all(
+          chunk.map(async (restaurant) => {
+            try {
+              const cats = await restaurantApi
+                .getCategories(restaurant.id)
+                .catch(() => []);
+
+              const matchedCats = cats.filter((c) =>
+                menuCategoryMatchesCuisine(c, cuisine)
+              );
+              if (matchedCats.length === 0) return [] as CategoryDish[];
+
+              const matchedCatIds = new Set(matchedCats.map((c) => c.id));
+
+              // Prefer filtered items API per matched category, then merge
+              const byCategory = await Promise.all(
+                matchedCats.map((cat) =>
+                  restaurantApi
+                    .getItems(restaurant.id, { categoryId: cat.id })
+                    .catch(() => [] as Awaited<
+                      ReturnType<typeof restaurantApi.getItems>
+                    >)
+                )
+              );
+
+              let matchedItems = byCategory.flat();
+
+              // Fallback: full items list filtered strictly by category id/name
+              if (matchedItems.length === 0) {
+                const allItems = await restaurantApi
+                  .getItems(restaurant.id)
+                  .catch(() => []);
+                matchedItems = allItems.filter((item) =>
+                  menuItemMatchesCategory(item, cuisine, matchedCatIds)
+                );
+              } else {
+                matchedItems = matchedItems.filter(
+                  (item) => item.isAvailable !== false
+                );
+              }
+
+              // Still nothing for this restaurant — skip (never invent unrelated dishes)
+              if (matchedItems.length === 0) return [] as CategoryDish[];
+
+              return matchedItems.slice(0, 10).map((item) => ({
+                id: item.id,
+                name: item.name,
+                description: item.description,
+                price: item.price,
+                imageUrl: item.imageUrl,
+                isVeg: item.isVeg,
+                isAvailable: item.isAvailable,
+                isBestSeller: item.isBestSeller,
+                categoryName: item.categoryName,
+                restaurantId: restaurant.id,
+                restaurantName: restaurant.name,
+                restaurantImageUrl:
+                  restaurant.logoUrl ||
+                  restaurant.imageUrl ||
+                  restaurant.coverUrl,
+                deliveryTime: restaurant.deliveryTime,
+                rating: restaurant.rating,
+              }));
+            } catch {
+              return [] as CategoryDish[];
+            }
+          })
+        );
+        for (const row of rows) dishes.push(...row);
+      }
+
+      // Prefer bestsellers, then available items
+      return dishes.sort((a, b) => {
+        if (Number(b.isBestSeller) !== Number(a.isBestSeller)) {
+          return Number(b.isBestSeller) - Number(a.isBestSeller);
+        }
+        return a.name.localeCompare(b.name);
+      });
+    },
+    enabled:
+      input.enabled !== false &&
+      Boolean(cuisine) &&
+      cuisine !== 'all' &&
+      cuisine !== 'popular',
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
 export function useRestaurant(restaurantId: string) {
   return useQuery({
     queryKey: restaurantKeys.detail(restaurantId),
@@ -227,10 +388,48 @@ export function useRestaurantCategories(restaurantId: string) {
   });
 }
 
-export function useRestaurantItems(restaurantId: string) {
+/**
+ * Home “What's on your mind” categories — built from restaurant cuisines /
+ * menuCategories plus live GET /restaurants/:id/categories samples so new
+ * categories appear automatically.
+ */
+export function useHomeCategories(restaurants: Restaurant[]) {
+  const sampleIds = useMemo(
+    () =>
+      restaurants
+        .filter((r) => r.id && r.status !== 'deleted')
+        .slice(0, 10)
+        .map((r) => r.id),
+    [restaurants]
+  );
+
   return useQuery({
-    queryKey: restaurantKeys.items(restaurantId),
-    queryFn: () => restaurantApi.getItems(restaurantId),
+    queryKey: [...restaurantKeys.all, 'home-categories', sampleIds],
+    queryFn: async (): Promise<HomeCategory[]> => {
+      const samples = await Promise.all(
+        sampleIds.map((id) =>
+          restaurantApi.getCategories(id).catch(() => [])
+        )
+      );
+      return buildHomeCategories({
+        restaurants,
+        menuCategories: samples.flat(),
+      });
+    },
+    enabled: restaurants.length > 0,
+    staleTime: 5 * 60_000,
+    placeholderData: () =>
+      buildHomeCategories({ restaurants, menuCategories: [] }),
+  });
+}
+
+export function useRestaurantItems(
+  restaurantId: string,
+  params: MenuItemListParams = {}
+) {
+  return useQuery({
+    queryKey: restaurantKeys.items(restaurantId, params as Record<string, unknown>),
+    queryFn: () => restaurantApi.getItems(restaurantId, params),
     enabled: Boolean(restaurantId),
   });
 }
@@ -400,7 +599,7 @@ export function useCreateMenuItem(restaurantId: string) {
     mutationFn: (params: { categoryId: string; payload: Record<string, unknown> }) =>
       restaurantApi.createItem(restaurantId, params.categoryId, params.payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
     },
   });
@@ -412,7 +611,7 @@ export function useUpdateMenuItem(restaurantId: string) {
     mutationFn: (params: { itemId: string; payload: Record<string, unknown> }) =>
       restaurantApi.updateItem(restaurantId, params.itemId, params.payload),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.item(restaurantId, variables.itemId) });
     },
@@ -424,7 +623,7 @@ export function useDeleteMenuItem(restaurantId: string) {
   return useMutation({
     mutationFn: (itemId: string) => restaurantApi.deleteItem(restaurantId, itemId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
     },
   });
@@ -436,7 +635,7 @@ export function useUpdateMenuItemAvailability(restaurantId: string) {
     mutationFn: (params: { itemId: string; isAvailable: boolean }) =>
       restaurantApi.updateItemAvailability(restaurantId, params.itemId, params.isAvailable),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.item(restaurantId, variables.itemId) });
     },
@@ -449,7 +648,7 @@ export function useUploadMenuItemImage(restaurantId: string) {
     mutationFn: (params: { itemId: string; formData: FormData }) =>
       restaurantApi.uploadItemImage(restaurantId, params.itemId, params.formData),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.item(restaurantId, variables.itemId) });
     },
@@ -462,7 +661,7 @@ export function useBulkUpdateItemAvailability(restaurantId: string) {
     mutationFn: (params: { itemIds: string[]; isAvailable: boolean }) =>
       restaurantApi.bulkUpdateAvailability(restaurantId, params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
     },
   });
@@ -473,7 +672,7 @@ export function useBulkImportMenuItems(restaurantId: string) {
   return useMutation({
     mutationFn: (payload: unknown) => restaurantApi.bulkImportItems(restaurantId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: restaurantKeys.items(restaurantId) });
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.itemsPrefix(restaurantId) });
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
     },
   });

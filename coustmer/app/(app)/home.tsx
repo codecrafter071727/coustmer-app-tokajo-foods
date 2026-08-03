@@ -62,7 +62,7 @@ import {
 import { resolvePlaceFromCoords } from '@/lib/location/resolve-place';
 import { useDeliveryLocationInit } from '@/lib/location/use-delivery-location-init';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
-import { useInfiniteRestaurants, useNearbyRestaurants } from '@/lib/restaurant/hooks';
+import { useHomeCategories, useInfiniteRestaurants, useNearbyRestaurants } from '@/lib/restaurant/hooks';
 import { useAuthStore } from '@/store/auth-store';
 import {
   useDeliveryCoords,
@@ -205,6 +205,8 @@ export default function HomeScreen() {
     () => applyHomeFilters(baseRestaurants, homeFilters),
     [baseRestaurants, homeFilters]
   );
+
+  const homeCategories = useHomeCategories(baseRestaurants);
 
   /** IDs from AI recommended — keep other rails from cloning that sequence */
   const recommendedIds = useMemo(() => {
@@ -567,8 +569,8 @@ export default function HomeScreen() {
               onChange={onFiltersChange}
               onClear={onClearFilters}
               allRestaurants={baseRestaurants}
+              categories={homeCategories.data}
             />
-            <CustomerRecommendations fallbackRestaurants={restaurants} />
             <Text style={styles.filteredTitle}>
               {restaurants.length > 0
                 ? `${restaurants.length} restaurant${restaurants.length === 1 ? '' : 's'} found`
@@ -750,6 +752,7 @@ export default function HomeScreen() {
           onChange={onFiltersChange}
           onClear={onClearFilters}
           allRestaurants={baseRestaurants}
+          categories={homeCategories.data}
           style={{ paddingTop: 4 }}
         />
       </Animated.View>

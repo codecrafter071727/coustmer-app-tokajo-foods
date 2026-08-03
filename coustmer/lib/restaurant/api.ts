@@ -11,6 +11,7 @@ import {
 } from '@/lib/restaurant/mappers';
 import type {
   MenuItem,
+  MenuItemListParams,
   NearbyParams,
   PaginationMeta,
   Restaurant,
@@ -192,9 +193,45 @@ export const restaurantApi = {
   },
 
   /** GET /restaurants/:restaurantId/items */
-  getItems: async (restaurantId: string): Promise<MenuItem[]> => {
+  getItems: async (
+    restaurantId: string,
+    params: MenuItemListParams = {}
+  ): Promise<MenuItem[]> => {
     const res = await request<Record<string, unknown>[]>(
-      `${RESTAURANT_BASE}/${restaurantId}/items`
+      `${RESTAURANT_BASE}/${restaurantId}/items${buildQuery({
+        categoryId: params.categoryId,
+        isVeg:
+          params.isVeg === undefined
+            ? undefined
+            : params.isVeg
+              ? 'true'
+              : 'false',
+        isBestSeller:
+          params.isBestSeller === undefined
+            ? undefined
+            : params.isBestSeller
+              ? 'true'
+              : 'false',
+        isAvailable:
+          params.isAvailable === undefined
+            ? undefined
+            : params.isAvailable
+              ? 'true'
+              : 'false',
+        isRecommended:
+          params.isRecommended === undefined
+            ? undefined
+            : params.isRecommended
+              ? 'true'
+              : 'false',
+        isNew:
+          params.isNew === undefined
+            ? undefined
+            : params.isNew
+              ? 'true'
+              : 'false',
+        search: params.search,
+      })}`
     );
     return toList(res.data, mapMenuItem);
   },

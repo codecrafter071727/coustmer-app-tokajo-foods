@@ -14,7 +14,7 @@ import {
   UtensilsCrossed,
   X,
 } from 'lucide-react-native';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   LayoutChangeEvent,
@@ -37,7 +37,12 @@ import { RestaurantReviewsPanel } from '@/components/review/RestaurantReviewsPan
 import { fonts } from '@/constants/typography';
 import { addMenuItemToCart } from '@/lib/order/add-to-cart';
 import {
+  menuCategoryMatchesCuisine,
+  resolveMenuCategoryId,
+} from '@/lib/restaurant/categories';
+import {
   useFullMenu,
+  useMenuItem,
   useRestaurant,
   useRestaurantOffers,
 } from '@/lib/restaurant/hooks';
@@ -64,10 +69,20 @@ function isBestseller(item: MenuItem, index: number) {
 export function RestaurantDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ restaurantId: string }>();
+  const params = useLocalSearchParams<{
+    restaurantId: string;
+    category?: string;
+    itemId?: string;
+  }>();
   const id = Array.isArray(params.restaurantId)
     ? params.restaurantId[0]
     : params.restaurantId;
+  const focusCuisine = Array.isArray(params.category)
+    ? params.category[0]
+    : params.category;
+  const focusItemId = Array.isArray(params.itemId)
+    ? params.itemId[0]
+    : params.itemId;
 
   const scrollRef = useRef<ScrollView>(null);
   const sectionY = useRef<Record<string, number>>({});
@@ -214,6 +229,78 @@ export function RestaurantDetailScreen() {
   const onSectionLayout = (catId: string) => (e: LayoutChangeEvent) => {
     sectionY.current[catId] = menuOffsetY.current + e.nativeEvent.layout.y;
   };
+
+  // Deep-link from home/browse cuisine chip → jump to matching menu section
+  const didFocusCategory = useRef(false);
+  useEffect(() => {
+    if (didFocusCategory.current) return;
+    // Prefer item deep-link (opens sheet + scrolls); skip category-only jump
+    if (focusItemId) return;
+    if (!focusCuisine || menu.isLoading) return;
+    if (!categories.length) return;
+
+    const matchedId =
+      resolveMenuCategoryId(categories, focusCuisine) ||
+      categories.find((c) => menuCategoryMatchesCuisine(c, focusCuisine))?.id;
+
+    if (!matchedId) return;
+    didFocusCategory.current = true;
+    const t = setTimeout(() => jumpToCategory(matchedId), 350);
+    return () => clearTimeout(t);
+  }, [focusCuisine, focusItemId, menu.isLoading, categories]);
+
+  // Deep-link from category dishes page → open that item on the restaurant menu
+  const didFocusItem = useRef(false);
+  const focusItemQuery = useMenuItem(id, focusItemId || '');
+
+  useEffect(() => {
+    if (didFocusItem.current) return;
+    if (!focusItemId || menu.isLoading) return;
+
+    const found =
+      menu.items.find((item) => String(item.id) === String(focusItemId)) ||
+      (focusItemQuery.data &&
+      String(focusItemQuery.data.id) === String(focusItemId)
+        ? focusItemQuery.data
+        : null);
+
+    if (!found) {
+      // Wait for item detail API if list hasn't loaded this dish yet
+      if (focusItemQuery.isLoading || focusItemQuery.isFetching) return;
+      return;
+    }
+
+    didFocusItem.current = true;
+    didFocusCategory.current = true;
+
+    const catId =
+      found.categoryId ||
+      categories.find((c) => c.name === found.categoryName)?.id ||
+      (focusCuisine
+        ? resolveMenuCategoryId(categories, focusCuisine) ||
+          categories.find((c) =>
+            menuCategoryMatchesCuisine(c, focusCuisine)
+          )?.id
+        : undefined);
+
+    setTab('Menu');
+    if (catId) setActiveCat(catId);
+    setSelectedItem(found);
+
+    const t = setTimeout(() => {
+      if (catId) jumpToCategory(catId);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [
+    focusItemId,
+    focusCuisine,
+    menu.isLoading,
+    menu.items,
+    categories,
+    focusItemQuery.data,
+    focusItemQuery.isLoading,
+    focusItemQuery.isFetching,
+  ]);
 
   if (restaurant.isLoading) {
     return <LoadingView label="Loading restaurant…" />;
