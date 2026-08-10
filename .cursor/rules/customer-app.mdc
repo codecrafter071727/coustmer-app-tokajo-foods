@@ -1,0 +1,21 @@
+---
+description: Customer app scope, commit policy, and Swiggy/Zomato production bar
+alwaysApply: true
+---
+
+# Customer app (Tokajo)
+
+## Scope
+- Work **only** inside `coustmer/`. Do not edit other apps, services, or folders unless the user explicitly names them.
+- Treat anything outside `coustmer/` as out of scope.
+
+## Git (every prompt)
+- After finishing the prompt, **commit** relevant `coustmer/` changes (and this rule if it changed).
+- **Do not push** unless the user explicitly asks.
+- Follow the existing commit safety protocol: no force push, no `--no-verify`, no amending unless allowed.
+- Skip empty commits. Do not commit secrets (`.env`, keys, credentials).
+
+## Product bar
+- UX and flows should feel like **Swiggy / Zomato**: fast home, category → dishes, restaurant menu, cart, COD/online pay, tracking.
+- Code must be **production-ready**: typed, no dummy/seed fallbacks in user paths, real API wiring, loading/empty/error states, no leftover debug, no broken JSX.
+- Prefer one clear API call over N+1. Match list/detail/filter APIs to the UI. Keep navigation deep-links working (category → item → restaurant menu).
