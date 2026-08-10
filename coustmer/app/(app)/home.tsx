@@ -62,7 +62,13 @@ import {
 import { resolvePlaceFromCoords } from '@/lib/location/resolve-place';
 import { useDeliveryLocationInit } from '@/lib/location/use-delivery-location-init';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
-import { useHomeCategories, useInfiniteRestaurants, useNearbyRestaurants } from '@/lib/restaurant/hooks';
+import {
+  useHomeCategories,
+  useInfiniteRestaurants,
+  useNearbyRestaurants,
+  useRestaurantCuisines,
+} from '@/lib/restaurant/hooks';
+import { homeFiltersToNearbyParams } from '@/lib/restaurant/nearby-params';
 import { useAuthStore } from '@/store/auth-store';
 import {
   useDeliveryCoords,
@@ -165,15 +171,25 @@ export default function HomeScreen() {
       city: city || undefined,
       sort: '-createdAt',
       limit: 12,
+      lat: coords?.lat,
+      lng: coords?.lng,
     },
     { enabled: Boolean(city) }
   );
 
-  const nearby = useNearbyRestaurants(
-    coords?.lat && coords?.lng
-      ? { lat: coords.lat, lng: coords.lng, radius: 15, limit: 40 }
-      : null
+  const nearbyParams = useMemo(
+    () =>
+      coords?.lat && coords?.lng
+        ? homeFiltersToNearbyParams(
+            { lat: coords.lat, lng: coords.lng },
+            homeFilters,
+            { radius: 15, limit: 40 }
+          )
+        : null,
+    [coords?.lat, coords?.lng, homeFilters]
   );
+  const nearby = useNearbyRestaurants(nearbyParams);
+  const liveCuisines = useRestaurantCuisines();
 
   const baseRestaurants = useMemo(() => {
     const nearbyRows = nearby.data?.restaurants ?? [];
@@ -202,8 +218,13 @@ export default function HomeScreen() {
   }, [feed.data?.pages, nearby.data?.restaurants, city]);
 
   const restaurants = useMemo(
-    () => applyHomeFilters(baseRestaurants, homeFilters),
-    [baseRestaurants, homeFilters]
+    () =>
+      applyHomeFilters(baseRestaurants, homeFilters, {
+        skipServerSide: Boolean(
+          nearbyParams && (nearby.data?.restaurants?.length ?? 0) > 0
+        ),
+      }),
+    [baseRestaurants, homeFilters, nearbyParams, nearby.data?.restaurants]
   );
 
   const homeCategories = useHomeCategories(baseRestaurants);
@@ -262,7 +283,8 @@ export default function HomeScreen() {
     home.isRefetching ||
     deals.isRefetching ||
     offers.isRefetching ||
-    discovery.isRefetching;
+    discovery.isRefetching ||
+    liveCuisines.isRefetching;
 
   const onRefresh = () => {
     feed.refetch();
@@ -272,6 +294,7 @@ export default function HomeScreen() {
     offers.refetch();
     profile.refetch();
     discovery.refetch();
+    liveCuisines.refetch();
   };
 
   const onVegApply = (mode: VegMode) => {
@@ -570,6 +593,7 @@ export default function HomeScreen() {
               onClear={onClearFilters}
               allRestaurants={baseRestaurants}
               categories={homeCategories.data}
+              liveCuisines={liveCuisines.data}
             />
             <Text style={styles.filteredTitle}>
               {restaurants.length > 0
@@ -611,6 +635,7 @@ export default function HomeScreen() {
             onClearFilters={onClearFilters}
             allRestaurants={baseRestaurants}
             fallbackRestaurants={restaurants}
+            liveCuisines={liveCuisines.data}
           />
 
           {hotDealRestaurants.length > 0 ? (

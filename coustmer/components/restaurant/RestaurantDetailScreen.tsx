@@ -3,11 +3,15 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  Bell,
+  BellOff,
   ChevronLeft,
   Clock,
   Flame,
+  Leaf,
   MapPin,
   Search,
+  ShieldCheck,
   Sparkles,
   Star,
   Tag,
@@ -37,25 +41,60 @@ import { RestaurantReviewsPanel } from '@/components/review/RestaurantReviewsPan
 import { fonts } from '@/constants/typography';
 import { addMenuItemToCart } from '@/lib/order/add-to-cart';
 import {
+  restaurantEtaLabel,
+  restaurantOfferBadges,
+  restaurantRatingCount,
+  restaurantStars,
+} from '@/lib/restaurant/card-display';
+import {
   menuCategoryMatchesCuisine,
   resolveMenuCategoryId,
 } from '@/lib/restaurant/categories';
 import {
   useFullMenu,
+  useKitchenAlerts,
   useMenuItem,
+  useNotifyOpen,
   useRestaurant,
+  useRestaurantBySlug,
+  useRestaurantHygiene,
+  useRestaurantItems,
   useRestaurantOffers,
+  useRestaurantTimings,
 } from '@/lib/restaurant/hooks';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { useRestaurantReviewStats } from '@/lib/review/hooks';
+import { useAuthStore } from '@/store/auth-store';
+import { useDeliveryCoords } from '@/store/delivery-location-store';
+import { useVegPreferenceStore } from '@/store/veg-preference-store';
 
 const ORANGE = '#F97316';
 const INK = '#0B1220';
 const MUTED = '#64748B';
 const SCREEN_W = Dimensions.get('window').width;
 const POPULAR_CARD_W = SCREEN_W * 0.58;
+const WEEKDAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
 
 type TabId = 'Menu' | 'Reviews' | 'Info' | 'Offers';
+
+function formatNextOpenAt(iso?: string) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
 
 function isBestseller(item: MenuItem, index: number) {
   if (item.isBestSeller || item.isRecommended) return true;
@@ -70,19 +109,25 @@ export function RestaurantDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
-    restaurantId: string;
+    restaurantId?: string;
+    slug?: string;
     category?: string;
     itemId?: string;
   }>();
-  const id = Array.isArray(params.restaurantId)
+  const idParam = Array.isArray(params.restaurantId)
     ? params.restaurantId[0]
     : params.restaurantId;
+  const slugParam = Array.isArray(params.slug) ? params.slug[0] : params.slug;
   const focusCuisine = Array.isArray(params.category)
     ? params.category[0]
     : params.category;
   const focusItemId = Array.isArray(params.itemId)
     ? params.itemId[0]
     : params.itemId;
+  const slugOnly = Boolean(slugParam) && !idParam;
+  const coords = useDeliveryCoords();
+  const token = useAuthStore((s) => s.token);
+  const vegOnly = useVegPreferenceStore((s) => s.mode === 'pure_veg');
 
   const scrollRef = useRef<ScrollView>(null);
   const sectionY = useRef<Record<string, number>>({});
@@ -94,7 +139,10 @@ export function RestaurantDetailScreen() {
   const [activeCat, setActiveCat] = useState<string>('popular');
   const [stickyCats, setStickyCats] = useState(false);
 
-  const restaurant = useRestaurant(id);
+  const slugQuery = useRestaurantBySlug(slugOnly ? slugParam || '' : '', coords);
+  const idQuery = useRestaurant(idParam || '', coords);
+  const restaurant = slugOnly ? slugQuery : idQuery;
+  const id = restaurant.data?.id || idParam || '';
   const reviewStats = useRestaurantReviewStats(id, {
     enabled: Boolean(id),
   });
@@ -103,6 +151,20 @@ export function RestaurantDetailScreen() {
     cuisines: restaurant.data?.cuisines,
   });
   const offers = useRestaurantOffers(id);
+  const timings = useRestaurantTimings(id);
+  const hygiene = useRestaurantHygiene(id);
+  const alerts = useKitchenAlerts({ enabled: Boolean(token && id) });
+  const notifyOpen = useNotifyOpen(id);
+  const needle = query.trim().toLowerCase();
+  const isSearching = needle.length > 0;
+  const searchedItems = useRestaurantItems(
+    id,
+    {
+      q: isSearching ? query.trim() : undefined,
+      veg: vegOnly || undefined,
+    },
+    { enabled: Boolean(id) && isSearching }
+  );
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -116,9 +178,6 @@ export function RestaurantDetailScreen() {
       imageUrl: restaurant.data?.logoUrl || restaurant.data?.imageUrl,
     });
   };
-
-  const needle = query.trim().toLowerCase();
-  const isSearching = needle.length > 0;
 
   const matchesQuery = (item: MenuItem, q: string) => {
     if (!q) return true;
@@ -134,45 +193,66 @@ export function RestaurantDetailScreen() {
     return hay.includes(q);
   };
 
+  const visibleItems = useMemo(() => {
+    if (!vegOnly) return menu.items;
+    return menu.items.filter((item) => item.isVeg !== false);
+  }, [menu.items, vegOnly]);
+
   const popularItems = useMemo(() => {
-    const scored = [...menu.items].sort((a, b) => {
+    const recommended = (menu.recommended ?? []).filter((item) =>
+      vegOnly ? item.isVeg !== false : true
+    );
+    if (recommended.length >= 2) return recommended.slice(0, 8);
+
+    const scored = [...visibleItems].sort((a, b) => {
       const ar = a.rating ?? 0;
       const br = b.rating ?? 0;
       if (br !== ar) return br - ar;
       return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
     });
     const picks = scored.filter((_, i) => isBestseller(scored[i], i)).slice(0, 8);
-    return picks.length >= 3 ? picks : menu.items.slice(0, 8);
-  }, [menu.items]);
+    return picks.length >= 3 ? picks : visibleItems.slice(0, 8);
+  }, [menu.recommended, visibleItems, vegOnly]);
 
   const searchResults = useMemo(() => {
     if (!isSearching) return [];
-    return menu.items.filter((item) => matchesQuery(item, needle));
-  }, [isSearching, menu.items, needle]);
+    const apiHits = searchedItems.data ?? [];
+    if (searchedItems.isSuccess && apiHits.length) {
+      return vegOnly ? apiHits.filter((item) => item.isVeg !== false) : apiHits;
+    }
+    return visibleItems.filter((item) => matchesQuery(item, needle));
+  }, [
+    isSearching,
+    searchedItems.data,
+    searchedItems.isSuccess,
+    visibleItems,
+    needle,
+    vegOnly,
+  ]);
 
   const categories = useMemo(() => {
     if (menu.categories.length) return menu.categories;
     const names = new Map<string, string>();
-    for (const item of menu.items) {
+    for (const item of visibleItems) {
       const name = item.categoryName || 'Menu';
       const cid = item.categoryId || name;
       if (!names.has(cid)) names.set(cid, name);
     }
     return [...names.entries()].map(([cid, name]) => ({ id: cid, name }));
-  }, [menu.categories, menu.items]);
+  }, [menu.categories, visibleItems]);
 
   const grouped = useMemo(() => {
     if (isSearching) return [];
 
     if (!categories.length) {
-      return menu.items.length
-        ? [{ id: 'all', name: 'Full menu', items: menu.items }]
+      return visibleItems.length
+        ? [{ id: 'all', name: 'Full menu', items: visibleItems }]
         : [];
     }
 
     const byCat = categories.map((cat) => ({
       ...cat,
-      items: menu.items.filter((item) => {
+      items: visibleItems.filter((item) => {
         if (item.categoryId && item.categoryId === cat.id) return true;
         if (item.categoryName && item.categoryName === cat.name) return true;
         return false;
@@ -180,7 +260,7 @@ export function RestaurantDetailScreen() {
     }));
 
     const used = new Set(byCat.flatMap((c) => c.items.map((i) => i.id)));
-    const leftover = menu.items.filter((i) => !used.has(i.id));
+    const leftover = visibleItems.filter((i) => !used.has(i.id));
     if (leftover.length) {
       if (byCat.length === 0) {
         return [{ id: 'all', name: 'Full menu', items: leftover }];
@@ -191,10 +271,10 @@ export function RestaurantDetailScreen() {
     const filled = byCat.filter((c) => c.items.length > 0);
     if (filled.length) return filled;
 
-    return menu.items.length
-      ? [{ id: 'all', name: 'Full menu', items: menu.items }]
+    return visibleItems.length
+      ? [{ id: 'all', name: 'Full menu', items: visibleItems }]
       : [];
-  }, [categories, menu.items, isSearching]);
+  }, [categories, visibleItems, isSearching]);
 
   const onSearchChange = (text: string) => {
     setQuery(text);
@@ -328,21 +408,33 @@ export function RestaurantDetailScreen() {
     'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1200&auto=format&fit=crop';
   const logo = r.logoUrl || r.imageUrl;
   const restaurantName = r.name || 'Restaurant';
-  const ratingText =
+  const liveStars =
     reviewStats.data && reviewStats.data.average > 0
-      ? reviewStats.data.average.toFixed(1)
-      : typeof r.rating === 'number' && r.rating > 0
-        ? r.rating.toFixed(1)
-        : '—';
-  const reviewsCount =
+      ? reviewStats.data.average
+      : restaurantStars(r);
+  const ratingText = liveStars ? liveStars.toFixed(1) : '—';
+  const liveCount =
     reviewStats.data && reviewStats.data.total > 0
-      ? `${reviewStats.data.total}`
-      : typeof r.reviewCount === 'number' && r.reviewCount > 0
-        ? `${r.reviewCount}`
-        : 'New';
+      ? reviewStats.data.total
+      : restaurantRatingCount(r);
+  const reviewsCount = liveCount ? `${liveCount}` : 'New';
   const locationText = r.address || r.city || 'Near you';
-  const eta = r.deliveryTime || '25–35 min';
+  const eta = restaurantEtaLabel(r);
   const cuisineLine = (r.cuisines || []).slice(0, 3).join(' · ') || 'Multi cuisine';
+  const offerBadges = restaurantOfferBadges(r);
+  const openNow =
+    timings.data?.isOpenNow ?? r.isOpenNow ?? r.isOpen ?? r.isOnline;
+  const nextOpenLabel = formatNextOpenAt(
+    timings.data?.nextOpenAt || r.nextOpenAt
+  );
+  const kitchenClosed = openNow === false;
+  const watchingOpen = (alerts.data ?? []).some(
+    (a) =>
+      a.restaurantId === id &&
+      !a.itemId &&
+      a.active !== false &&
+      String(a.type).includes('open')
+  );
 
   const catRail = (
     <ScrollView
@@ -422,11 +514,12 @@ export function RestaurantDetailScreen() {
                 <ChevronLeft color="#FFF" size={22} strokeWidth={2.4} />
               </Pressable>
 
-              {/* ETA sits top-right on the hero */}
-              <View style={styles.etaPill}>
-                <Clock color={INK} size={11} strokeWidth={2.6} />
-                <Text style={styles.etaText}>{eta}</Text>
-              </View>
+              {eta ? (
+                <View style={styles.etaPill}>
+                  <Clock color={INK} size={11} strokeWidth={2.6} />
+                  <Text style={styles.etaText}>{eta}</Text>
+                </View>
+              ) : null}
             </View>
           </SafeAreaView>
 
@@ -452,6 +545,11 @@ export function RestaurantDetailScreen() {
                 <Text style={styles.cuisineLine} numberOfLines={1}>
                   {cuisineLine}
                 </Text>
+                {offerBadges.length ? (
+                  <Text style={styles.offerLine} numberOfLines={1}>
+                    {offerBadges.join(' · ')}
+                  </Text>
+                ) : null}
               </View>
             </View>
 
@@ -466,10 +564,11 @@ export function RestaurantDetailScreen() {
               <Text style={styles.locationText} numberOfLines={1}>
                 {locationText}
               </Text>
-              {/* Open / Closed sits with rating row — separate from ETA */}
-              {r.isOpen === false ? (
+              {kitchenClosed ? (
                 <View style={[styles.statusPill, styles.closedPill]}>
-                  <Text style={styles.closedText}>Closed</Text>
+                  <Text style={styles.closedText}>
+                    {nextOpenLabel ? `Opens ${nextOpenLabel}` : 'Closed'}
+                  </Text>
                 </View>
               ) : (
                 <View style={[styles.statusPill, styles.openPill]}>
@@ -490,7 +589,7 @@ export function RestaurantDetailScreen() {
             onFocus={() => {
               setTab('Menu');
             }}
-            placeholder="Search dishes on this menu…"
+            placeholder={vegOnly ? 'Search veg dishes…' : 'Search dishes on this menu…'}
             placeholderTextColor="#94A3B8"
             returnKeyType="search"
             autoCorrect={false}
@@ -498,6 +597,12 @@ export function RestaurantDetailScreen() {
             clearButtonMode="never"
             blurOnSubmit={false}
           />
+          {vegOnly ? (
+            <View style={styles.vegSearchChip}>
+              <Leaf color="#15803D" size={12} />
+              <Text style={styles.vegSearchText}>Veg</Text>
+            </View>
+          ) : null}
           {query ? (
             <Pressable onPress={clearSearch} hitSlop={8}>
               <X color={MUTED} size={16} />
@@ -573,10 +678,16 @@ export function RestaurantDetailScreen() {
                     <View style={styles.sectionHead}>
                       <View style={styles.sectionTitleRow}>
                         <Flame color={ORANGE} size={18} strokeWidth={2.6} />
-                        <Text style={styles.sectionTitle}>Popular picks</Text>
+                        <Text style={styles.sectionTitle}>
+                          {(menu.recommended?.length ?? 0) >= 2
+                            ? 'Recommended'
+                            : 'Popular picks'}
+                        </Text>
                       </View>
                       <Text style={styles.sectionSub}>
-                        Crowd favourites — tap to customise
+                        {(menu.recommended?.length ?? 0) >= 2
+                          ? 'Bestsellers from this kitchen'
+                          : 'Crowd favourites — tap to customise'}
                       </Text>
                     </View>
 
@@ -763,10 +874,10 @@ export function RestaurantDetailScreen() {
                   </Text>
                 </View>
               ) : null}
-              {r.deliveryTime ? (
+              {eta ? (
                 <View style={styles.infoMetaCard}>
                   <Text style={styles.infoMetaLabel}>Prep / delivery</Text>
-                  <Text style={styles.infoMetaValue}>{r.deliveryTime}</Text>
+                  <Text style={styles.infoMetaValue}>{eta}</Text>
                 </View>
               ) : null}
               {typeof r.distance === 'number' ? (
@@ -807,15 +918,45 @@ export function RestaurantDetailScreen() {
               Outlet status
             </Text>
             <Text style={styles.infoBody}>
-              {r.isOpen === false
-                ? 'Currently closed / offline'
-                : r.isOpen
+              {kitchenClosed
+                ? nextOpenLabel
+                  ? `Currently closed · opens ${nextOpenLabel}`
+                  : 'Currently closed / offline'
+                : openNow
                   ? 'Open now · accepting orders'
                   : 'Hours may vary'}
               {r.isPureVeg ? ' · Pure veg' : ''}
-              {r.isPromoted ? ' · Promoted' : ''}
-              {r.isFeatured ? ' · Featured' : ''}
+              {typeof hygiene.data?.hygieneScore === 'number'
+                ? ` · Hygiene ${hygiene.data.hygieneScore}`
+                : typeof r.hygieneScore === 'number'
+                  ? ` · Hygiene ${r.hygieneScore}`
+                  : ''}
             </Text>
+
+            {kitchenClosed && token ? (
+              <Pressable
+                style={styles.notifyBtn}
+                onPress={() => {
+                  if (watchingOpen) notifyOpen.unsubscribe.mutate();
+                  else notifyOpen.subscribe.mutate();
+                }}
+                disabled={
+                  notifyOpen.subscribe.isPending ||
+                  notifyOpen.unsubscribe.isPending
+                }
+              >
+                {watchingOpen ? (
+                  <BellOff color="#9A3412" size={16} />
+                ) : (
+                  <Bell color="#9A3412" size={16} />
+                )}
+                <Text style={styles.notifyBtnText}>
+                  {watchingOpen
+                    ? 'Stop kitchen-open alert'
+                    : 'Notify me when this kitchen opens'}
+                </Text>
+              </Pressable>
+            ) : null}
 
             <Text style={[styles.infoLabel, { marginTop: 18 }]}>Payments</Text>
             <Text style={styles.infoBody}>
@@ -828,7 +969,44 @@ export function RestaurantDetailScreen() {
                 .join(' · ') || 'Standard payment options'}
             </Text>
 
-            {r.timings ? (
+            {timings.data?.slots && Object.keys(timings.data.slots).length ? (
+              <>
+                <Text style={[styles.infoLabel, { marginTop: 18 }]}>
+                  Weekly timings (IST)
+                </Text>
+                {[
+                  ...WEEKDAYS.filter((day) => timings.data?.slots?.[day] != null),
+                  ...Object.keys(timings.data.slots).filter(
+                    (day) =>
+                      !WEEKDAYS.includes(
+                        day.toLowerCase() as (typeof WEEKDAYS)[number]
+                      )
+                  ),
+                ].map((day) => {
+                  const value = timings.data?.slots?.[day];
+                  const slotText = Array.isArray(value)
+                    ? value
+                        .map(
+                          (s) =>
+                            s.label ||
+                            (s.open && s.close ? `${s.open}–${s.close}` : s.open)
+                        )
+                        .filter(Boolean)
+                        .join(', ')
+                    : String(value ?? '');
+                  return (
+                    <View key={day} style={styles.timingRow}>
+                      <Text style={styles.timingDay}>
+                        {day.charAt(0).toUpperCase() + day.slice(1)}
+                      </Text>
+                      <Text style={styles.timingValue}>
+                        {slotText || 'Closed'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            ) : r.timings ? (
               <>
                 <Text style={[styles.infoLabel, { marginTop: 18 }]}>
                   Weekly timings
@@ -854,9 +1032,7 @@ export function RestaurantDetailScreen() {
                         {day.charAt(0).toUpperCase() + day.slice(1)}
                       </Text>
                       <Text style={styles.timingValue}>
-                        {open
-                          ? slotText || 'Open'
-                          : 'Closed'}
+                        {open ? slotText || 'Open' : 'Closed'}
                       </Text>
                     </View>
                   );
@@ -864,12 +1040,27 @@ export function RestaurantDetailScreen() {
               </>
             ) : null}
 
-            {r.fssaiLicense ? (
+            {hygiene.data?.fssaiMasked ||
+            typeof hygiene.data?.hygieneScore === 'number' ? (
               <>
                 <Text style={[styles.infoLabel, { marginTop: 18 }]}>
-                  FSSAI license
+                  Hygiene
                 </Text>
-                <Text style={styles.infoBody}>{r.fssaiLicense}</Text>
+                <View style={styles.hygieneRow}>
+                  <ShieldCheck color="#15803D" size={16} />
+                  <Text style={styles.infoBody}>
+                    {[
+                      hygiene.data?.fssaiMasked
+                        ? `FSSAI ${hygiene.data.fssaiMasked}`
+                        : null,
+                      typeof hygiene.data?.hygieneScore === 'number'
+                        ? `Score ${hygiene.data.hygieneScore}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </View>
               </>
             ) : null}
           </View>
@@ -1029,6 +1220,50 @@ const styles = StyleSheet.create({
     fontFamily: fonts.uiMedium,
     fontSize: 13,
     color: 'rgba(255,255,255,0.78)',
+  },
+  offerLine: {
+    marginTop: 4,
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: '#FDBA74',
+  },
+  vegSearchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  vegSearchText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 11,
+    color: '#15803D',
+  },
+  notifyBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  notifyBtnText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: '#9A3412',
+  },
+  hygieneRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 6,
   },
   metaRow: {
     flexDirection: 'row',

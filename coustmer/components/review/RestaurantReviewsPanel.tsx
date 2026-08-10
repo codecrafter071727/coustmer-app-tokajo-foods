@@ -8,6 +8,7 @@ import { ActivityIndicator,
 
 import { StarRatingInput } from '@/components/review/StarRatingInput';
 import { authTheme } from '@/constants/auth-theme';
+import { useRestaurantRatings } from '@/lib/restaurant/hooks';
 import {
   useRestaurantReviewStats,
   useRestaurantReviews,
@@ -73,17 +74,24 @@ function ReviewCard({ review }: { review: RestaurantReview }) {
 }
 
 export function RestaurantReviewsPanel({ restaurantId }: Props) {
+  const histogram = useRestaurantRatings(restaurantId);
   const stats = useRestaurantReviewStats(restaurantId);
   const reviews = useRestaurantReviews(restaurantId, { page: 1, limit: 20 });
 
-  const avg = stats.data?.average ?? 0;
-  const total = stats.data?.total ?? reviews.data?.reviews.length ?? 0;
-  const distribution = stats.data?.distribution;
+  const avg =
+    histogram.data && histogram.data.avgRating > 0
+      ? histogram.data.avgRating
+      : stats.data?.average ?? 0;
+  const total =
+    histogram.data && histogram.data.totalRatings > 0
+      ? histogram.data.totalRatings
+      : stats.data?.total ?? reviews.data?.reviews.length ?? 0;
+  const distribution = histogram.data?.breakdown ?? stats.data?.distribution;
   const maxDist = distribution
     ? Math.max(1, ...Object.values(distribution))
     : 1;
 
-  if (stats.isLoading && reviews.isLoading) {
+  if (histogram.isLoading && stats.isLoading && reviews.isLoading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={authTheme.brand} />
@@ -104,6 +112,7 @@ export function RestaurantReviewsPanel({ restaurantId }: Props) {
         <Pressable
           style={styles.retry}
           onPress={() => {
+            histogram.refetch();
             stats.refetch();
             reviews.refetch();
           }}

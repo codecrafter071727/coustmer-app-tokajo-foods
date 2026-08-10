@@ -25,6 +25,7 @@ export const customerKeys = {
   onboarding: () => [...customerKeys.all, 'onboarding'] as const,
   tickets: () => [...customerKeys.all, 'tickets'] as const,
   ticket: (id: string) => [...customerKeys.all, 'ticket', id] as const,
+  alerts: () => [...customerKeys.all, 'alerts'] as const,
 };
 
 function useIsAuthed() {
@@ -91,6 +92,16 @@ export function useCustomerProfile() {
     enabled: authed,
     staleTime: 60_000,
     retry: 1,
+  });
+}
+
+export function useCustomerAlerts(options?: { enabled?: boolean }) {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.alerts(),
+    queryFn: customerApi.getMyAlerts,
+    enabled: authed && options?.enabled !== false,
+    staleTime: 30_000,
   });
 }
 

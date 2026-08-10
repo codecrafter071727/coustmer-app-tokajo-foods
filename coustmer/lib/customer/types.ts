@@ -77,6 +77,17 @@ export type OnboardingStatus = {
   totalSteps: number;
 };
 
+export type CustomerKitchenAlert = {
+  id: string;
+  type: string;
+  restaurantId?: string;
+  restaurantName?: string;
+  itemId?: string;
+  itemName?: string;
+  active?: boolean;
+  pushed?: boolean;
+};
+
 export const SUPPORT_CATEGORIES = [
   'order_issue',
   'payment_issue',

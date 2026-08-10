@@ -30,7 +30,7 @@ import {
 import type { HomeCategory } from '@/lib/home/types';
 import { findCategoryBySlug } from '@/lib/restaurant/categories';
 import { HOME_CATEGORY_PREVIEW_COUNT } from '@/lib/restaurant/home-categories';
-import type { Restaurant } from '@/lib/restaurant/types';
+import type { CuisineChip as LiveCuisineChip, Restaurant } from '@/lib/restaurant/types';
 
 const POPULAR_IMAGE =
   'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=120&h=120&fit=crop&q=80';
@@ -42,6 +42,7 @@ type CuisineChip = {
   label: string;
   emoji?: string;
   imageUrl: string;
+  kind?: 'cuisine' | 'category';
 };
 
 type Props = {
@@ -51,6 +52,8 @@ type Props = {
   allRestaurants?: Restaurant[];
   /** Live categories from GET .../categories aggregation. */
   categories?: HomeCategory[];
+  /** GET /cuisines — active restaurants, not search-service. */
+  liveCuisines?: LiveCuisineChip[];
   compact?: boolean;
   /** Sticky strip: cuisine chips only — hide Filters / Sort / quick chips. */
   categoriesOnly?: boolean;
@@ -106,6 +109,7 @@ export function HomeFiltersBar({
   onClear,
   allRestaurants = [],
   categories,
+  liveCuisines = [],
   compact = false,
   categoriesOnly = false,
   style,
@@ -122,32 +126,49 @@ export function HomeFiltersBar({
       id: 'popular',
       label: 'Popular',
       imageUrl: POPULAR_IMAGE,
+      kind: 'cuisine',
     };
-    const fromApi = (categories ?? [])
+    const fromCuisines: CuisineChip[] = [];
+    for (const c of liveCuisines ?? []) {
+      const slug = (c.slug || c.name || c.id || '').trim();
+      if (!slug || slug === 'all' || slug === 'popular') continue;
+      fromCuisines.push({
+        id: slug,
+        label: c.name || slug,
+        emoji: emojiForSlug(slug),
+        imageUrl: imageForSlug(slug, c.imageUrl),
+        kind: 'cuisine',
+      });
+    }
+
+    const fromCategories = (categories ?? [])
       .filter((c) => c.slug && c.slug !== 'all' && c.slug !== 'popular')
       .map((c) => ({
         id: c.slug,
         label: c.label,
         emoji: emojiForSlug(c.slug),
         imageUrl: imageForSlug(c.slug, c.imageUrl),
+        kind: 'category' as const,
       }));
-
-    if (fromApi.length === 0) {
-      return HOME_CUISINES.map((c) => ({
-        ...c,
-        imageUrl: imageForSlug(c.id),
-      }));
-    }
 
     const seen = new Set<string>(['popular']);
     const rest: CuisineChip[] = [];
-    for (const chip of fromApi) {
+    for (const chip of [...fromCuisines, ...fromCategories]) {
       if (seen.has(chip.id)) continue;
       seen.add(chip.id);
       rest.push(chip);
     }
+
+    if (rest.length === 0) {
+      return HOME_CUISINES.map((c) => ({
+        ...c,
+        imageUrl: imageForSlug(c.id),
+        kind: 'cuisine' as const,
+      }));
+    }
+
     return [popular, ...rest];
-  }, [categories]);
+  }, [categories, liveCuisines]);
 
   // Always keep Popular; preview up to 10 API categories after it
   const previewChips = useMemo(() => {
@@ -173,12 +194,30 @@ export function HomeFiltersBar({
     setSheetOpen(true);
   };
 
-  const setCuisine = (id: HomeCuisineId, label?: string) => {
+  const setCuisine = (
+    id: HomeCuisineId,
+    label?: string,
+    kind?: 'cuisine' | 'category'
+  ) => {
     setShowAllCats(false);
 
-    // Popular stays on home; other categories open a dishes page
     if (id === 'popular') {
       onChange({ ...filters, cuisine: 'popular' });
+      return;
+    }
+
+    const chipKind =
+      kind || cuisineChips.find((c) => c.id === id)?.kind || 'category';
+
+    if (chipKind === 'cuisine') {
+      onChange({ ...filters, cuisine: id });
+      router.push({
+        pathname: '/restaurants',
+        params: {
+          cuisine: id,
+          label: label || titleFromChip(id),
+        },
+      });
       return;
     }
 
@@ -249,7 +288,7 @@ export function HomeFiltersBar({
           pillCompact ? styles.cuisinePillCompact : styles.cuisinePill,
           on && styles.cuisinePillOn,
         ]}
-        onPress={() => setCuisine(cat.id, cat.label)}
+        onPress={() => setCuisine(cat.id, cat.label, cat.kind)}
       >
         <View
           style={[
@@ -553,7 +592,7 @@ export function HomeFiltersBar({
                 <Pressable
                   key={cat.id}
                   style={[styles.allChip, on && styles.cuisinePillOn]}
-                  onPress={() => setCuisine(cat.id, cat.label)}
+                  onPress={() => setCuisine(cat.id, cat.label, cat.kind)}
                 >
                   <View
                     style={[

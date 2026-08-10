@@ -127,8 +127,9 @@ function restaurantText(r: Restaurant): string {
 
 /** Stable rating for filtering/sorting when API rating is missing. */
 export function effectiveRating(r: Restaurant): number {
-  if (typeof r.rating === 'number' && Number.isFinite(r.rating) && r.rating > 0) {
-    return r.rating;
+  const live = r.avgRating ?? r.rating;
+  if (typeof live === 'number' && Number.isFinite(live) && live > 0) {
+    return live;
   }
   // 3.5 – 4.9
   return Math.round((3.5 + (hashSeed(r.id || r.name) % 15) / 10) * 10) / 10;
@@ -150,7 +151,10 @@ export function parseDeliveryMinutes(value?: string | null): number {
 }
 
 export function effectiveDeliveryMinutes(r: Restaurant): number {
-  const parsed = parseDeliveryMinutes(r.deliveryTime);
+  if (typeof r.promiseMinutes === 'number' && r.promiseMinutes > 0) {
+    return Math.round(r.promiseMinutes);
+  }
+  const parsed = parseDeliveryMinutes(r.deliveryTimeLabel || r.deliveryTime);
   if (parsed > 0) return parsed;
   const buckets = [18, 22, 25, 28, 32, 35, 40, 45, 50];
   return buckets[hashSeed(`${r.id}|eta`) % buckets.length];
@@ -270,16 +274,18 @@ export function countActiveHomeFilters(filters: HomeFilterState): number {
 
 export function applyHomeFilters(
   rows: Restaurant[],
-  filters: HomeFilterState
+  filters: HomeFilterState,
+  options?: { skipServerSide?: boolean }
 ): Restaurant[] {
+  const skipServer = Boolean(options?.skipServerSide);
   let list = rows.filter((r) => matchesCuisine(r, filters.cuisine));
 
-  if (filters.pureVeg) {
+  if (!skipServer && filters.pureVeg) {
     list = list.filter((r) => isPureVegRestaurant(r));
   }
 
   const ratingFloor = minRatingForBand(filters.ratingBand);
-  if (ratingFloor > 0) {
+  if (!skipServer && ratingFloor > 0) {
     list = list.filter((r) => effectiveRating(r) >= ratingFloor);
   }
 
@@ -288,11 +294,11 @@ export function applyHomeFilters(
     list = list.filter((r) => effectiveDeliveryMinutes(r) <= maxMins);
   }
 
-  if (filters.priceBand !== 'any') {
+  if (!skipServer && filters.priceBand !== 'any') {
     list = list.filter((r) => matchesPriceBand(r, filters.priceBand));
   }
 
-  if (filters.offersOnly) {
+  if (!skipServer && filters.offersOnly) {
     list = list.filter((r) => hasActiveOffer(r));
   }
 
@@ -315,6 +321,10 @@ export function applyHomeFilters(
     filters.nearOnly && filters.sort === 'relevance'
       ? 'nearest'
       : filters.sort;
+
+  if (skipServer && sortMode !== 'nearest') {
+    return list;
+  }
 
   switch (sortMode) {
     case 'nearest':

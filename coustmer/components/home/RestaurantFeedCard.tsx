@@ -6,6 +6,12 @@ import { Platform,  StyleSheet, Text, View } from 'react-native';
 
 import { FavoriteHeartButton } from '@/components/common/FavoriteHeartButton';
 import { authTheme } from '@/constants/auth-theme';
+import {
+  restaurantEtaLabel,
+  restaurantOfferBadges,
+  restaurantRatingCount,
+  restaurantStars,
+} from '@/lib/restaurant/card-display';
 import type { Restaurant } from '@/lib/restaurant/types';
 
 type Props = {
@@ -37,15 +43,15 @@ export function RestaurantFeedCard({
 }: Props) {
   const cover = restaurant.coverUrl || restaurant.imageUrl || restaurant.logoUrl;
   const price = restaurant.priceForTwo ?? restaurant.costForTwo;
-  const rating =
-    typeof restaurant.rating === 'number' && restaurant.rating > 0
-      ? restaurant.rating
-      : undefined;
-  const isNew = restaurant.status === 'pending';
-  const isClosed = restaurant.isOpen === false;
+  const rating = restaurantStars(restaurant);
+  const isClosed =
+    restaurant.isOpen === false ||
+    restaurant.isOpenNow === false ||
+    restaurant.isOnline === false;
   const topCuisine = restaurant.cuisines?.[0] ?? 'Restaurant';
-  const offerText = restaurant.offer || (isNew ? '15% off: NEW15' : null);
-  const reviews = formatReviews(restaurant.reviewCount);
+  const offerText = restaurantOfferBadges(restaurant)[0] || null;
+  const reviews = formatReviews(restaurantRatingCount(restaurant));
+  const eta = restaurantEtaLabel(restaurant);
 
   return (
     <View style={styles.outer}>
@@ -124,7 +130,7 @@ export function RestaurantFeedCard({
             </View>
             <Text style={styles.meta} numberOfLines={1}>
               {priceLevel(price)} • {topCuisine}
-              {restaurant.deliveryTime ? ` • ${restaurant.deliveryTime}` : ''}
+              {eta ? ` • ${eta}` : ''}
               {restaurant.isPureVeg ? ' • Pure Veg' : ''}
               {isClosed ? ' • Closed' : ''}
             </Text>

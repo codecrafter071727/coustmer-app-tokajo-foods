@@ -10,11 +10,19 @@ import {
   getRestaurantRating,
 } from '@/lib/restaurant/menu-rating';
 import type {
+  CuisineChip,
+  CustomizationGroup,
+  CustomizationOption,
+  DayTimingSlot,
+  KitchenAlert,
   MenuCategory,
   MenuItem,
   Restaurant,
+  RestaurantHygiene,
   RestaurantMenu,
   RestaurantOffer,
+  RestaurantRatings,
+  RestaurantTimings,
 } from '@/lib/restaurant/types';
 
 function parseRating(data: Record<string, unknown>): number | undefined {
@@ -193,8 +201,38 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
     cuisines,
     menuCategories,
     tags,
+    slug: (data.slug as string) || undefined,
+    avgRating: parseRating(data),
+    totalRatings:
+      typeof data.totalRatings === 'number'
+        ? data.totalRatings
+        : Number(data.reviewCount ?? data.totalReviews) || undefined,
+    offerBadges: extractOfferBadges(data),
+    deliveryTimeLabel:
+      (data.deliveryTimeLabel as string) ||
+      (data.etaLabel as string) ||
+      undefined,
+    promiseMinutes:
+      typeof data.promiseMinutes === 'number'
+        ? data.promiseMinutes
+        : Number(data.promiseMins) || undefined,
+    hygieneScore:
+      typeof data.hygieneScore === 'number'
+        ? data.hygieneScore
+        : Number(
+            (data.hygiene as { score?: unknown } | undefined)?.score
+          ) || undefined,
+    isOnline:
+      typeof data.isOnline === 'boolean' ? data.isOnline : undefined,
+    isOpenNow:
+      typeof data.isOpenNow === 'boolean' ? data.isOpenNow : undefined,
+    nextOpenAt: (data.nextOpenAt as string) || undefined,
     deliveryTime:
+      (data.deliveryTimeLabel as string) ||
       (data.deliveryTime as string) ||
+      (typeof data.promiseMinutes === 'number' && data.promiseMinutes > 0
+        ? `${data.promiseMinutes} mins`
+        : undefined) ||
       (data.avgDeliveryTime as string) ||
       (typeof prep === 'number' && Number.isFinite(prep) && prep > 0
         ? `${prep}–${prep + 10} mins`
@@ -259,6 +297,263 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
         ? (data.timings as Record<string, unknown>)
         : undefined,
     settings,
+  };
+}
+
+function extractOfferBadges(data: Record<string, unknown>): string[] | undefined {
+  const raw =
+    data.offerBadges ??
+    data.offers ??
+    data.activeOffers ??
+    data.offerTitles;
+  const badges: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const row of raw) {
+      if (typeof row === 'string' && row.trim()) {
+        badges.push(row.trim());
+        continue;
+      }
+      if (row && typeof row === 'object') {
+        const rec = row as Record<string, unknown>;
+        const title = String(rec.title ?? rec.code ?? rec.name ?? '').trim();
+        if (title) badges.push(title);
+      }
+    }
+  }
+  const single = (data.offer as string) || (data.promoText as string);
+  if (single && !badges.includes(single)) badges.unshift(single);
+  const unique = [...new Set(badges)].slice(0, 2);
+  return unique.length ? unique : undefined;
+}
+
+export function mapCuisineChip(
+  data: Record<string, unknown> | string,
+  index = 0
+): CuisineChip {
+  if (typeof data === 'string') {
+    const name = data.trim();
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return { id: slug || `cuisine-${index}`, name, slug: slug || `cuisine-${index}` };
+  }
+  const name = String(data.name ?? data.label ?? data.title ?? data.cuisine ?? '').trim();
+  const slug = String(
+    data.slug ??
+      name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') ??
+      `cuisine-${index}`
+  );
+  return {
+    id: String(data._id ?? data.id ?? slug),
+    name: name || slug,
+    slug,
+    restaurantCount:
+      typeof data.restaurantCount === 'number'
+        ? data.restaurantCount
+        : Number(data.count) || undefined,
+    imageUrl: (data.imageUrl as string) || (data.image as string) || undefined,
+  };
+}
+
+export function mapRestaurantTimings(data: Record<string, unknown>): RestaurantTimings {
+  const slots: RestaurantTimings['slots'] = {};
+  const week =
+    data.slots && typeof data.slots === 'object'
+      ? (data.slots as Record<string, unknown>)
+      : data.week && typeof data.week === 'object'
+        ? (data.week as Record<string, unknown>)
+        : data.timings && typeof data.timings === 'object'
+          ? (data.timings as Record<string, unknown>)
+          : data;
+
+  for (const [dayRaw, value] of Object.entries(week)) {
+    const day = dayRaw.toLowerCase();
+    if (
+      ['isopennow', 'nextopenat', 'success', 'message', '_id', 'id'].includes(day)
+    ) {
+      continue;
+    }
+    if (typeof value === 'string') {
+      slots[day] = value;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      slots[day] = value.map((row) => mapTimingSlot(row));
+      continue;
+    }
+    if (value && typeof value === 'object') {
+      slots[day] = [mapTimingSlot(value)];
+    }
+  }
+
+  return {
+    isOpenNow:
+      typeof data.isOpenNow === 'boolean'
+        ? data.isOpenNow
+        : typeof data.openNow === 'boolean'
+          ? data.openNow
+          : undefined,
+    nextOpenAt: (data.nextOpenAt as string) || (data.nextOpen as string) || undefined,
+    slots,
+    raw: data,
+  };
+}
+
+function mapTimingSlot(value: unknown): DayTimingSlot {
+  if (!value || typeof value !== 'object') {
+    return { label: String(value ?? '') };
+  }
+  const rec = value as Record<string, unknown>;
+  return {
+    open: String(rec.open ?? rec.openTime ?? rec.start ?? '') || undefined,
+    close: String(rec.close ?? rec.closeTime ?? rec.end ?? '') || undefined,
+    label:
+      (rec.label as string) ||
+      ([rec.open ?? rec.openTime, rec.close ?? rec.closeTime]
+        .filter(Boolean)
+        .join(' – ') || undefined),
+  };
+}
+
+function maskFssai(value?: string): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  if (/[x*•]/i.test(raw)) return raw;
+  const digits = raw.replace(/\s+/g, '');
+  if (digits.length <= 4) return '****';
+  return `${digits.slice(0, 4)}${'X'.repeat(Math.max(4, digits.length - 8))}${digits.slice(-4)}`;
+}
+
+export function mapRestaurantHygiene(data: Record<string, unknown>): RestaurantHygiene {
+  const nested =
+    data.hygiene && typeof data.hygiene === 'object'
+      ? (data.hygiene as Record<string, unknown>)
+      : data;
+  const maskedRaw = String(
+    nested.fssaiMasked ??
+      nested.fssaiLicenseMasked ??
+      nested.maskedFssai ??
+      data.fssaiMasked ??
+      data.fssaiLicenseMasked ??
+      ''
+  ).trim();
+  return {
+    fssaiMasked: maskFssai(maskedRaw) || undefined,
+    hygieneScore:
+      typeof nested.hygieneScore === 'number'
+        ? nested.hygieneScore
+        : typeof nested.score === 'number'
+          ? nested.score
+          : Number(data.hygieneScore) || undefined,
+    raw: data,
+  };
+}
+
+export function mapCustomizationGroup(
+  data: Record<string, unknown>
+): CustomizationGroup {
+  const optionsRaw = data.options ?? data.choices ?? data.items ?? [];
+  const options: CustomizationOption[] = Array.isArray(optionsRaw)
+    ? optionsRaw.map((row, i) => {
+        const rec = (row && typeof row === 'object'
+          ? row
+          : { name: row }) as Record<string, unknown>;
+        return {
+          id: String(rec._id ?? rec.id ?? rec.name ?? `opt-${i}`),
+          name: String(rec.name ?? rec.label ?? rec.title ?? 'Option'),
+          price: Number(rec.price ?? rec.extraPrice ?? rec.addonPrice ?? 0) || 0,
+          isVeg: typeof rec.isVeg === 'boolean' ? rec.isVeg : undefined,
+          isAvailable:
+            rec.isAvailable !== undefined ? Boolean(rec.isAvailable) : true,
+        };
+      })
+    : [];
+
+  return {
+    id: String(data._id ?? data.id ?? data.name ?? ''),
+    name: String(data.name ?? data.title ?? data.groupName ?? 'Options'),
+    type: (data.type as string) || (data.kind as string) || undefined,
+    required: Boolean(data.required ?? data.isRequired),
+    min: typeof data.min === 'number' ? data.min : Number(data.minSelect) || undefined,
+    max: typeof data.max === 'number' ? data.max : Number(data.maxSelect) || undefined,
+    options,
+  };
+}
+
+export function mapUnavailableIds(data: unknown): string[] {
+  if (Array.isArray(data)) {
+    return data
+      .map((row) =>
+        typeof row === 'string'
+          ? row
+          : String(
+              (row as { _id?: string; id?: string; itemId?: string })?._id ??
+                (row as { id?: string })?.id ??
+                (row as { itemId?: string })?.itemId ??
+                ''
+            )
+      )
+      .filter(Boolean);
+  }
+  if (data && typeof data === 'object') {
+    const rec = data as Record<string, unknown>;
+    return mapUnavailableIds(
+      rec.itemIds ?? rec.unavailable ?? rec.items ?? rec.ids ?? rec.data
+    );
+  }
+  return [];
+}
+
+export function mapRestaurantRatings(data: Record<string, unknown>): RestaurantRatings {
+  const breakdownRaw =
+    data.ratingBreakdown ??
+    data.breakdown ??
+    data.distribution ??
+    data.histogram ??
+    {};
+  const rec =
+    breakdownRaw && typeof breakdownRaw === 'object'
+      ? (breakdownRaw as Record<string, unknown>)
+      : {};
+  const star = (n: 1 | 2 | 3 | 4 | 5) =>
+    Number(rec[n] ?? rec[String(n)] ?? rec[`${n}star`] ?? rec[`${n}Star`] ?? 0) || 0;
+
+  return {
+    avgRating:
+      Number(data.avgRating ?? data.average ?? data.rating ?? 0) || 0,
+    totalRatings:
+      Number(data.totalRatings ?? data.total ?? data.count ?? 0) || 0,
+    breakdown: { 1: star(1), 2: star(2), 3: star(3), 4: star(4), 5: star(5) },
+  };
+}
+
+export function mapKitchenAlert(data: Record<string, unknown>): KitchenAlert {
+  const typeRaw = String(data.type ?? data.kind ?? data.alertType ?? '').toLowerCase();
+  let type: KitchenAlert['type'] = typeRaw || 'notify-open';
+  if (typeRaw.includes('stock')) type = 'notify-stock';
+  else if (typeRaw.includes('open')) type = 'notify-open';
+
+  const restaurantRef =
+    data.restaurant && typeof data.restaurant === 'object'
+      ? (data.restaurant as { _id?: string; id?: string; name?: string })
+      : undefined;
+  const itemRef =
+    data.item && typeof data.item === 'object'
+      ? (data.item as { _id?: string; id?: string; name?: string })
+      : undefined;
+
+  return {
+    id: String(data._id ?? data.id ?? `${data.restaurantId ?? ''}-${data.itemId ?? type}`),
+    type,
+    restaurantId:
+      String(data.restaurantId ?? restaurantRef?._id ?? restaurantRef?.id ?? '') ||
+      undefined,
+    restaurantName:
+      (data.restaurantName as string) || restaurantRef?.name || undefined,
+    itemId:
+      String(data.itemId ?? data.menuItemId ?? itemRef?._id ?? itemRef?.id ?? '') ||
+      undefined,
+    itemName: (data.itemName as string) || itemRef?.name || undefined,
+    active: data.active !== undefined ? Boolean(data.active) : true,
+    pushed: typeof data.pushed === 'boolean' ? data.pushed : undefined,
   };
 }
 

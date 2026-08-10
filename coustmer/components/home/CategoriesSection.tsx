@@ -8,8 +8,13 @@ import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { CustomerRecommendations } from '@/components/customer/CustomerRecommendations';
 import { fonts } from '@/constants/typography';
 import type { HomeFilterState } from '@/lib/home/filters';
+import {
+  restaurantEtaLabel,
+  restaurantOfferBadges,
+  restaurantStars,
+} from '@/lib/restaurant/card-display';
 import { useHomeCategories } from '@/lib/restaurant/hooks';
-import type { Restaurant } from '@/lib/restaurant/types';
+import type { CuisineChip, Restaurant } from '@/lib/restaurant/types';
 
 type Props = {
   restaurants?: Restaurant[];
@@ -19,6 +24,7 @@ type Props = {
   onClearFilters: () => void;
   /** City restaurants used when recommended API is empty */
   fallbackRestaurants?: Restaurant[];
+  liveCuisines?: CuisineChip[];
 };
 
 export function CategoriesSection({
@@ -28,6 +34,7 @@ export function CategoriesSection({
   onFiltersChange,
   onClearFilters,
   fallbackRestaurants = [],
+  liveCuisines = [],
 }: Props) {
   const router = useRouter();
   const list = restaurants;
@@ -43,6 +50,7 @@ export function CategoriesSection({
         onClear={onClearFilters}
         allRestaurants={allRestaurants}
         categories={homeCategories.data}
+        liveCuisines={liveCuisines}
       />
 
       <CustomerRecommendations
@@ -59,11 +67,10 @@ export function CategoriesSection({
         >
           {list.map((r) => {
             const imageUri = r.coverUrl || r.imageUrl || r.logoUrl;
-            const rating =
-              typeof r.rating === 'number' && r.rating > 0
-                ? r.rating.toFixed(1)
-                : '4.5';
-            const time = r.deliveryTime || '25-30 min';
+            const stars = restaurantStars(r);
+            const rating = stars ? stars.toFixed(1) : null;
+            const time = restaurantEtaLabel(r);
+            const badges = restaurantOfferBadges(r);
             const deliveryFee =
               typeof r.deliveryFee === 'string'
                 ? r.deliveryFee
@@ -102,18 +109,29 @@ export function CategoriesSection({
                     <Text style={styles.cardName} numberOfLines={1}>
                       {r.name}
                     </Text>
-                    <View style={styles.ratingBadge}>
-                      <Star color="#F59E0B" size={12} fill="#F59E0B" />
-                      <Text style={styles.ratingText}>{rating}</Text>
-                    </View>
+                    {rating ? (
+                      <View style={styles.ratingBadge}>
+                        <Star color="#F59E0B" size={12} fill="#F59E0B" />
+                        <Text style={styles.ratingText}>{rating}</Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   <View style={styles.cardMetaRow}>
-                    <Clock color="#64748B" size={12} strokeWidth={2.5} />
-                    <Text style={styles.metaText}>{time}</Text>
+                    {time ? (
+                      <>
+                        <Clock color="#64748B" size={12} strokeWidth={2.5} />
+                        <Text style={styles.metaText}>{time}</Text>
+                      </>
+                    ) : null}
                     <Bike color="#64748B" size={12} strokeWidth={2} />
                     <Text style={styles.metaText}>{String(deliveryFee)}</Text>
                   </View>
+                  {badges[0] ? (
+                    <Text style={styles.minOrder} numberOfLines={1}>
+                      {badges[0]}
+                    </Text>
+                  ) : null}
 
                   <Text style={styles.minOrder}>{minOrderText}</Text>
                 </View>

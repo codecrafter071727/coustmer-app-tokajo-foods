@@ -5,6 +5,7 @@ import {
   BellOff,
   CheckCheck,
   Trash2,
+  UtensilsCrossed,
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator,
@@ -35,7 +36,14 @@ import {
   useUnreadNotificationCount,
 } from '@/lib/notification/hooks';
 import type { AppNotification } from '@/lib/notification/types';
+import { restaurantApi } from '@/lib/restaurant/api';
+import {
+  restaurantKeys,
+  useKitchenAlerts,
+} from '@/lib/restaurant/hooks';
+import type { KitchenAlert } from '@/lib/restaurant/types';
 import { useAuthStore } from '@/store/auth-store';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 type Filter = 'all' | 'unread';
 
@@ -83,6 +91,28 @@ export function NotificationsHubScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const token = useAuthStore((s) => s.token);
   const authed = Boolean(token);
+  const queryClient = useQueryClient();
+  const kitchenAlerts = useKitchenAlerts({ enabled: authed });
+  const activeAlerts = (kitchenAlerts.data ?? []).filter(
+    (a) => a.active !== false
+  );
+  const unsubscribeAlert = useMutation({
+    mutationFn: async (alert: KitchenAlert) => {
+      if (!alert.restaurantId) return;
+      if (alert.itemId) {
+        await restaurantApi.unsubscribeNotifyStock(
+          alert.restaurantId,
+          alert.itemId
+        );
+        return;
+      }
+      await restaurantApi.unsubscribeNotifyOpen(alert.restaurantId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.alerts() });
+      queryClient.invalidateQueries({ queryKey: ['customer', 'alerts'] });
+    },
+  });
 
   const listQuery = useNotifications(
     {
@@ -228,6 +258,37 @@ export function NotificationsHubScreen() {
           </Pressable>
         </View>
 
+        {activeAlerts.length > 0 ? (
+          <View style={styles.alertsBlock}>
+            <Text style={styles.alertsTitle}>Kitchen & stock alerts</Text>
+            {activeAlerts.map((alert) => (
+              <View key={alert.id} style={styles.alertRow}>
+                <UtensilsCrossed color={authTheme.brand} size={16} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.alertName} numberOfLines={1}>
+                    {alert.itemName
+                      ? `${alert.itemName}`
+                      : alert.restaurantName || 'Kitchen open alert'}
+                  </Text>
+                  <Text style={styles.alertMeta} numberOfLines={1}>
+                    {alert.itemId
+                      ? `Back in stock · ${alert.restaurantName || 'Restaurant'}`
+                      : 'Notify when kitchen opens'}
+                    {alert.pushed === false ? ' · waiting to send' : ''}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => unsubscribeAlert.mutate(alert)}
+                  disabled={unsubscribeAlert.isPending}
+                  hitSlop={8}
+                >
+                  <Text style={styles.alertStop}>Stop</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {listQuery.isLoading ? (
           <LoadingView label="Loading notifications…" />
         ) : listQuery.isError ? (
@@ -265,6 +326,7 @@ export function NotificationsHubScreen() {
                 onRefresh={() => {
                   listQuery.refetch();
                   unreadCount.refetch();
+                  kitchenAlerts.refetch();
                 }}
                 tintColor={authTheme.brand}
               />
@@ -375,5 +437,41 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  alertsBlock: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  alertsTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  alertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFF7ED',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  alertName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  alertMeta: {
+    fontSize: 11,
+    color: '#9A3412',
+    marginTop: 2,
+  },
+  alertStop: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#C2410C',
   },
 });

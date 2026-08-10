@@ -7,6 +7,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import { FavoriteHeartButton } from '@/components/common/FavoriteHeartButton';
 import { VegMarkIcon } from '@/components/home/VegMarkIcon';
 import { fonts } from '@/constants/typography';
+import {
+  restaurantEtaLabel,
+  restaurantOfferBadges,
+  restaurantRatingCount,
+  restaurantStars,
+} from '@/lib/restaurant/card-display';
 import type { Restaurant } from '@/lib/restaurant/types';
 
 type Props = {
@@ -18,18 +24,7 @@ type Props = {
 };
 
 function offerOverlay(restaurant: Restaurant) {
-  const raw = restaurant.offer?.trim();
-  if (raw) return raw; // Return raw case
-  const offers = [
-    '51% off',
-    'Items at ₹59',
-    'FLAT ₹125 OFF',
-    '50% OFF UPTO ₹100',
-  ];
-  const idx =
-    Math.abs(restaurant.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) %
-    offers.length;
-  return offers[idx];
+  return restaurantOfferBadges(restaurant)[0] || null;
 }
 
 function formatReviews(n?: number) {
@@ -58,14 +53,11 @@ export function ExploreRestaurantCard({
   onPress,
 }: Props) {
   const cover = restaurant.coverUrl || restaurant.imageUrl || restaurant.logoUrl;
-  const rating =
-    typeof restaurant.rating === 'number' && restaurant.rating > 0
-      ? restaurant.rating
-      : undefined;
-  const reviews = formatReviews(restaurant.reviewCount);
+  const rating = restaurantStars(restaurant);
+  const reviews = formatReviews(restaurantRatingCount(restaurant));
   const cuisines =
     (restaurant.cuisines ?? []).slice(0, 3).join(', ') || 'Restaurant';
-  const time = restaurant.deliveryTime || '20-25 MINS';
+  const time = restaurantEtaLabel(restaurant) || undefined;
   const offer = offerOverlay(restaurant);
   const area = areaLabel(restaurant);
   const distance =
@@ -99,25 +91,28 @@ export function ExploreRestaurantCard({
               <View style={[styles.image, styles.imageFallback]} />
             )}
 
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.8)']}
-              style={styles.offerGrad}
-              pointerEvents="none"
-            >
-              <View style={styles.offerBadge}>
-                <View style={styles.offerIconWrap}>
-                  <Percent color="#FFFFFF" size={10} strokeWidth={4} />
+            {offer ? (
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.8)']}
+                style={styles.offerGrad}
+                pointerEvents="none"
+              >
+                <View style={styles.offerBadge}>
+                  <View style={styles.offerIconWrap}>
+                    <Percent color="#FFFFFF" size={10} strokeWidth={4} />
+                  </View>
+                  <Text style={styles.offerText} numberOfLines={1}>
+                    {offer}
+                  </Text>
                 </View>
-                <Text style={styles.offerText} numberOfLines={1}>
-                  {offer}
-                </Text>
-              </View>
-            </LinearGradient>
+              </LinearGradient>
+            ) : null}
 
-            {/* Time Badge Overlapping the image border */}
-            <View style={styles.timeBadge}>
-              <Text style={styles.timeBadgeText}>{time.toUpperCase()}</Text>
-            </View>
+            {time ? (
+              <View style={styles.timeBadge}>
+                <Text style={styles.timeBadgeText}>{time.toUpperCase()}</Text>
+              </View>
+            ) : null}
 
             {/* Icons top right */}
             <View style={styles.topRightIcons}>

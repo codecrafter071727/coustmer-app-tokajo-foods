@@ -17,7 +17,8 @@ import type {
   RestaurantCard,
   SupportTicket,
 } from '@/lib/customer/types';
-import { mapRestaurant } from '@/lib/restaurant/mappers';
+import { mapKitchenAlert, mapRestaurant } from '@/lib/restaurant/mappers';
+import type { KitchenAlert } from '@/lib/restaurant/types';
 const CUSTOMER_BASE = '/api/v1/customer-service/customers';
 
 type Envelope<T> = {
@@ -382,6 +383,25 @@ export const customerApi = {
     } catch {
       return [];
     }
+  },
+
+  /** GET /customers/me/alerts — proxies restaurant kitchen/stock subscriptions */
+  getMyAlerts: async (): Promise<KitchenAlert[]> => {
+    const res = await request<unknown>(`${CUSTOMER_BASE}/me/alerts`);
+    const payload = res.data ?? res;
+    const rows = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === 'object'
+        ? unwrapList(
+            (payload as Record<string, unknown>).alerts ??
+              (payload as Record<string, unknown>).items ??
+              (payload as Record<string, unknown>).data ??
+              payload
+          )
+        : [];
+    return (Array.isArray(rows) ? rows : unwrapList(rows)).map((row) =>
+      mapKitchenAlert((row ?? {}) as Record<string, unknown>)
+    );
   },
 
   /** GET /customers/me */

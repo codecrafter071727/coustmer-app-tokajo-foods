@@ -9,6 +9,8 @@ import { enrichMenuItems } from '@/lib/restaurant/mappers';
 import { buildHomeCategories } from '@/lib/restaurant/home-categories';
 import { buildSeedMenu, findSeedMenuItem } from '@/lib/restaurant/seed-menu';
 import type {
+  CuisineChip,
+  MenuItem,
   MenuItemListParams,
   NearbyParams,
   Restaurant,
@@ -17,6 +19,7 @@ import type {
 import type { HomeCategory } from '@/lib/home/types';
 import { useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/auth-store';
 
 export type SeedMenuOptions = {
   name?: string;
@@ -31,7 +34,19 @@ export const restaurantKeys = {
     [...restaurantKeys.all, 'infinite', params] as const,
   nearby: (params: NearbyParams) =>
     [...restaurantKeys.all, 'nearby', params] as const,
+  cuisines: () => [...restaurantKeys.all, 'cuisines'] as const,
   detail: (id: string) => [...restaurantKeys.all, 'detail', id] as const,
+  slug: (slug: string) => [...restaurantKeys.all, 'slug', slug] as const,
+  timings: (id: string) => [...restaurantKeys.all, 'timings', id] as const,
+  hygiene: (id: string) => [...restaurantKeys.all, 'hygiene', id] as const,
+  ratings: (id: string) => [...restaurantKeys.all, 'ratings', id] as const,
+  unavailable: (id: string) =>
+    [...restaurantKeys.all, 'unavailable', id] as const,
+  customizations: (restaurantId: string, itemId: string) =>
+    [...restaurantKeys.all, 'customizations', restaurantId, itemId] as const,
+  recommendedItems: (id: string) =>
+    [...restaurantKeys.all, 'recommended-items', id] as const,
+  alerts: () => [...restaurantKeys.all, 'alerts'] as const,
   menu: (id: string) => [...restaurantKeys.all, 'menu', id] as const,
   categories: (id: string) => [...restaurantKeys.all, 'categories', id] as const,
   items: (id: string, filters?: Record<string, unknown>) =>
@@ -364,11 +379,129 @@ export function useCategoryDishes(input: {
   });
 }
 
-export function useRestaurant(restaurantId: string) {
+export function useRestaurant(
+  restaurantId: string,
+  coords?: { lat?: number; lng?: number } | null
+) {
   return useQuery({
-    queryKey: restaurantKeys.detail(restaurantId),
-    queryFn: () => restaurantApi.getRestaurant(restaurantId),
+    queryKey: [
+      ...restaurantKeys.detail(restaurantId),
+      coords?.lat ?? null,
+      coords?.lng ?? null,
+    ],
+    queryFn: () =>
+      restaurantApi.getRestaurant(restaurantId, {
+        lat: coords?.lat,
+        lng: coords?.lng,
+      }),
     enabled: Boolean(restaurantId),
+  });
+}
+
+export function useRestaurantBySlug(
+  slug: string,
+  coords?: { lat?: number; lng?: number } | null
+) {
+  return useQuery({
+    queryKey: [
+      ...restaurantKeys.slug(slug),
+      coords?.lat ?? null,
+      coords?.lng ?? null,
+    ],
+    queryFn: () =>
+      restaurantApi.getRestaurantBySlug(slug, {
+        lat: coords?.lat,
+        lng: coords?.lng,
+      }),
+    enabled: Boolean(slug),
+  });
+}
+
+export function useRestaurantCuisines() {
+  return useQuery({
+    queryKey: restaurantKeys.cuisines(),
+    queryFn: (): Promise<CuisineChip[]> => restaurantApi.getCuisines(),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useRestaurantTimings(restaurantId: string) {
+  return useQuery({
+    queryKey: restaurantKeys.timings(restaurantId),
+    queryFn: () => restaurantApi.getTimings(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 60_000,
+  });
+}
+
+export function useRestaurantHygiene(restaurantId: string) {
+  return useQuery({
+    queryKey: restaurantKeys.hygiene(restaurantId),
+    queryFn: () => restaurantApi.getHygiene(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useRestaurantRatings(restaurantId: string) {
+  return useQuery({
+    queryKey: restaurantKeys.ratings(restaurantId),
+    queryFn: () => restaurantApi.getRatings(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 60_000,
+  });
+}
+
+export function useUnavailableItemIds(restaurantId: string) {
+  return useQuery({
+    queryKey: restaurantKeys.unavailable(restaurantId),
+    queryFn: () => restaurantApi.getUnavailableItemIds(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 30_000,
+  });
+}
+
+export function useItemCustomizations(
+  restaurantId: string,
+  itemId: string,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: restaurantKeys.customizations(restaurantId, itemId),
+    queryFn: () => restaurantApi.getItemCustomizations(restaurantId, itemId),
+    enabled:
+      Boolean(restaurantId && itemId) && (options?.enabled ?? true),
+    staleTime: 60_000,
+  });
+}
+
+export function useRecommendedMenuItems(restaurantId: string) {
+  return useQuery({
+    queryKey: restaurantKeys.recommendedItems(restaurantId),
+    queryFn: () =>
+      restaurantApi.getItems(restaurantId, { recommended: true }),
+    enabled: Boolean(restaurantId),
+    staleTime: 60_000,
+  });
+}
+
+export function useKitchenAlerts(options?: { enabled?: boolean }) {
+  const token = useAuthStore((s) => s.token);
+  return useQuery({
+    queryKey: restaurantKeys.alerts(),
+    queryFn: async () => {
+      try {
+        const { customerApi } = await import('@/lib/customer/api');
+        const fromCustomer = await customerApi.getMyAlerts();
+        if (fromCustomer.length) return fromCustomer;
+      } catch {
+        // fall through to restaurant-service GET /alerts/me
+      }
+      return restaurantApi.getMyAlerts();
+    },
+    enabled: Boolean(token) && options?.enabled !== false,
+    staleTime: 30_000,
   });
 }
 
@@ -425,12 +558,13 @@ export function useHomeCategories(restaurants: Restaurant[]) {
 
 export function useRestaurantItems(
   restaurantId: string,
-  params: MenuItemListParams = {}
+  params: MenuItemListParams = {},
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: restaurantKeys.items(restaurantId, params as Record<string, unknown>),
     queryFn: () => restaurantApi.getItems(restaurantId, params),
-    enabled: Boolean(restaurantId),
+    enabled: Boolean(restaurantId) && options?.enabled !== false,
   });
 }
 
@@ -534,10 +668,16 @@ export function useFullMenu(
   const menu = useRestaurantMenu(restaurantId);
   const categories = useRestaurantCategories(restaurantId);
   const items = useRestaurantItems(restaurantId);
+  const unavailable = useUnavailableItemIds(restaurantId);
+  const recommended = useRecommendedMenuItems(restaurantId);
 
   const menuFromApi = menu.data ?? { categories: [], items: [] };
   const categoriesFromApi = categories.data ?? [];
   const itemsFromApi = items.data ?? [];
+  const unavailableIds = useMemo(
+    () => new Set(unavailable.data ?? []),
+    [unavailable.data]
+  );
 
   const menuItemsLookValid = menuFromApi.items.some(
     (item) => item.name && item.name !== 'Item' && item.price > 0
@@ -554,28 +694,31 @@ export function useFullMenu(
         ? itemsFromApi
         : menuFromApi.items;
 
-    if (menuItemsLookValid && itemsFromApi.length) {
-      return enrichMenuItems(base, itemsFromApi);
-    }
+    const enriched =
+      menuItemsLookValid && itemsFromApi.length
+        ? enrichMenuItems(base, itemsFromApi)
+        : base;
 
-    return base;
+    if (!unavailableIds.size) return enriched;
+    return enriched.map((item: MenuItem) =>
+      unavailableIds.has(item.id) ? { ...item, isAvailable: false } : item
+    );
   }, [
     menuItemsLookValid,
     menuFromApi.items,
     itemsFromApi,
+    unavailableIds,
   ]);
 
   const isLoading = menu.isLoading || categories.isLoading || items.isLoading;
   const isError = menu.isError && categories.isError && items.isError;
-  const apiHasMenu = mergedItems.length > 0;
-
-  const finalCategories = mergedCategories;
-  const finalItems = mergedItems;
   const isSeeded = false;
 
   return {
-    categories: finalCategories,
-    items: finalItems,
+    categories: mergedCategories,
+    items: mergedItems,
+    recommended: recommended.data ?? [],
+    unavailableIds: [...unavailableIds],
     isLoading,
     isError,
     isSeeded,
@@ -583,6 +726,8 @@ export function useFullMenu(
       menu.refetch();
       categories.refetch();
       items.refetch();
+      unavailable.refetch();
+      recommended.refetch();
     },
   };
 }
@@ -676,4 +821,43 @@ export function useBulkImportMenuItems(restaurantId: string) {
       queryClient.invalidateQueries({ queryKey: restaurantKeys.menu(restaurantId) });
     },
   });
+}
+
+export function useNotifyOpen(restaurantId: string) {
+  const queryClient = useQueryClient();
+  const subscribe = useMutation({
+    mutationFn: () => restaurantApi.subscribeNotifyOpen(restaurantId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.alerts() });
+      queryClient.invalidateQueries({ queryKey: ['customer', 'alerts'] });
+    },
+  });
+  const unsubscribe = useMutation({
+    mutationFn: () => restaurantApi.unsubscribeNotifyOpen(restaurantId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.alerts() });
+      queryClient.invalidateQueries({ queryKey: ['customer', 'alerts'] });
+    },
+  });
+  return { subscribe, unsubscribe };
+}
+
+export function useNotifyStock(restaurantId: string, itemId: string) {
+  const queryClient = useQueryClient();
+  const subscribe = useMutation({
+    mutationFn: () => restaurantApi.subscribeNotifyStock(restaurantId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.alerts() });
+      queryClient.invalidateQueries({ queryKey: ['customer', 'alerts'] });
+    },
+  });
+  const unsubscribe = useMutation({
+    mutationFn: () =>
+      restaurantApi.unsubscribeNotifyStock(restaurantId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: restaurantKeys.alerts() });
+      queryClient.invalidateQueries({ queryKey: ['customer', 'alerts'] });
+    },
+  });
+  return { subscribe, unsubscribe };
 }

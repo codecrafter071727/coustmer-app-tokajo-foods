@@ -3,27 +3,41 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import {
   mapCategory,
+  mapCuisineChip,
+  mapCustomizationGroup,
+  mapKitchenAlert,
   mapMenuItem,
   mapOffer,
   mapRestaurant,
+  mapRestaurantHygiene,
+  mapRestaurantRatings,
+  mapRestaurantTimings,
+  mapUnavailableIds,
   normalizeMenu,
   toList,
 } from '@/lib/restaurant/mappers';
 import type {
+  CuisineChip,
+  CustomizationGroup,
+  KitchenAlert,
   MenuItem,
   MenuItemListParams,
   NearbyParams,
   PaginationMeta,
   Restaurant,
+  RestaurantHygiene,
   RestaurantListParams,
   RestaurantMenu,
   RestaurantOffer,
+  RestaurantRatings,
+  RestaurantTimings,
   TrendingDish,
 } from '@/lib/restaurant/types';
 import { firstImageFromList, resolveMediaUrl } from '@/lib/restaurant/media';
 import { getMenuItemRating } from '@/lib/restaurant/menu-rating';
 
-const RESTAURANT_BASE = '/api/v1/restaurant-service/restaurants';
+const SERVICE_BASE = '/api/v1/restaurant-service';
+const RESTAURANT_BASE = `${SERVICE_BASE}/restaurants`;
 
 type Envelope<T> = {
   success?: boolean;
@@ -60,12 +74,15 @@ async function request<T>(path: string, options?: AxiosRequestConfig): Promise<E
   }
 }
 
-function buildQuery(params: Record<string, string | number | undefined>) {
+function buildQuery(params: Record<string, string | number | boolean | undefined>) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== '') {
-      query.set(key, String(value));
+    if (value === undefined || value === '') return;
+    if (typeof value === 'boolean') {
+      query.set(key, value ? '1' : '0');
+      return;
     }
+    query.set(key, String(value));
   });
   const qs = query.toString();
   return qs ? `?${qs}` : '';
@@ -101,6 +118,10 @@ export const restaurantApi = {
         cuisine: params.cuisine,
         city: params.city,
         sort: params.sort ?? '-createdAt',
+        lat: params.lat,
+        lng: params.lng,
+        veg: params.veg === undefined ? undefined : params.veg ? 'true' : 'false',
+        minRating: params.minRating,
       })}`
     );
     return {
@@ -160,6 +181,19 @@ export const restaurantApi = {
         radius: params.radius ?? 20,
         page: params.page,
         limit: params.limit ?? 50,
+        veg: params.veg === undefined ? undefined : params.veg ? 'true' : 'false',
+        minRating: params.minRating,
+        cost: params.cost,
+        priceRange: params.priceRange,
+        sort: params.sort,
+        offers: params.offers ? '1' : undefined,
+        hygiene: params.hygiene ? '1' : undefined,
+        isOnline:
+          params.isOnline === undefined
+            ? undefined
+            : params.isOnline
+              ? 'true'
+              : 'false',
       })}`
     );
     return {
@@ -171,11 +205,162 @@ export const restaurantApi = {
   },
 
   /** GET /restaurants/:restaurantId */
-  getRestaurant: async (restaurantId: string): Promise<Restaurant> => {
+  getRestaurant: async (
+    restaurantId: string,
+    coords?: { lat?: number; lng?: number }
+  ): Promise<Restaurant> => {
     const res = await request<Record<string, unknown>>(
-      `${RESTAURANT_BASE}/${restaurantId}`
+      `${RESTAURANT_BASE}/${restaurantId}${buildQuery({
+        lat: coords?.lat,
+        lng: coords?.lng,
+      })}`
     );
     return mapRestaurant(res.data ?? {});
+  },
+
+  /** GET /restaurants/slug/:slug */
+  getRestaurantBySlug: async (
+    slug: string,
+    coords?: { lat?: number; lng?: number }
+  ): Promise<Restaurant> => {
+    const res = await request<Record<string, unknown>>(
+      `${RESTAURANT_BASE}/slug/${encodeURIComponent(slug)}${buildQuery({
+        lat: coords?.lat,
+        lng: coords?.lng,
+      })}`
+    );
+    return mapRestaurant(res.data ?? {});
+  },
+
+  /** GET /cuisines — chips from active restaurants */
+  getCuisines: async (): Promise<CuisineChip[]> => {
+    const res = await request<unknown>(`${SERVICE_BASE}/cuisines`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === 'object'
+        ? ((payload as Record<string, unknown>).cuisines ??
+            (payload as Record<string, unknown>).items ??
+            (payload as Record<string, unknown>).data ??
+            [])
+        : [];
+    return (Array.isArray(list) ? list : []).map((row, i) =>
+      mapCuisineChip((row ?? {}) as Record<string, unknown> | string, i)
+    );
+  },
+
+  /** GET /restaurants/:id/timings */
+  getTimings: async (restaurantId: string): Promise<RestaurantTimings> => {
+    const res = await request<Record<string, unknown>>(
+      `${RESTAURANT_BASE}/${restaurantId}/timings`
+    );
+    return mapRestaurantTimings(
+      (res.data ?? res ?? {}) as Record<string, unknown>
+    );
+  },
+
+  /** GET /restaurants/:id/hygiene */
+  getHygiene: async (restaurantId: string): Promise<RestaurantHygiene> => {
+    const res = await request<Record<string, unknown>>(
+      `${RESTAURANT_BASE}/${restaurantId}/hygiene`
+    );
+    return mapRestaurantHygiene(
+      (res.data ?? res ?? {}) as Record<string, unknown>
+    );
+  },
+
+  /** GET /restaurants/:id/ratings — histogram only */
+  getRatings: async (restaurantId: string): Promise<RestaurantRatings> => {
+    const res = await request<Record<string, unknown>>(
+      `${RESTAURANT_BASE}/${restaurantId}/ratings`
+    );
+    return mapRestaurantRatings(
+      (res.data ?? res ?? {}) as Record<string, unknown>
+    );
+  },
+
+  /** GET /restaurants/:id/unavailable */
+  getUnavailableItemIds: async (restaurantId: string): Promise<string[]> => {
+    const res = await request<unknown>(
+      `${RESTAURANT_BASE}/${restaurantId}/unavailable`
+    );
+    return mapUnavailableIds(res.data ?? res);
+  },
+
+  /** GET /restaurants/:id/items/:itemId/customizations */
+  getItemCustomizations: async (
+    restaurantId: string,
+    itemId: string
+  ): Promise<CustomizationGroup[]> => {
+    const res = await request<unknown>(
+      `${RESTAURANT_BASE}/${restaurantId}/items/${itemId}/customizations`
+    );
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === 'object'
+        ? ((payload as Record<string, unknown>).groups ??
+            (payload as Record<string, unknown>).customizations ??
+            (payload as Record<string, unknown>).items ??
+            [])
+        : [];
+    return (Array.isArray(list) ? list : []).map((row) =>
+      mapCustomizationGroup((row ?? {}) as Record<string, unknown>)
+    );
+  },
+
+  /** POST /restaurants/:id/notify-open */
+  subscribeNotifyOpen: async (restaurantId: string): Promise<void> => {
+    await request<unknown>(`${RESTAURANT_BASE}/${restaurantId}/notify-open`, {
+      method: 'POST',
+      data: {},
+    });
+  },
+
+  /** DELETE /restaurants/:id/notify-open */
+  unsubscribeNotifyOpen: async (restaurantId: string): Promise<void> => {
+    await request<unknown>(`${RESTAURANT_BASE}/${restaurantId}/notify-open`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** POST /restaurants/:id/items/:itemId/notify-stock */
+  subscribeNotifyStock: async (
+    restaurantId: string,
+    itemId: string
+  ): Promise<void> => {
+    await request<unknown>(
+      `${RESTAURANT_BASE}/${restaurantId}/items/${itemId}/notify-stock`,
+      { method: 'POST', data: {} }
+    );
+  },
+
+  /** DELETE /restaurants/:id/items/:itemId/notify-stock */
+  unsubscribeNotifyStock: async (
+    restaurantId: string,
+    itemId: string
+  ): Promise<void> => {
+    await request<unknown>(
+      `${RESTAURANT_BASE}/${restaurantId}/items/${itemId}/notify-stock`,
+      { method: 'DELETE' }
+    );
+  },
+
+  /** GET /alerts/me — kitchen / stock subscriptions on this service */
+  getMyAlerts: async (): Promise<KitchenAlert[]> => {
+    const res = await request<unknown>(`${SERVICE_BASE}/alerts/me`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === 'object'
+        ? ((payload as Record<string, unknown>).alerts ??
+            (payload as Record<string, unknown>).items ??
+            (payload as Record<string, unknown>).data ??
+            [])
+        : [];
+    return (Array.isArray(list) ? list : []).map((row) =>
+      mapKitchenAlert((row ?? {}) as Record<string, unknown>)
+    );
   },
 
   /** GET /restaurants/:restaurantId/menu */
@@ -200,6 +385,14 @@ export const restaurantApi = {
     const res = await request<Record<string, unknown>[]>(
       `${RESTAURANT_BASE}/${restaurantId}/items${buildQuery({
         categoryId: params.categoryId,
+        veg:
+          params.veg === undefined && params.isVeg === undefined
+            ? undefined
+            : (params.veg ?? params.isVeg)
+              ? 'true'
+              : 'false',
+        q: params.q || params.search,
+        recommended: params.recommended || params.isRecommended ? '1' : undefined,
         isVeg:
           params.isVeg === undefined
             ? undefined
@@ -230,7 +423,7 @@ export const restaurantApi = {
             : params.isNew
               ? 'true'
               : 'false',
-        search: params.search,
+        search: params.search || params.q,
       })}`
     );
     return toList(res.data, mapMenuItem);

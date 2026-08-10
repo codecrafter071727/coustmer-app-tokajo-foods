@@ -4,6 +4,12 @@ import { Clock, Leaf, MapPin, Star, UtensilsCrossed } from 'lucide-react-native'
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { authTheme } from '@/constants/auth-theme';
+import {
+  restaurantEtaLabel,
+  restaurantOfferBadges,
+  restaurantRatingCount,
+  restaurantStars,
+} from '@/lib/restaurant/card-display';
 import type { Restaurant } from '@/lib/restaurant/types';
 import { prefetchRestaurantMenu } from '@/lib/restaurant/hooks';
 
@@ -16,6 +22,14 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
   const cuisines = restaurant.cuisines?.slice(0, 3).join(' • ');
   const cost =
     restaurant.costForTwo ?? restaurant.priceForTwo;
+  const stars = restaurantStars(restaurant);
+  const ratingCount = restaurantRatingCount(restaurant);
+  const eta = restaurantEtaLabel(restaurant);
+  const badges = restaurantOfferBadges(restaurant);
+  const closed =
+    restaurant.isOpen === false ||
+    restaurant.isOpenNow === false ||
+    restaurant.isOnline === false;
 
   return (
     <Pressable
@@ -36,17 +50,12 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             <UtensilsCrossed color="#C4520A" size={32} />
           </LinearGradient>
         )}
-        {typeof restaurant.rating === 'number' && restaurant.rating > 0 ? (
+        {stars ? (
           <View style={styles.ratingBadge}>
             <Star color="#FFFFFF" fill="#FFFFFF" size={11} />
-            <Text style={styles.ratingText}>
-              {restaurant.rating.toFixed(1)}
-            </Text>
-            {typeof restaurant.reviewCount === 'number' &&
-            restaurant.reviewCount > 0 ? (
-              <Text style={styles.ratingCount}>
-                ({restaurant.reviewCount})
-              </Text>
+            <Text style={styles.ratingText}>{stars.toFixed(1)}</Text>
+            {ratingCount ? (
+              <Text style={styles.ratingCount}>({ratingCount})</Text>
             ) : null}
           </View>
         ) : (
@@ -54,7 +63,7 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             <Text style={styles.ratingText}>NEW</Text>
           </View>
         )}
-        {restaurant.isOpen === false ? (
+        {closed ? (
           <View style={styles.closedOverlay}>
             <View style={styles.closedBadge}>
               <Text style={styles.closedText}>Closed</Text>
@@ -85,10 +94,10 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
           </Text>
         ) : null}
         <View style={styles.metaRow}>
-          {restaurant.deliveryTime ? (
+          {eta ? (
             <View style={styles.metaChip}>
               <Clock color={authTheme.textMuted} size={12} />
-              <Text style={styles.meta}>{restaurant.deliveryTime}</Text>
+              <Text style={styles.meta}>{eta}</Text>
             </View>
           ) : null}
           {typeof cost === 'number' ? (
@@ -103,9 +112,11 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             </View>
           ) : null}
         </View>
-        {restaurant.offer ? (
+        {badges.length ? (
           <View style={styles.offerRow}>
-            <Text style={styles.offerText}>{restaurant.offer}</Text>
+            <Text style={styles.offerText} numberOfLines={1}>
+              {badges.join(' · ')}
+            </Text>
           </View>
         ) : restaurant.freeDeliveryThreshold &&
           restaurant.freeDeliveryThreshold > 0 ? (

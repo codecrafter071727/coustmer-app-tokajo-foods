@@ -33,6 +33,8 @@ import {
   useRestaurants,
   useRestaurantsOfferingCategory,
 } from '@/lib/restaurant/hooks';
+import { homeFiltersToNearbyParams } from '@/lib/restaurant/nearby-params';
+import { DEFAULT_HOME_FILTERS } from '@/lib/home/filters';
 import type { Restaurant } from '@/lib/restaurant/types';
 import {
   useDebouncedValue,
@@ -124,7 +126,10 @@ export function RestaurantBrowseScreen() {
 
   const nearbyQuery = useNearbyRestaurants(
     useNearby && coords
-      ? { lat: coords.lat, lng: coords.lng, radius: 20, limit: 50 }
+      ? homeFiltersToNearbyParams(coords, DEFAULT_HOME_FILTERS, {
+          radius: 20,
+          limit: 50,
+        })
       : null
   );
 
@@ -132,6 +137,8 @@ export function RestaurantBrowseScreen() {
     search: undefined,
     city: city || undefined,
     sort: '-createdAt',
+    lat: coords?.lat,
+    lng: coords?.lng,
   });
 
   const restaurants = useMemo((): Restaurant[] => {
