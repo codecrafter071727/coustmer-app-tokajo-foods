@@ -7,7 +7,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -17,9 +17,11 @@ import { useAppFonts } from '@/lib/fonts';
 import { queryClient, asyncStoragePersister } from '@/lib/query-client';
 import { useAuthStore } from '@/store/auth-store';
 
-// Keep the native splash visible while we initialise — must be called
-// before any rendering so the splash never disappears prematurely.
-SplashScreen.preventAutoHideAsync();
+// Keep the native splash visible while we initialise.
+// Web has no native splash — calling this there leaves a blank white page.
+if (Platform.OS !== 'web') {
+  void SplashScreen.preventAutoHideAsync();
+}
 
 export default function RootLayout() {
   const hydrate = useAuthStore((s) => s.hydrate);
@@ -56,8 +58,28 @@ export default function RootLayout() {
     }
   }, [appReady]);
 
-  // While not ready, keep rendering nothing so the native splash stays on top.
+  // Native: render nothing so the splash stays on top.
+  // Web: show a loader — `return null` is a blank white tab.
   if (!appReady) {
+    if (Platform.OS === 'web') {
+      return (
+        <View
+          style={{
+            flex: 1,
+            height: '100vh',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: authTheme.bg,
+            gap: 12,
+          }}
+        >
+          <ActivityIndicator color={authTheme.brand} size="large" />
+          <Text style={{ color: authTheme.textMuted, fontWeight: '700' }}>
+            Loading Tokajo…
+          </Text>
+        </View>
+      );
+    }
     return null;
   }
 
