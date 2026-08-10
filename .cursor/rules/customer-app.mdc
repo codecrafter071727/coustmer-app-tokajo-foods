@@ -19,3 +19,9 @@ alwaysApply: true
 - UX and flows should feel like **Swiggy / Zomato**: fast home, category → dishes, restaurant menu, cart, COD/online pay, tracking.
 - Code must be **production-ready**: typed, no dummy/seed fallbacks in user paths, real API wiring, loading/empty/error states, no leftover debug, no broken JSX.
 - Prefer one clear API call over N+1. Match list/detail/filter APIs to the UI. Keep navigation deep-links working (category → item → restaurant menu).
+
+## Everything must work
+- Do not leave a task half-done. Features, APIs, screens, and taps must work end-to-end before you stop.
+- Verify routes match (no unmatched screens), payloads match the backend, filters show the right items, and loading/error/empty states are real.
+- Fix syntax/lint/runtime issues you introduce. Do not ship broken JSX, dead buttons, or fake success.
+- If something cannot work yet (missing backend), say so clearly — do not paper over it with dummy data.
