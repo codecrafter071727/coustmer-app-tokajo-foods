@@ -530,7 +530,7 @@ async function loadRestaurantCatalog(): Promise<SearchRestaurant[]> {
 
   const { restaurants } = await restaurantApi.getAllRestaurants({
     limit: 50,
-    sort: '-createdAt',
+    sort: 'newest',
   });
   const mapped = restaurants.map(restaurantToSearch);
   catalogCache = { at: now, restaurants: mapped };
@@ -702,7 +702,7 @@ async function restaurantServiceSearch(
       cuisine: params.cuisine,
       page: params.page,
       limit: params.limit ?? 40,
-      sort: params.sort ?? '-createdAt',
+      sort: params.sort ?? 'newest',
     });
     return restaurants.map(restaurantToSearch);
   } catch {

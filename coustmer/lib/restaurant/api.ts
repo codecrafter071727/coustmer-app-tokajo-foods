@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 import { api } from '@/lib/api';
+import { normalizeRestaurantSort } from '@/lib/restaurant/nearby-params';
 import {
   mapCategory,
   mapCuisineChip,
@@ -115,9 +116,10 @@ export const restaurantApi = {
         page: params.page,
         limit: params.limit ?? 50,
         search: params.search,
-        cuisine: params.cuisine,
+        // Backend filter key is `cuisines` (comma-separated), not `cuisine`.
+        cuisines: params.cuisine,
         city: params.city,
-        sort: params.sort ?? '-createdAt',
+        sort: normalizeRestaurantSort(params.sort) ?? 'newest',
         lat: params.lat,
         lng: params.lng,
         veg: params.veg === undefined ? undefined : params.veg ? 'true' : 'false',
@@ -147,7 +149,7 @@ export const restaurantApi = {
         ...params,
         page,
         limit: pageSize,
-        sort: params.sort ?? '-createdAt',
+        sort: normalizeRestaurantSort(params.sort) ?? 'newest',
       });
       all.push(...batch.restaurants);
       lastMeta = batch.meta;
@@ -185,7 +187,7 @@ export const restaurantApi = {
         minRating: params.minRating,
         cost: params.cost,
         priceRange: params.priceRange,
-        sort: params.sort,
+        sort: normalizeRestaurantSort(params.sort),
         offers: params.offers ? '1' : undefined,
         hygiene: params.hygiene ? '1' : undefined,
         isOnline:
@@ -566,7 +568,7 @@ export const restaurantApi = {
     const { restaurants } = await restaurantApi.getRestaurants({
       city: params.city,
       limit: params.limit ?? 12,
-      sort: '-createdAt',
+      sort: 'newest',
       page: 1,
     });
     return restaurants;
@@ -587,7 +589,7 @@ export const restaurantApi = {
     const { restaurants } = await restaurantApi.getRestaurants({
       city: params.city,
       limit: restaurantLimit,
-      sort: '-createdAt',
+      sort: 'newest',
       page: 1,
     });
 

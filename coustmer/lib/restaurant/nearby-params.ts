@@ -1,9 +1,35 @@
 import type { HomeFilterState } from '@/lib/home/filters';
 import type { NearbyParams, NearbySort } from '@/lib/restaurant/types';
 
+/** Backend list/nearby sort enum — never send Mongo-style `-createdAt`. */
+export function normalizeRestaurantSort(
+  sort?: string | null
+): NearbySort | undefined {
+  const raw = String(sort ?? '')
+    .trim()
+    .toLowerCase();
+  if (!raw) return undefined;
+  if (
+    raw === 'newest' ||
+    raw === '-createdat' ||
+    raw === 'createdat' ||
+    raw === 'created_at' ||
+    raw === '-created_at'
+  ) {
+    return 'newest';
+  }
+  if (raw === 'relevance') return 'relevance';
+  if (raw === 'delivery_time' || raw === 'fastest' || raw === 'nearest') {
+    return 'delivery_time';
+  }
+  if (raw === 'rating') return 'rating';
+  if (raw === 'cost' || raw === 'cost_low' || raw === 'cost_high') return 'cost';
+  return undefined;
+}
+
 export function nearbySortFromHome(sort: HomeFilterState['sort']): NearbySort | undefined {
   if (sort === 'rating') return 'rating';
-  if (sort === 'fastest') return 'delivery_time';
+  if (sort === 'fastest' || sort === 'nearest') return 'delivery_time';
   if (sort === 'cost_low' || sort === 'cost_high') return 'cost';
   if (sort === 'relevance') return 'relevance';
   return undefined;
@@ -16,12 +42,16 @@ export function minRatingFromHome(band: HomeFilterState['ratingBand']): number |
   return undefined;
 }
 
+/**
+ * Map home price chips → restaurant-service enums
+ * (`budget` | `moderate` | `expensive` | `fine_dining`).
+ */
 export function priceRangeFromHome(
   band: HomeFilterState['priceBand']
-): { cost?: number; priceRange?: string } {
-  if (band === 'under_200') return { cost: 200, priceRange: 'under_200' };
-  if (band === '200_350') return { priceRange: '200_350' };
-  if (band === 'above_350') return { priceRange: 'above_350' };
+): { priceRange?: 'budget' | 'moderate' | 'expensive' | 'fine_dining' } {
+  if (band === 'under_200') return { priceRange: 'budget' };
+  if (band === '200_350') return { priceRange: 'moderate' };
+  if (band === 'above_350') return { priceRange: 'expensive' };
   return {};
 }
 
@@ -40,10 +70,10 @@ export function homeFiltersToNearbyParams(
     page: extras?.page,
     veg: filters.pureVeg || undefined,
     minRating: minRatingFromHome(filters.ratingBand),
-    cost: price.cost,
     priceRange: price.priceRange,
     sort: nearbySortFromHome(filters.sort),
     offers: filters.offersOnly || undefined,
-    hygiene: true,
+    // Do NOT default hygiene=true — that requires hygieneScore ≥ 4 and
+    // hides almost every newly onboarded restaurant (default score is 0).
   };
 }

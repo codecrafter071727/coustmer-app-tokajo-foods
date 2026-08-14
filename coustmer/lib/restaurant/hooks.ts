@@ -87,7 +87,7 @@ export function useInfiniteRestaurants(
         ...params,
         page: pageParam,
         limit: pageSize,
-        sort: params.sort ?? '-createdAt',
+        sort: params.sort ?? 'newest',
       }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
@@ -147,7 +147,7 @@ export function useRestaurantsOfferingCategory(input: {
       const { restaurants: listed, meta } = await restaurantApi.getRestaurants({
         cuisine,
         city,
-        sort: '-createdAt',
+        sort: 'newest',
         limit: 50,
         page: 1,
       });
@@ -158,7 +158,7 @@ export function useRestaurantsOfferingCategory(input: {
       if (candidates.length < 8 && city) {
         const broader = await restaurantApi.getRestaurants({
           city,
-          sort: '-createdAt',
+          sort: 'newest',
           limit: 50,
           page: 1,
         });
@@ -266,7 +266,7 @@ export function useCategoryDishes(input: {
       // Load city (or cuisine) restaurants, then keep only those with a matching menu category
       const { restaurants: listed } = await restaurantApi.getRestaurants({
         city,
-        sort: '-createdAt',
+        sort: 'newest',
         limit: 50,
         page: 1,
       });
@@ -276,7 +276,7 @@ export function useCategoryDishes(input: {
         : (
             await restaurantApi.getRestaurants({
               cuisine,
-              sort: '-createdAt',
+              sort: 'newest',
               limit: 40,
               page: 1,
             })

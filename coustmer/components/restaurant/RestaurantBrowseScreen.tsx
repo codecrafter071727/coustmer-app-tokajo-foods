@@ -118,7 +118,7 @@ export function RestaurantBrowseScreen() {
     {
       q: debouncedSearch,
       // Do not send lat/lng with text `q` — search-service rejects geoNear + text.
-      sort: '-createdAt',
+      sort: 'newest',
       limit: 40,
     },
     { enabled: isTextSearch }
@@ -136,7 +136,7 @@ export function RestaurantBrowseScreen() {
   const allQuery = useRestaurants({
     search: undefined,
     city: city || undefined,
-    sort: '-createdAt',
+    sort: 'newest',
     lat: coords?.lat,
     lng: coords?.lng,
   });

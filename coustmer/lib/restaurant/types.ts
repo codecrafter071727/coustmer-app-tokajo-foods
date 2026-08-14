@@ -206,7 +206,8 @@ export type NearbySort =
   | 'delivery_time'
   | 'rating'
   | 'cost'
-  | 'relevance';
+  | 'relevance'
+  | 'newest';
 
 export type NearbyParams = {
   lat: number;

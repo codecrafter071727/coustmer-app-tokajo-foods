@@ -169,7 +169,7 @@ export default function HomeScreen() {
   const feed = useInfiniteRestaurants(
     {
       city: city || undefined,
-      sort: '-createdAt',
+      sort: 'newest',
       limit: 12,
       lat: coords?.lat,
       lng: coords?.lng,
@@ -210,9 +210,9 @@ export default function HomeScreen() {
     let matched = city
       ? merged.filter((r) => restaurantMatchesCity(r, city))
       : merged;
-    if (matched.length === 0) {
-      const hasLocationFields = merged.some((r) => r.city || r.address);
-      if (!hasLocationFields || nearbyRows.length > 0) matched = merged;
+    // City string mismatch (e.g. "New Delhi" vs "Delhi") must not hide all outlets.
+    if (matched.length === 0 && merged.length > 0) {
+      matched = merged;
     }
     return matched;
   }, [feed.data?.pages, nearby.data?.restaurants, city]);
