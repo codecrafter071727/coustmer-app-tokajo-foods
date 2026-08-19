@@ -1,12 +1,13 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ChevronRight, CheckCircle2, RotateCcw } from 'lucide-react-native';
-import { useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { ArrowLeft, ChevronRight, CheckCircle2, HelpCircle, PhoneCall, RotateCcw } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrders } from '@/lib/order/hooks';
 import { usePaymentHistory } from '@/lib/payment/hooks';
+import { useRequestCallback } from '@/lib/customer/hooks';
 import { authTheme } from '@/constants/auth-theme';
 
 export default function SupportHubScreen() {
@@ -36,12 +37,28 @@ export default function SupportHubScreen() {
     router.push('/payments' as import('expo-router').Href);
   };
 
+  const callback = useRequestCallback();
+  const [callbackSent, setCallbackSent] = useState(false);
+
+  const handleCallback = () => {
+    if (callbackSent) return;
+    callback.mutate(
+      { orderId: recentOrder?.id },
+      {
+        onSuccess: () => {
+          setCallbackSent(true);
+          Alert.alert('Callback requested', "We'll call you back shortly.");
+        },
+        onError: () => {
+          Alert.alert('Failed', 'Could not request a callback. Try again.');
+        },
+      }
+    );
+  };
+
   const queries = [
-    { title: 'Swiggy One FAQs', route: '/support/faq-one' },
-    { title: 'General issues', route: '/support/faq-general' },
-    { title: 'Partner Onboarding', route: '/support/partner-onboarding' },
+    { title: 'Browse FAQs', route: '/support/faq' },
     { title: 'Report Safety Emergency', route: '/support/safety' },
-    { title: 'Instamart Onboarding', route: '/support/instamart-onboarding' },
     { title: 'Legal, Terms & Conditions', route: '/support/legal' },
   ];
 
@@ -120,11 +137,38 @@ export default function SupportHubScreen() {
               style={styles.queryRow}
               onPress={() => router.push(q.route as import('expo-router').Href)}
             >
+              <HelpCircle size={16} color="#6B7280" strokeWidth={1.8} />
               <Text style={styles.queryText}>{q.title}</Text>
               <ChevronRight color="#9CA3AF" size={18} />
             </Pressable>
           ))}
         </View>
+
+        <Pressable
+          style={[styles.callbackCard, callbackSent && styles.callbackCardSent]}
+          onPress={handleCallback}
+          disabled={callback.isPending || callbackSent}
+        >
+          {callback.isPending ? (
+            <ActivityIndicator size="small" color={authTheme.brand} />
+          ) : (
+            <PhoneCall
+              size={20}
+              color={callbackSent ? '#16A34A' : authTheme.brand}
+              strokeWidth={1.8}
+            />
+          )}
+          <View style={styles.callbackText}>
+            <Text style={styles.callbackTitle}>
+              {callbackSent ? 'Callback requested!' : 'Request a callback'}
+            </Text>
+            <Text style={styles.callbackSub}>
+              {callbackSent
+                ? "We'll reach you shortly."
+                : 'Our support team will call you back.'}
+            </Text>
+          </View>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -248,7 +292,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#4B5563',
   },
+  callbackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF7ED',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    padding: 16,
+    gap: 12,
+  },
+  callbackCardSent: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  callbackText: { flex: 1 },
+  callbackTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0B1220',
+    marginBottom: 2,
+  },
+  callbackSub: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
   queryRow: {
+    gap: 10,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     paddingHorizontal: 14,

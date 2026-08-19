@@ -75,16 +75,17 @@ export function PopularRestaurantsSection({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 14,
-    marginBottom: 4,
+    marginTop: 32,
+    marginBottom: 8,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 20,
-    color: '#0B1220',
-    letterSpacing: -0.35,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#111827',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    letterSpacing: -0.5,
   },
   moreWrap: {
     paddingVertical: 16,

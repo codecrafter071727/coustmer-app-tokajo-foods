@@ -1,50 +1,27 @@
-import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Pressable } from 'react-native';
 import { Image } from 'expo-image';
-import { Clock, Star } from 'lucide-react-native';
+import { Clock, Star, RotateCcw } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 import { fonts } from '@/constants/typography';
-
-const ORDER_AGAIN_ITEMS = [
-  {
-    id: '1',
-    restaurantName: 'Burger King',
-    category: 'Fast Food Category',
-    time: '45-60 mins',
-    rating: '4.5',
-    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&h=400&fit=crop', // Burger
-  },
-  {
-    id: '2',
-    restaurantName: 'McDonalds',
-    category: 'Fast Food Category',
-    time: '25-30 mins',
-    rating: '4.8',
-    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=400&fit=crop', // Pizza
-  },
-  {
-    id: '3',
-    restaurantName: 'Spice Kitchen',
-    category: 'Indian Cuisine',
-    time: '35-45 mins',
-    rating: '4.6',
-    image: 'https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=600&h=400&fit=crop',
-  },
-  {
-    id: '4',
-    restaurantName: 'Green Bowl',
-    category: 'Healthy',
-    time: '15-25 mins',
-    rating: '4.9',
-    image: 'https://images.unsplash.com/photo-1546793665-c74683f339c1?w=600&h=400&fit=crop',
-  },
-];
+import { useRecentOrders } from '@/lib/order/hooks';
 
 export function OrderAgainSection() {
+  const router = useRouter();
+  const { data: orders } = useRecentOrders();
+
+  if (!orders || orders.length === 0) return null;
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Order again</Text>
-        <Text style={styles.viewAll}>View all</Text>
+        <View style={styles.titleRow}>
+          <RotateCcw color="#EA580C" size={18} strokeWidth={2.5} />
+          <Text style={styles.title}>Order again</Text>
+        </View>
+        <Pressable onPress={() => router.push('/orders')}>
+          <Text style={styles.viewAll}>View all</Text>
+        </Pressable>
       </View>
 
       <ScrollView
@@ -52,31 +29,48 @@ export function OrderAgainSection() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
-        {ORDER_AGAIN_ITEMS.map((order) => (
-          <View key={order.id} style={styles.card}>
-            {/* Image Container */}
+        {orders.map((order) => (
+          <Pressable
+            key={order.id}
+            style={styles.card}
+            onPress={() =>
+              router.push({
+                pathname: '/restaurants/[restaurantId]',
+                params: { restaurantId: order.restaurantId },
+              })
+            }
+          >
             <View style={styles.imageWrap}>
-              <Image source={{ uri: order.image }} style={styles.image} contentFit="cover" />
+              {order.restaurantImage ? (
+                <Image source={{ uri: order.restaurantImage }} style={styles.image} contentFit="cover" />
+              ) : (
+                <View style={styles.imageFallback}>
+                  <Text style={styles.imageFallbackText}>
+                    {order.restaurantName?.charAt(0) || '?'}
+                  </Text>
+                </View>
+              )}
             </View>
 
-            {/* Details */}
             <View style={styles.details}>
-              <Text style={styles.category}>🍗 {order.category}</Text>
               <Text style={styles.name} numberOfLines={1}>
                 {order.restaurantName}
               </Text>
-              <View style={styles.timeRow}>
-                <Clock color="#64748B" size={12} strokeWidth={2.5} />
-                <Text style={styles.time}>{order.time}</Text>
+              <Text style={styles.itemsText} numberOfLines={1}>
+                {order.itemsSummary}
+              </Text>
+              <View style={styles.metaRow}>
+                <Clock color="#64748B" size={11} strokeWidth={2.5} />
+                <Text style={styles.metaText}>{order.deliveryTime || '30-40 min'}</Text>
+                {order.rating ? (
+                  <>
+                    <Star color="#FACC15" fill="#FACC15" size={11} strokeWidth={0} />
+                    <Text style={styles.metaText}>{order.rating}</Text>
+                  </>
+                ) : null}
               </View>
             </View>
-
-            {/* Rating Badge */}
-            <View style={styles.ratingBadge}>
-              <Star color="#FACC15" fill="#FACC15" size={10} strokeWidth={0} />
-              <Text style={styles.ratingText}>{order.rating}</Text>
-            </View>
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
     </View>
@@ -85,103 +79,99 @@ export function OrderAgainSection() {
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 16,
+    marginTop: 20,
     marginBottom: 8,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 22,
-    color: '#0B1220',
-    letterSpacing: -0.3,
+    fontSize: 24,
+    color: '#111827',
+    letterSpacing: -0.5,
   },
   viewAll: {
     fontFamily: fonts.uiBold,
-    fontSize: 14,
+    fontSize: 13,
     color: '#EA580C',
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-    gap: 16,
+    paddingBottom: 8,
+    gap: 12,
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    paddingRight: 24, 
-    width: 270,
+    borderRadius: 16,
+    padding: 12,
+    width: 260,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: '#F1F5F9',
   },
   imageWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    backgroundColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: 14,
     overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
   },
   image: {
     width: '100%',
     height: '100%',
   },
+  imageFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E293B',
+  },
+  imageFallbackText: {
+    color: '#FFFFFF',
+    fontFamily: fonts.displayBold,
+    fontSize: 22,
+  },
   details: {
     marginLeft: 12,
     flex: 1,
-    gap: 2,
-  },
-  category: {
-    fontFamily: fonts.uiSemi,
-    fontSize: 11,
-    color: '#475569',
+    gap: 3,
   },
   name: {
     fontFamily: fonts.displayBold,
-    fontSize: 15,
+    fontSize: 14,
     color: '#0B1220',
   },
-  timeRow: {
+  itemsText: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: '#64748B',
+  },
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
   },
-  time: {
+  metaText: {
     fontFamily: fonts.uiSemi,
-    fontSize: 12,
+    fontSize: 11,
     color: '#475569',
-  },
-  ratingBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111827',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 12,
-    gap: 2,
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontFamily: fonts.uiBold,
-    fontSize: 10,
   },
 });

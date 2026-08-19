@@ -20,11 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { SaveAddressLabelModal } from '@/components/address/SaveAddressLabelModal';
 import { CategoriesSection } from '@/components/home/CategoriesSection';
+import { CollectionRail } from '@/components/home/CollectionRail';
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
+import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
-import { FeaturedRestaurants } from '@/components/home/FeaturedRestaurants';
 import { OrderAgainSection } from '@/components/home/OrderAgainSection';
 
+import { AutoScrollingDeals } from '@/components/home/AutoScrollingDeals';
+import { BannerCarousel } from '@/components/home/BannerCarousel';
 import { SwiggyHomeChrome } from '@/components/home/SwiggyHomeChrome';
 import { VegModeModal } from '@/components/home/VegModeModal';
 import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
@@ -37,11 +40,12 @@ import { fonts } from '@/constants/typography';
 import { addressApi } from '@/lib/address/api';
 import { formatAddressLabel } from '@/lib/address/types';
 import {
+  useAppConfig,
+  useCollections,
   useCustomerProfile,
   useDeals,
   useHomeFeed,
   useOffersFeed,
-  useRecommended,
 } from '@/lib/customer/hooks';
 import { useFavoriteToggle } from '@/lib/customer/useFavoriteToggle';
 import {
@@ -50,7 +54,6 @@ import {
   DEFAULT_HOME_FILTERS,
   type HomeFilterState,
 } from '@/lib/home/filters';
-import { useHomeDiscovery } from '@/lib/home/hooks';
 import {
   deliveryHeaderSubtitle,
   deliveryHeaderTitle,
@@ -155,12 +158,13 @@ export default function HomeScreen() {
     );
   }, [deliveryLocation, deliveryTitle]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _config = useAppConfig(); // fetch config on home-mount (splash already rendered)
   const home = useHomeFeed();
   const deals = useDeals();
   const offers = useOffersFeed();
-  const recommended = useRecommended();
+  const collections = useCollections();
   const profile = useCustomerProfile();
-  const discovery = useHomeDiscovery(city);
   const { favoriteIds, toggleFavorite } = useFavoriteToggle();
 
   const greeting =
@@ -229,33 +233,7 @@ export default function HomeScreen() {
 
   const homeCategories = useHomeCategories(baseRestaurants);
 
-  /** IDs from AI recommended — keep other rails from cloning that sequence */
-  const recommendedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const r of recommended.data ?? []) {
-      if (r?.id) ids.add(String(r.id));
-    }
-    for (const r of home.data?.forYou ?? []) {
-      if (r?.id) ids.add(String(r.id));
-    }
-    return ids;
-  }, [recommended.data, home.data?.forYou]);
 
-  /** Deal rail: prefer partners with offers, else different sort; skip recommended first */
-  const hotDealRestaurants = useMemo(() => {
-    const withOffer = restaurants.filter(
-      (r) => typeof r.offer === 'string' && r.offer.trim().length > 0
-    );
-    const byPrice = [...restaurants].sort((a, b) => {
-      const ap = a.priceForTwo ?? a.costForTwo ?? 0;
-      const bp = b.priceForTwo ?? b.costForTwo ?? 0;
-      return bp - ap;
-    });
-    const pool = withOffer.length >= 3 ? withOffer : byPrice;
-    const withoutRec = pool.filter((r) => !recommendedIds.has(String(r.id)));
-    const picked = (withoutRec.length >= 4 ? withoutRec : pool).slice(0, 10);
-    return picked;
-  }, [restaurants, recommendedIds]);
 
   /** Top rail: highest rated first (different order than feed / deals) */
   const topRestaurants = useMemo(() => {
@@ -283,7 +261,7 @@ export default function HomeScreen() {
     home.isRefetching ||
     deals.isRefetching ||
     offers.isRefetching ||
-    discovery.isRefetching ||
+    collections.isRefetching ||
     liveCuisines.isRefetching;
 
   const onRefresh = () => {
@@ -293,7 +271,7 @@ export default function HomeScreen() {
     deals.refetch();
     offers.refetch();
     profile.refetch();
-    discovery.refetch();
+    collections.refetch();
     liveCuisines.refetch();
   };
 
@@ -584,6 +562,19 @@ export default function HomeScreen() {
         {chrome}
       </View>
 
+      {/* Promo banners — prefer offers if non-empty, fall back to home feed banners */}
+      {(() => {
+        const offerBanners = offers.data?.banners;
+        const homeBanners = home.data?.banners ?? [];
+        const activeBanners = (offerBanners && offerBanners.length > 0) ? offerBanners : homeBanners;
+        return activeBanners.length > 0 ? <BannerCarousel banners={activeBanners} /> : null;
+      })()}
+
+      {/* Deals carousel from API */}
+      {(offers.data?.deals ?? deals.data ?? []).length > 0 && (
+        <AutoScrollingDeals deals={offers.data?.deals ?? deals.data ?? []} />
+      )}
+
       {filtersActive ? (
         <>
           <View style={styles.filteredWrap}>
@@ -628,25 +619,40 @@ export default function HomeScreen() {
         </>
       ) : (
         <>
-          <CategoriesSection
-            restaurants={[]}
-            filters={homeFilters}
-            onFiltersChange={onFiltersChange}
-            onClearFilters={onClearFilters}
-            allRestaurants={baseRestaurants}
-            fallbackRestaurants={restaurants}
-            liveCuisines={liveCuisines.data}
-          />
+          <View style={{ marginTop: 16 }}>
+            <CategoriesSection
+              restaurants={[]}
+              filters={homeFilters}
+              onFiltersChange={onFiltersChange}
+              onClearFilters={onClearFilters}
+              allRestaurants={baseRestaurants}
+              fallbackRestaurants={restaurants}
+              liveCuisines={liveCuisines.data}
+            />
+          </View>
 
-          {hotDealRestaurants.length > 0 ? (
-            <View key="hot-deals-v5">
-              <Text style={[styles.sectionHead, styles.hotDealsHead]}>
-                <Text style={styles.sectionHeadDark}>Hot deals </Text>
-                <Text style={styles.sectionHeadAccent}>%</Text>
-              </Text>
-              <FeaturedRestaurants restaurants={hotDealRestaurants} />
-            </View>
-          ) : null}
+          {(collections.data?.length ?? 0) > 0 && (
+            <CollectionRail collections={collections.data!} />
+          )}
+
+          {(() => {
+            type HRC = import('@/lib/home/types').HomeRestaurantCard;
+            const newlyAdded = home.data?.newlyAdded as unknown as HRC[] | undefined;
+            const trending = home.data?.trending as unknown as HRC[] | undefined;
+            const useNewlyAdded = (newlyAdded?.length ?? 0) > 0;
+            const useTrending = !useNewlyAdded && (trending?.length ?? 0) > 0;
+            const railData = useNewlyAdded ? newlyAdded! : useTrending ? trending! : null;
+            if (!railData) return null;
+            return (
+              <NewlyAddedRail
+                restaurants={railData}
+                onPressRestaurant={openRestaurant}
+                loading={false}
+                title={useNewlyAdded ? 'Newly added' : 'Trending near you'}
+                subtitle={useNewlyAdded ? 'Fresh partners joining near you' : 'Most popular restaurants right now'}
+              />
+            );
+          })()}
 
           {!city && !isDetectingLocation ? (
             <View style={[styles.paddedBlock, styles.hintCard]}>
@@ -670,6 +676,8 @@ export default function HomeScreen() {
           ) : null}
 
           <OrderAgainSection />
+
+          <CustomerRecommendations fallbackRestaurants={restaurants} />
 
           {topRestaurants.length > 0 || (feed.isLoading && !!city) ? (
             <PopularRestaurantsSection
@@ -799,7 +807,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: HOME_BG,
+    backgroundColor: '#F9FAFB',
   },
   pinOverlay: {
     position: 'absolute',
@@ -820,7 +828,7 @@ const styles = StyleSheet.create({
     }),
   },
   paddedBlock: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
   hintCard: {
     marginTop: 8,
@@ -866,14 +874,14 @@ const styles = StyleSheet.create({
   },
   sectionHead: {
     fontFamily: fonts.displayBold,
-    fontSize: 22,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    marginTop: 8,
-    letterSpacing: -0.35,
+    fontSize: 24,
+    paddingHorizontal: 18,
+    marginBottom: 12,
+    marginTop: 20,
+    letterSpacing: -0.4,
   },
   sectionHeadDark: {
-    color: '#0B1220',
+    color: '#111827',
     fontFamily: fonts.displayBold,
   },
   sectionHeadAccent: {

@@ -1,87 +1,108 @@
-/**
- * Address Service types.
- * Gateway: /api/v1/address-service
- * Routes: /addresses, /health
- */
+export type AddressLabel = 'home' | 'work' | 'hotel' | 'other';
 
-/** API enum values (lowercase). */
-export type AddressLabel = 'home' | 'work' | 'other' | string;
-
-export const ADDRESS_LABEL_OPTIONS: Array<{
-  value: 'home' | 'work' | 'other';
-  title: string;
-}> = [
-  { value: 'home', title: 'Home' },
-  { value: 'work', title: 'Work' },
-  { value: 'other', title: 'Other' },
+export const ADDRESS_LABEL_OPTIONS: { value: AddressLabel; label: string; icon: string }[] = [
+  { value: 'home', label: 'Home', icon: '🏠' },
+  { value: 'work', label: 'Work', icon: '💼' },
+  { value: 'hotel', label: 'Hotel', icon: '🏨' },
+  { value: 'other', label: 'Other', icon: '📍' },
 ];
-
-/** Normalize any UI/API label to the backend enum. */
-export function toAddressLabelEnum(label?: string | null): 'home' | 'work' | 'other' {
-  const raw = String(label ?? '').trim().toLowerCase();
-  if (raw === 'work') return 'work';
-  if (raw === 'other') return 'other';
-  if (raw === 'home') return 'home';
-  // Custom labels still need a valid enum — store as other.
-  return raw ? 'other' : 'home';
-}
-
-export function formatAddressLabel(label?: string | null): string {
-  const raw = String(label ?? '').trim();
-  if (!raw) return 'Home';
-  const lower = raw.toLowerCase();
-  if (lower === 'home') return 'Home';
-  if (lower === 'work') return 'Work';
-  if (lower === 'other') return 'Other';
-  return raw;
-}
 
 export type SavedAddress = {
   id: string;
   label: AddressLabel;
-  formattedAddress: string;
+  customLabel?: string;
+  flat?: string;
+  floor?: string;
+  landmark?: string;
   street?: string;
   area?: string;
   city?: string;
   state?: string;
   pincode?: string;
-  landmark?: string;
-  contactName?: string;
-  contactPhone?: string;
+  country?: string;
+  formattedAddress?: string;
   lat: number;
   lng: number;
-  isDefault: boolean;
+  isDefault?: boolean;
+  contactName?: string;
+  contactPhone?: string;
   createdAt?: string;
   updatedAt?: string;
 };
 
 export type CreateAddressPayload = {
   label: AddressLabel;
-  formattedAddress: string;
+  customLabel?: string;
+  flat?: string;
+  floor?: string;
+  landmark?: string;
   street?: string;
   area?: string;
   city?: string;
   state?: string;
   pincode?: string;
-  landmark?: string;
-  contactName?: string;
-  contactPhone?: string;
+  country?: string;
+  formattedAddress?: string;
   lat: number;
   lng: number;
-  setAsDefault?: boolean;
+  contactName?: string;
+  contactPhone?: string;
 };
 
 export type UpdateAddressPayload = Partial<CreateAddressPayload>;
-
-export type AddressSuggestion = {
-  description: string;
-  placeId?: string;
-  [key: string]: unknown;
-};
 
 export type GeocodeResult = {
   lat: number;
   lng: number;
   formattedAddress?: string;
-  [key: string]: unknown;
+  street?: string;
+  area?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
 };
+
+export type ReverseGeocodeResult = GeocodeResult;
+
+export type AutocompleteItem = {
+  placeId: string;
+  description: string;
+  mainText?: string;
+  secondaryText?: string;
+};
+
+export type ServiceabilityResult = {
+  serviceable: boolean;
+  city?: string;
+  zone?: string;
+  message?: string;
+};
+
+export function toAddressLabelEnum(val: string | undefined | null): AddressLabel {
+  if (!val) return 'other';
+  const lower = val.toLowerCase().trim();
+  if (lower === 'home') return 'home';
+  if (lower === 'work' || lower === 'office') return 'work';
+  if (lower === 'hotel') return 'hotel';
+  return 'other';
+}
+
+export function formatAddressLabel(addressOrLabel: SavedAddress | string): string {
+  if (typeof addressOrLabel === 'string') {
+    const opt = ADDRESS_LABEL_OPTIONS.find((o) => o.value === addressOrLabel);
+    return opt?.label || addressOrLabel || 'Address';
+  }
+  const address = addressOrLabel;
+  const opt = ADDRESS_LABEL_OPTIONS.find((o) => o.value === address.label);
+  const labelText = address.customLabel || opt?.label || 'Address';
+  const parts: string[] = [];
+  if (address.flat) parts.push(address.flat);
+  if (address.street) parts.push(address.street);
+  if (address.area) parts.push(address.area);
+  if (address.city) parts.push(address.city);
+  if (parts.length === 0 && address.formattedAddress) {
+    return `${labelText} — ${address.formattedAddress}`;
+  }
+  return parts.length > 0 ? `${labelText} — ${parts.join(', ')}` : labelText;
+}

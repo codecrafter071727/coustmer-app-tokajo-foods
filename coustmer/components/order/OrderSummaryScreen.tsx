@@ -38,6 +38,8 @@ import {
 import { applyServerCartToStore } from '@/lib/cart/sync';
 import { useCreateOrder } from '@/lib/order/hooks';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
+import { parseDropPin } from '@/lib/location/drop-pin';
+import { checkoutBlockCopy } from '@/lib/cart/checkout-block';
 import {
   paymentMethodHint,
   paymentMethodLabel,
@@ -304,15 +306,51 @@ export function OrderSummaryScreen() {
         }
       }
 
-      const result = await validateCart.mutateAsync();
+      const isDelivery = deliveryType !== 'takeaway';
+      const pin = parseDropPin(location?.lat, location?.lng);
+      if (isDelivery && !pin) {
+        Alert.alert(
+          'Drop a pin for delivery',
+          'We need your exact map pin to check if we deliver here and to calculate the fee.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Set pin', onPress: () => setLocationOpen(true) },
+          ]
+        );
+        setOrderPlacementPhase('none');
+        return;
+      }
+
+      const result = await validateCart.mutateAsync(pin ?? {});
       if (result.cart) applyServerCartToStore(result.cart);
       if (!result.valid) {
-        Alert.alert(
-          'Cart needs attention',
-          result.issues.map((i) => i.message).join('\n') ||
-            result.message ||
-            'Cart validation failed'
-        );
+        const code = result.code || result.issues[0]?.code;
+        const needsPin =
+          code === 'DROP_PIN_REQUIRED' ||
+          (result.message ?? '').toLowerCase().includes('drop pin');
+        if (needsPin) {
+          Alert.alert(
+            'Drop a pin for delivery',
+            'Your cart has no delivery pin yet. Open the map and drop your pin, then try again.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Set pin', onPress: () => setLocationOpen(true) },
+            ]
+          );
+        } else {
+          const copy = checkoutBlockCopy(
+            code,
+            result.issues.map((i) => i.message).join('\n') ||
+              result.message ||
+              'Cart validation failed'
+          );
+          Alert.alert(copy.title, copy.message, [
+            { text: 'OK' },
+            ...(code === 'OUT_OF_ZONE'
+              ? [{ text: 'Change pin', onPress: () => setLocationOpen(true) }]
+              : []),
+          ]);
+        }
         setOrderPlacementPhase('none');
         return;
       }
@@ -405,12 +443,16 @@ export function OrderSummaryScreen() {
             methodId: mappedMethodId,
             description: `Order ${order.orderNumber || order.id}`,
           });
-          paymentUrlToOpen =
-            payment.paymentUrl ||
-            payment.checkoutUrl ||
-            payment.redirectUrl ||
-            payment.gatewayUrl ||
-            payment.url;
+          const urls = [
+            payment.paymentUrl,
+            payment.checkoutUrl,
+            payment.redirectUrl,
+            payment.gatewayUrl,
+            payment.url,
+          ];
+          paymentUrlToOpen = urls.find(
+            (url): url is string => typeof url === 'string' && url.length > 0
+          );
         } catch {
           Alert.alert(
             'Payment Configuration Issue',

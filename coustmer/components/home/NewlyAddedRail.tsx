@@ -1,267 +1,216 @@
-import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles, Star } from 'lucide-react-native';
-import { FlatList,
-  Platform,
-  
-  StyleSheet,
-  Text,
-  View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Clock, Star } from 'lucide-react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { authTheme } from '@/constants/auth-theme';
+import { VegMarkIcon } from '@/components/home/VegMarkIcon';
 import type { HomeRestaurantCard } from '@/lib/home/types';
 
 type Props = {
   restaurants: HomeRestaurantCard[];
-  onPressRestaurant: (id: string) => void;
+  onPressRestaurant?: (id: string) => void;
   loading?: boolean;
+  title?: string;
+  subtitle?: string;
 };
-
-function SkeletonCard() {
-  return (
-    <View style={styles.card}>
-      <View style={[styles.imageWrap, styles.skeletonBlock]} />
-      <View style={[styles.skeletonLine, { width: '78%', marginTop: 10 }]} />
-      <View style={[styles.skeletonLine, { width: '52%', marginTop: 6 }]} />
-    </View>
-  );
-}
 
 export function NewlyAddedRail({
   restaurants,
   onPressRestaurant,
   loading,
+  title = 'Newly added',
+  subtitle = 'Fresh partners joining near you',
 }: Props) {
-  if (!loading && !restaurants.length) return null;
+  const router = useRouter();
+
+  if (!loading && (!restaurants || restaurants.length === 0)) return null;
+
+  const go = (id: string) => {
+    if (onPressRestaurant) {
+      onPressRestaurant(id);
+    } else {
+      router.push({ pathname: '/restaurants/[restaurantId]', params: { restaurantId: id } });
+    }
+  };
 
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <View style={styles.badge}>
-          <Sparkles color="#FFF" size={14} fill="#FFF" />
-        </View>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Newly added</Text>
-          <Text style={styles.subtitle}>Fresh partners joining near you</Text>
+        <View>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
       </View>
 
-      {loading && restaurants.length === 0 ? (
-        <View style={styles.skeletonRow}>
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </View>
-      ) : (
-        <FlatList
-          horizontal
-          data={restaurants}
-          keyExtractor={(item) => item.id}
-          showsHorizontalScrollIndicator={false}
-          nestedScrollEnabled
-          decelerationRate="fast"
-          snapToInterval={156 + 14}
-          snapToAlignment="start"
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const cover = item.coverUrl || item.imageUrl || item.logoUrl;
-            const rating =
-              typeof item.rating === 'number' && item.rating > 0
-                ? item.rating
-                : null;
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.list}
+        snapToInterval={280}
+        decelerationRate="fast"
+      >
+        {restaurants.map((r) => (
+          <Pressable key={r.id} style={styles.card} onPress={() => go(r.id)}>
+            {/* Image */}
+            <View style={styles.imgWrap}>
+              {r.image ? (
+                <Image source={{ uri: r.image }} style={styles.img} contentFit="cover" />
+              ) : (
+                <View style={[styles.img, styles.imgFallback]} />
+              )}
 
-            return (
-              <Pressable
-                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-                onPress={() => {
-                  if (item.id.startsWith('dummy-')) return;
-                  onPressRestaurant(item.id);
-                }}
-              >
-                <View style={styles.imageWrap}>
-                  {cover ? (
-                    <Image
-                      source={{ uri: cover }}
-                      style={styles.image}
-                      contentFit="cover"
-                      transition={180}
-                    />
-                  ) : (
-                    <LinearGradient
-                      colors={['#AC0F45', '#AC0F45']}
-                      style={styles.image}
-                    />
-                  )}
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.55)']}
-                    style={styles.scrim}
-                  />
-                  <View style={styles.newPill}>
-                    <Text style={styles.newPillText}>
-                      {item.badge || 'NEW'}
-                    </Text>
-                  </View>
-                  {rating != null ? (
-                    <View style={styles.ratingPill}>
-                      <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
-                      <Star color="#FFF" fill="#FFF" size={9} />
-                    </View>
-                  ) : null}
+              {/* NEW badge */}
+              <View style={styles.newBadge}>
+                <Text style={styles.newText}>NEW</Text>
+              </View>
+
+              {/* Veg mark */}
+              {r.isPureVeg && (
+                <View style={styles.vegMark}>
+                  <VegMarkIcon variant="veg" size={14} />
                 </View>
-                <Text style={styles.name} numberOfLines={1}>
-                  {item.name}
+              )}
+            </View>
+
+            {/* Info */}
+            <View style={styles.info}>
+              <Text style={styles.name} numberOfLines={1}>
+                {r.name}
+              </Text>
+
+              <View style={styles.meta}>
+                {typeof r.rating === 'number' && r.rating > 0 && (
+                  <View style={styles.rating}>
+                    <Star color="#FFB800" size={12} fill="#FFB800" strokeWidth={0} />
+                    <Text style={styles.ratingText}>{r.rating.toFixed(1)}</Text>
+                  </View>
+                )}
+
+                {r.deliveryTime && (
+                  <View style={styles.time}>
+                    <Clock color="#64748B" size={12} strokeWidth={2} />
+                    <Text style={styles.timeText}>{r.deliveryTime}</Text>
+                  </View>
+                )}
+              </View>
+
+              {r.cuisines && r.cuisines.length > 0 && (
+                <Text style={styles.cuisines} numberOfLines={1}>
+                  {r.cuisines.slice(0, 3).join(' • ')}
                 </Text>
-                <Text style={styles.meta} numberOfLines={1}>
-                  {item.cuisines?.slice(0, 2).join(' · ') ||
-                    item.deliveryTime ||
-                    'Just listed'}
-                </Text>
-              </Pressable>
-            );
-          }}
-        />
-      )}
+              )}
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    marginHorizontal: -16,
-    marginVertical: 6,
-    paddingTop: 14,
-    paddingBottom: 16,
-    backgroundColor: '#FFF8F6',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 90, 65,0.10)',
-  },
+  wrap: { marginTop: 28 },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    marginBottom: 14,
-  },
-  badge: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: authTheme.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    color: authTheme.text,
-    letterSpacing: -0.35,
+    color: '#0F172A',
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: authTheme.textMuted,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
   },
   list: {
-    paddingHorizontal: 16,
-    gap: 14,
-    paddingBottom: 2,
-  },
-  skeletonRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     gap: 14,
   },
   card: {
-    width: 156,
-  },
-  pressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.985 }],
-  },
-  imageWrap: {
-    width: 156,
-    height: 128,
-    borderRadius: 18,
+    width: 260,
+    backgroundColor: '#fff',
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#1A1816',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.12,
-        shadowRadius: 10,
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  image: {
-    ...StyleSheet.absoluteFill,
+  imgWrap: {
+    height: 140,
+    position: 'relative',
   },
-  scrim: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 56,
+  img: {
+    width: '100%',
+    height: '100%',
   },
-  newPill: {
+  imgFallback: {
+    backgroundColor: '#F1F5F9',
+  },
+  newBadge: {
     position: 'absolute',
     top: 10,
     left: 10,
-    backgroundColor: authTheme.brand,
-    paddingHorizontal: 8,
+    backgroundColor: '#FF4757',
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 7,
+    borderRadius: 6,
   },
-  newPillText: {
-    color: '#FFF',
+  newText: {
+    color: '#fff',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  ratingPill: {
+  vegMark: {
     position: 'absolute',
-    bottom: 10,
+    top: 10,
     right: 10,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    padding: 4,
+  },
+  info: {
+    padding: 12,
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
+  },
+  rating: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#1BA672',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 7,
   },
   ratingText: {
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  name: {
-    marginTop: 10,
-    fontSize: 14,
-    fontWeight: '800',
-    color: authTheme.text,
-    letterSpacing: -0.2,
+  time: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
-  meta: {
-    marginTop: 3,
-    fontSize: 12,
+  timeText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: authTheme.textMuted,
+    color: '#64748B',
   },
-  skeletonBlock: {
-    backgroundColor: '#F1E4E0',
-  },
-  skeletonLine: {
-    height: 10,
-    borderRadius: 6,
-    backgroundColor: '#F1E4E0',
+  cuisines: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
 });

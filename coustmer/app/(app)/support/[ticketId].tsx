@@ -18,6 +18,7 @@ import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { authTheme } from '@/constants/auth-theme';
 import {
   useAddTicketMessage,
+  useCloseTicket,
   useRateTicket,
   useTicket,
 } from '@/lib/customer/hooks';
@@ -30,6 +31,7 @@ export default function TicketDetailScreen() {
   const { data: ticket, isLoading, isError, error, refetch } = useTicket(id);
   const addMessage = useAddTicketMessage(id);
   const rateTicket = useRateTicket(id);
+  const closeTicket = useCloseTicket(id);
 
   const [message, setMessage] = useState('');
   const [rating, setRating] = useState(0);
@@ -176,6 +178,18 @@ export default function TicketDetailScreen() {
                   </View>
                 ) : null}
               </ScrollView>
+
+              {!isResolved && (
+                <Pressable
+                  style={styles.closeTicketBtn}
+                  onPress={() => closeTicket.mutate()}
+                  disabled={closeTicket.isPending}
+                >
+                  <Text style={styles.closeTicketText}>
+                    {closeTicket.isPending ? 'Closing…' : 'Mark as resolved'}
+                  </Text>
+                </Pressable>
+              )}
 
               <View style={styles.inputBar}>
                 <TextInput
@@ -329,6 +343,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  closeTicketBtn: {
+    marginHorizontal: 0,
+    marginBottom: 8,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeTicketText: {
+    fontFamily: 'System',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#16A34A',
   },
   inputBar: {
     flexDirection: 'row',

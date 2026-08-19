@@ -4,147 +4,97 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { addressApi } from '@/lib/address/api';
-import type {
-  CreateAddressPayload,
-  SavedAddress,
-  UpdateAddressPayload,
-} from '@/lib/address/types';
+import { addressApi } from './api';
+import type { CreateAddressPayload, UpdateAddressPayload } from './types';
 
 export const addressKeys = {
   all: ['address'] as const,
-  health: () => [...addressKeys.all, 'health'] as const,
   list: () => [...addressKeys.all, 'list'] as const,
   detail: (id: string) => [...addressKeys.all, 'detail', id] as const,
+  autocomplete: (q: string) => [...addressKeys.all, 'autocomplete', q] as const,
+  serviceability: (lat: number, lng: number) =>
+    [...addressKeys.all, 'serviceability', lat, lng] as const,
 };
 
-function invalidateAddressQueries(
-  queryClient: ReturnType<typeof useQueryClient>
-) {
-  queryClient.invalidateQueries({ queryKey: addressKeys.all });
-}
-
-/** GET /health */
-export function useAddressServiceHealth(enabled = false) {
-  return useQuery({
-    queryKey: addressKeys.health(),
-    queryFn: addressApi.health,
-    enabled,
-    staleTime: 60_000,
-    retry: 1,
-  });
-}
-
-/** GET /addresses */
-export function useSavedAddresses(options?: { enabled?: boolean }) {
+/** GET /addresses — saved address list */
+export function useSavedAddresses() {
   return useQuery({
     queryKey: addressKeys.list(),
-    queryFn: addressApi.list,
-    enabled: options?.enabled ?? true,
-    staleTime: 30_000,
-    refetchOnMount: 'always',
+    queryFn: addressApi.listAddresses,
   });
 }
 
-/** GET /addresses/:addressId */
-export function useSavedAddress(
-  addressId: string,
-  options?: { enabled?: boolean }
-) {
+/** GET /addresses/:id */
+export function useSavedAddress(id: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: addressKeys.detail(addressId),
-    queryFn: () => addressApi.getById(addressId),
-    enabled: (options?.enabled ?? true) && Boolean(addressId),
+    queryKey: addressKeys.detail(id ?? ''),
+    queryFn: () => addressApi.getAddress(id!),
+    enabled: (options?.enabled ?? true) && Boolean(id),
   });
-}
-
-/** Default saved address helper. */
-export function useDefaultSavedAddress(options?: { enabled?: boolean }) {
-  const list = useSavedAddresses(options);
-  const defaultAddress =
-    list.data?.find((a) => a.isDefault) ?? list.data?.[0] ?? null;
-  return { ...list, defaultAddress };
 }
 
 /** POST /addresses */
 export function useCreateAddress() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateAddressPayload) => addressApi.create(payload),
-    onSuccess: () => invalidateAddressQueries(queryClient),
+    mutationFn: (payload: CreateAddressPayload) => addressApi.createAddress(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: addressKeys.list() });
+    },
   });
 }
 
-/** PUT /addresses/:addressId */
+/** PUT /addresses/:id */
 export function useUpdateAddress() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      addressId,
-      payload,
-    }: {
-      addressId: string;
-      payload: UpdateAddressPayload;
-    }) => addressApi.update(addressId, payload),
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateAddressPayload }) =>
+      addressApi.updateAddress(id, payload),
     onSuccess: (_data, vars) => {
-      invalidateAddressQueries(queryClient);
-      queryClient.invalidateQueries({
-        queryKey: addressKeys.detail(vars.addressId),
-      });
+      qc.invalidateQueries({ queryKey: addressKeys.list() });
+      qc.invalidateQueries({ queryKey: addressKeys.detail(vars.id) });
     },
   });
 }
 
-/** DELETE /addresses/:addressId */
+/** DELETE /addresses/:id */
 export function useDeleteAddress() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (addressId: string) => addressApi.remove(addressId),
-    onMutate: async (addressId) => {
-      await queryClient.cancelQueries({ queryKey: addressKeys.list() });
-      const previous = queryClient.getQueryData<SavedAddress[]>(
-        addressKeys.list()
-      );
-      if (previous) {
-        queryClient.setQueryData(
-          addressKeys.list(),
-          previous.filter((a) => a.id !== addressId)
-        );
-      }
-      return { previous };
+    mutationFn: (id: string) => addressApi.deleteAddress(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: addressKeys.list() });
     },
-    onError: (_err, _id, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(addressKeys.list(), context.previous);
-      }
-    },
-    onSettled: () => invalidateAddressQueries(queryClient),
   });
 }
 
-/** PUT /addresses/:addressId/default */
+/** PUT /addresses/:id/default */
 export function useSetDefaultAddress() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (addressId: string) => addressApi.setDefault(addressId),
-    onMutate: async (addressId) => {
-      await queryClient.cancelQueries({ queryKey: addressKeys.list() });
-      const previous = queryClient.getQueryData<SavedAddress[]>(
-        addressKeys.list()
-      );
-      if (previous) {
-        queryClient.setQueryData(
-          addressKeys.list(),
-          previous.map((a) => ({ ...a, isDefault: a.id === addressId }))
-        );
-      }
-      return { previous };
+    mutationFn: (id: string) => addressApi.setDefault(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: addressKeys.list() });
     },
-    onError: (_err, _id, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(addressKeys.list(), context.previous);
-      }
-    },
-    onSettled: () => invalidateAddressQueries(queryClient),
+  });
+}
+
+/** GET /addresses/autocomplete?q= */
+export function useAutocomplete(query: string) {
+  return useQuery({
+    queryKey: addressKeys.autocomplete(query),
+    queryFn: () => addressApi.autocomplete(query),
+    enabled: query.length >= 2,
+    staleTime: 30_000,
+  });
+}
+
+/** GET /addresses/serviceability?lat=&lng= */
+export function useServiceability(lat: number | undefined, lng: number | undefined) {
+  return useQuery({
+    queryKey: addressKeys.serviceability(lat ?? 0, lng ?? 0),
+    queryFn: () => addressApi.checkServiceability(lat!, lng!),
+    enabled: lat != null && lng != null,
+    staleTime: 60_000,
   });
 }

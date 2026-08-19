@@ -47,6 +47,7 @@ export type OrderAddress = {
   contactPhone?: string;
   lat?: number;
   lng?: number;
+  location?: { type: 'Point'; coordinates: [number, number] };
 };
 
 export type OrderIssue = {

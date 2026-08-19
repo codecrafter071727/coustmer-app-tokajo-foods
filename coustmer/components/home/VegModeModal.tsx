@@ -23,8 +23,6 @@ import {
 } from '@/store/veg-preference-store';
 
 const VEG_GREEN = '#21B477';
-const FOOD_IMG =
-  'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=200&h=200&fit=crop&q=80';
 
 type Props = {
   visible: boolean;

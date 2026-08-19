@@ -9,6 +9,7 @@ import type {
   AddCartItemPayload,
   ApplyCouponPayload,
   Cart,
+  CartValidatePayload,
   SaveCartPayload,
   UpdateCartItemPayload,
   UpdateDeliveryAddressPayload,
@@ -112,7 +113,8 @@ export function useClearRemoteCart() {
 export function useValidateCart() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => cartApi.validate(),
+    mutationFn: (payload?: CartValidatePayload) =>
+      cartApi.validate(payload ?? {}),
     onSuccess: (result) => {
       if (result.cart) {
         applyServerCartToStore(result.cart);

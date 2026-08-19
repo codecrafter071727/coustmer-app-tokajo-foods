@@ -7,15 +7,19 @@ import {
   ChevronDown,
   Heart,
   SlidersHorizontal,
+  UtensilsCrossed,
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Dimensions,
+import {
+  ActivityIndicator,
+  Dimensions,
   FlatList,
-  
   ScrollView,
   StyleSheet,
   Text,
-  View } from 'react-native';
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -28,9 +32,14 @@ import {
   ExploreRestaurantCard,
 } from '@/components/home/ExploreRestaurantCard';
 import { CustomerServiceStatus } from '@/components/customer/CustomerServiceStatus';
+import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
-import type { RestaurantCard } from '@/lib/customer/types';
-import { useFavorites } from '@/lib/customer/hooks';
+import type { FavouriteDish, RestaurantCard } from '@/lib/customer/types';
+import {
+  useFavouriteDishes,
+  useFavorites,
+  useRemoveFavouriteDish,
+} from '@/lib/customer/hooks';
 import { useFavoriteToggle } from '@/lib/customer/useFavoriteToggle';
 import type { Restaurant } from '@/lib/restaurant/types';
 import { useFavoritesStore } from '@/store/favorites-store';
@@ -107,11 +116,113 @@ function ConfettiBits() {
   );
 }
 
+type Tab = 'restaurants' | 'dishes';
+
+function DishCard({
+  dish,
+  onRemove,
+  removing,
+}: {
+  dish: FavouriteDish;
+  onRemove: () => void;
+  removing: boolean;
+}) {
+  return (
+    <View style={dishStyles.card}>
+      <View style={dishStyles.imgWrap}>
+        {dish.imageUrl ? (
+          <Image source={{ uri: dish.imageUrl }} style={dishStyles.img} contentFit="cover" />
+        ) : (
+          <View style={[dishStyles.img, dishStyles.imgFallback]}>
+            <UtensilsCrossed size={24} color="#D1D5DB" strokeWidth={1.5} />
+          </View>
+        )}
+        {dish.isVeg !== undefined && (
+          <View style={[dishStyles.vegDot, { borderColor: dish.isVeg ? '#16A34A' : '#DC2626' }]}>
+            <View style={[dishStyles.vegInner, { backgroundColor: dish.isVeg ? '#16A34A' : '#DC2626' }]} />
+          </View>
+        )}
+      </View>
+      <View style={dishStyles.info}>
+        <Text style={dishStyles.name} numberOfLines={1}>{dish.name}</Text>
+        {dish.restaurantName && (
+          <Text style={dishStyles.resto} numberOfLines={1}>{dish.restaurantName}</Text>
+        )}
+        <View style={dishStyles.meta}>
+          {dish.price != null && (
+            <Text style={dishStyles.price}>₹{dish.price}</Text>
+          )}
+          {typeof dish.rating === 'number' && dish.rating > 0 && (
+            <View style={dishStyles.ratingPill}>
+              <Text style={dishStyles.ratingText}>★ {dish.rating.toFixed(1)}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      <TouchableOpacity
+        onPress={onRemove}
+        disabled={removing}
+        style={dishStyles.heartBtn}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        {removing ? (
+          <ActivityIndicator size="small" color="#F43F5E" />
+        ) : (
+          <Heart size={20} color="#F43F5E" fill="#F43F5E" strokeWidth={2} />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const dishStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F1F3F5',
+    elevation: 1,
+  },
+  imgWrap: { position: 'relative', marginRight: 12 },
+  img: { width: 72, height: 72, borderRadius: 12 },
+  imgFallback: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  vegDot: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vegInner: { width: 7, height: 7, borderRadius: 3.5 },
+  info: { flex: 1 },
+  name: { fontFamily: fonts.displayBold, fontSize: 15, color: '#0B1220', letterSpacing: -0.2, marginBottom: 2 },
+  resto: { fontFamily: fonts.ui, fontSize: 12, color: '#6B7280', marginBottom: 6 },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  price: { fontFamily: fonts.uiBold, fontSize: 13, color: '#374151' },
+  ratingPill: { backgroundColor: '#16A34A', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  ratingText: { fontFamily: fonts.uiBold, fontSize: 10, color: '#FFFFFF' },
+  heartBtn: { padding: 6 },
+});
+
 export function FavouritesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [activeTab, setActiveTab] = useState<Tab>('restaurants');
   const { data, isLoading, isError, error, refetch, isRefetching } =
     useFavorites();
+  const { data: dishes, isLoading: dishesLoading, refetch: dishesRefetch, isRefetching: dishesRefetching } =
+    useFavouriteDishes();
+  const removeDishMutation = useRemoveFavouriteDish();
   const { favoriteIds, toggleFavorite, pendingId } = useFavoriteToggle();
   const localById = useFavoritesStore((s) => s.byId);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
@@ -165,93 +276,93 @@ export function FavouritesScreen() {
     router.push(`/restaurants/${id}` as import('expo-router').Href);
   };
 
+  const heroBlock = (
+    <View style={[styles.hero, { height: HERO_HEIGHT }]}>
+      <LinearGradient
+        colors={['#FF9800', '#FFC107', '#FFEB3B']}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0.85 }}
+        end={{ x: 1, y: 0.1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        colors={['rgba(255,152,0,0.4)', 'rgba(255,152,0,0.1)', 'transparent']}
+        locations={[0, 0.35, 0.72]}
+        start={{ x: 0, y: 1 }}
+        end={{ x: 0.85, y: 0 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <ConfettiBits />
+      <Image source={HERO_FOOD.top} style={styles.food2} contentFit="contain" />
+      <Image source={HERO_FOOD.right} style={styles.food3} contentFit="contain" />
+      <Image source={HERO_FOOD.left} style={styles.food1} contentFit="contain" />
+      <SmoothPressable
+        onPress={goBack}
+        style={[styles.backBtn, { top: insets.top + 8 }]}
+        pressScale={0.92}
+        hitSlop={8}
+      >
+        <ArrowLeft color="#FFFFFF" size={20} strokeWidth={2.4} />
+      </SmoothPressable>
+      <View style={[styles.heroCopy, { paddingBottom: 28 }]}>
+        <Text style={styles.heroTitle}>We know you love it!</Text>
+        <Text style={styles.heroSub}>
+          Browse your favourite restaurants & feast like never before.
+        </Text>
+      </View>
+    </View>
+  );
+
+  const tabBar = (
+    <View style={styles.tabBar}>
+      {(['restaurants', 'dishes'] as Tab[]).map((tab) => (
+        <TouchableOpacity
+          key={tab}
+          style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
+          onPress={() => setActiveTab(tab)}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
+            {tab === 'restaurants' ? 'Restaurants' : 'Dishes'}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   const listHeader = (
     <View>
-      <View style={[styles.hero, { height: HERO_HEIGHT }]}>
-        <LinearGradient
-          colors={['#FF9800', '#FFC107', '#FFEB3B']}
-          locations={[0, 0.45, 1]}
-          start={{ x: 0, y: 0.85 }}
-          end={{ x: 1, y: 0.1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={['rgba(255,152,0,0.4)', 'rgba(255,152,0,0.1)', 'transparent']}
-          locations={[0, 0.35, 0.72]}
-          start={{ x: 0, y: 1 }}
-          end={{ x: 0.85, y: 0 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <ConfettiBits />
-
-        {/* (2) top-right · (3) right · (1) upper-right cluster */}
-        <Image
-          source={HERO_FOOD.top}
-          style={styles.food2}
-          contentFit="contain"
-        />
-        <Image
-          source={HERO_FOOD.right}
-          style={styles.food3}
-          contentFit="contain"
-        />
-        <Image
-          source={HERO_FOOD.left}
-          style={styles.food1}
-          contentFit="contain"
-        />
-
-        <SmoothPressable
-          onPress={goBack}
-          style={[styles.backBtn, { top: insets.top + 8 }]}
-          pressScale={0.92}
-          hitSlop={8}
+      {heroBlock}
+      {tabBar}
+      {activeTab === 'restaurants' && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
         >
-          <ArrowLeft color="#FFFFFF" size={20} strokeWidth={2.4} />
-        </SmoothPressable>
-
-        <View style={[styles.heroCopy, { paddingBottom: 28 }]}>
-          <Text style={styles.heroTitle}>We know you love it!</Text>
-          <Text style={styles.heroSub}>
-            Browse your favourite restaurants & feast like never before.
-          </Text>
-        </View>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTERS.map((f) => {
-          const on = activeFilter === f.id;
-          return (
-            <Pressable
-              key={f.id}
-              style={[styles.chip, on && styles.chipOn]}
-              onPress={() =>
-                setActiveFilter((prev) => (prev === f.id ? null : f.id))
-              }
-            >
-              {f.icon === 'sliders' ? (
-                <SlidersHorizontal
-                  color="#3E4152"
-                  size={13}
-                  strokeWidth={2.4}
-                />
-              ) : null}
-              <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                {f.label}
-              </Text>
-              {f.chevron ? (
-                <ChevronDown color="#686B78" size={14} strokeWidth={2.4} />
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
+          {FILTERS.map((f) => {
+            const on = activeFilter === f.id;
+            return (
+              <Pressable
+                key={f.id}
+                style={[styles.chip, on && styles.chipOn]}
+                onPress={() =>
+                  setActiveFilter((prev) => (prev === f.id ? null : f.id))
+                }
+              >
+                {f.icon === 'sliders' ? (
+                  <SlidersHorizontal color="#3E4152" size={13} strokeWidth={2.4} />
+                ) : null}
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
+                {f.chevron ? (
+                  <ChevronDown color="#686B78" size={14} strokeWidth={2.4} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
       <CustomerServiceStatus />
     </View>
   );
@@ -275,10 +386,45 @@ export function FavouritesScreen() {
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {listHeader}
         <ErrorView
-          message={
-            error instanceof Error ? error.message : 'Failed to load favourites'
-          }
+          message={error instanceof Error ? error.message : 'Failed to load favourites'}
           onRetry={refetch}
+        />
+      </View>
+    );
+  }
+
+  if (activeTab === 'dishes') {
+    return (
+      <View style={styles.root}>
+        <FlatList
+          data={dishes ?? []}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={(dishes?.length ?? 0) > 0 ? listFooter : null}
+          ListEmptyComponent={
+            dishesLoading ? (
+              <View style={{ alignItems: 'center', paddingTop: 40 }}>
+                <ActivityIndicator size="large" color={authTheme.brand} />
+              </View>
+            ) : (
+              <EmptyView
+                icon={<UtensilsCrossed color="#C4C4C8" size={40} />}
+                title="No favourite dishes yet"
+                subtitle="Heart a dish on a restaurant menu to save it here."
+              />
+            )
+          }
+          contentContainerStyle={[styles.list, { paddingBottom: 28 + Math.max(insets.bottom, 12) }]}
+          showsVerticalScrollIndicator={false}
+          onRefresh={dishesRefetch}
+          refreshing={dishesRefetching}
+          renderItem={({ item }) => (
+            <DishCard
+              dish={item}
+              removing={removeDishMutation.isPending && removeDishMutation.variables === item.id}
+              onRemove={() => removeDishMutation.mutate(item.id)}
+            />
+          )}
         />
       </View>
     );
@@ -398,6 +544,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#F6D365',
     opacity: 0.9,
     zIndex: 1,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  tabBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBtnActive: {
+    backgroundColor: '#0B1220',
+  },
+  tabLabel: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
   },
   filterRow: {
     paddingHorizontal: 16,

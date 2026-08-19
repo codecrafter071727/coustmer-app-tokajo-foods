@@ -73,11 +73,6 @@ function getVariant(index: number): Variant {
   return index % 3 === 2 ? 'hero' : 'split';
 }
 
-const PUBLIC_IMAGES = [
-  require('@/public/ (1).png'),
-  require('@/public/ (2).png'),
-  require('@/public/ (3).png'),
-];
 
 // ---------------------------------------------------------------------------
 
@@ -226,7 +221,7 @@ export function AutoScrollingDeals({ deals }: Props) {
                   <SplitCard
                     item={item}
                     theme={SPLIT_THEMES[originalIndex % SPLIT_THEMES.length]}
-                    imageSource={PUBLIC_IMAGES[originalIndex % PUBLIC_IMAGES.length]}
+                    imageSource={null}
                     imageTranslate={imageTranslate}
                     contentTranslate={contentTranslate}
                   />
@@ -238,7 +233,7 @@ export function AutoScrollingDeals({ deals }: Props) {
                       Math.floor(originalIndex / 3) % HERO_THEMES.length
                       ]
                     }
-                    imageSource={PUBLIC_IMAGES[originalIndex % PUBLIC_IMAGES.length]}
+                    imageSource={null}
                     imageTranslate={imageTranslate}
                     contentTranslate={contentTranslate}
                   />
@@ -311,11 +306,19 @@ function SplitCard({
 
       <View style={styles.splitRight}>
         <Animated.View style={{ transform: [{ translateX: imageTranslate }] }}>
-          <Image
-            source={imageSource}
-            style={styles.splitImage}
-            contentFit="contain"
-          />
+          {imageSource ? (
+            <Image
+              source={imageSource}
+              style={styles.splitImage}
+              contentFit="contain"
+            />
+          ) : item.imageUrl ? (
+            <Image
+              source={{ uri: item.imageUrl }}
+              style={styles.splitImage}
+              contentFit="contain"
+            />
+          ) : null}
         </Animated.View>
       </View>
     </LinearGradient>
@@ -379,11 +382,19 @@ function HeroCard({
       <Animated.View
         style={[styles.heroRight, { transform: [{ translateX: imageTranslate }] }]}
       >
-        <Image
-          source={imageSource}
-          style={styles.heroImage}
-          contentFit="contain"
-        />
+        {imageSource ? (
+          <Image
+            source={imageSource}
+            style={styles.heroImage}
+            contentFit="contain"
+          />
+        ) : item.imageUrl ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={styles.heroImage}
+            contentFit="contain"
+          />
+        ) : null}
       </Animated.View>
     </LinearGradient>
   );

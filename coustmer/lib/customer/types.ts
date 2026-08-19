@@ -159,3 +159,148 @@ export type RateTicketPayload = {
   rating: number;
   feedback?: string;
 };
+
+// ─── App config (splash) ──────────────────────────────────────────────────────
+
+export type AppConfig = {
+  minVersion?: string;
+  latestVersion?: string;
+  forceUpdate?: boolean;
+  maintenanceMode?: boolean;
+  maintenanceMessage?: string;
+  cities?: Array<{ id: string; name: string; slug?: string; isActive?: boolean }>;
+  flags?: Record<string, boolean | string | number>;
+  announcement?: { message: string; type?: 'info' | 'warning' | 'success' } | null;
+};
+
+// ─── Collections ─────────────────────────────────────────────────────────────
+
+export type Collection = {
+  id: string;
+  title: string;
+  slug: string;
+  imageUrl?: string;
+  description?: string;
+  restaurantCount?: number;
+  sortOrder?: number;
+};
+
+export type CollectionRestaurantsResult = {
+  collection: Collection;
+  restaurants: RestaurantCard[];
+  meta?: PaginationMeta;
+};
+
+// ─── Customer prefs update ────────────────────────────────────────────────────
+
+export type UpdateCustomerPrefsPayload = {
+  vegOnly?: boolean;
+  preferredCuisines?: string[];
+  displayName?: string;
+  phone?: string;
+};
+
+// ─── Dish favourites ─────────────────────────────────────────────────────────
+
+export type FavouriteDish = {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  price?: number;
+  restaurantId?: string;
+  restaurantName?: string;
+  isVeg?: boolean;
+  rating?: number;
+  [key: string]: unknown;
+};
+
+// ─── FAQ ─────────────────────────────────────────────────────────────────────
+
+export type FaqItem = {
+  id: string;
+  question: string;
+  answer?: string;
+  category?: string;
+  sortOrder?: number;
+};
+
+// ─── Callback request ────────────────────────────────────────────────────────
+
+export type CallbackRequestPayload = {
+  phone?: string;
+  orderId?: string;
+  reason?: string;
+};
+
+// ─── Loyalty ─────────────────────────────────────────────────────────────────
+
+export type LoyaltyStatus = {
+  points: number;
+  tier: string;
+  tierLabel?: string;
+  nextTierPoints?: number;
+  expiringPoints?: number;
+  expiringDate?: string;
+};
+
+export type LoyaltyTransaction = {
+  id: string;
+  type: 'earn' | 'redeem' | 'expire' | string;
+  points: number;
+  description?: string;
+  orderId?: string;
+  createdAt: string;
+};
+
+// ─── Subscriptions ───────────────────────────────────────────────────────────
+
+export type SubscriptionPlan = {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  durationDays?: number;
+  benefits?: string[];
+  badgeColor?: string;
+  isPopular?: boolean;
+};
+
+export type ActiveSubscription = {
+  id: string;
+  planId: string;
+  planName: string;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  cancelAtPeriodEnd?: boolean;
+} | null;
+
+// ─── Scratch cards ───────────────────────────────────────────────────────────
+
+export type ScratchCard = {
+  id: string;
+  status: 'pending' | 'revealed' | 'used' | 'expired';
+  reward?: string;
+  couponCode?: string;
+  discount?: number;
+  expiresAt?: string;
+  orderId?: string;
+};
+
+// ─── App feedback & crash ────────────────────────────────────────────────────
+
+export type CrashReportPayload = {
+  error: string;
+  stack?: string;
+  componentStack?: string;
+  appVersion?: string;
+  platform?: string;
+  deviceModel?: string;
+};
+
+export type AppFeedbackPayload = {
+  rating?: number;
+  message: string;
+  screen?: string;
+  orderId?: string;
+};

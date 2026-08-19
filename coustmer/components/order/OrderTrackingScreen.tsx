@@ -41,9 +41,9 @@ import { WebView } from 'react-native-webview';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
-import { useOrderDeliveryPartner } from '@/lib/delivery/hooks';
+import { useOrderDeliveryPartner, useOrderTracking as useDeliveryTracking } from '@/lib/delivery/hooks';
 import { GOOGLE_MAPS_API_KEY } from '@/lib/google-maps';
-import { useOrder, useOrderTracking, useReorder } from '@/lib/order/hooks';
+import { useOrder, useReorder } from '@/lib/order/hooks';
 import { toE164IndianMobile } from '@/lib/order/phone';
 import { paymentMethodLabel } from '@/lib/order/payment-labels';
 import {
@@ -51,6 +51,11 @@ import {
   isActiveOrderStatus,
   normalizeOrderStatus,
 } from '@/lib/order/types';
+import {
+  useEtaSocket,
+  useOrderStatusSocket,
+  usePartnerLocationSocket,
+} from '@/lib/socket/hooks';
 import { useCartStore } from '@/store/cart-store';
 
 const ORANGE = '#FF6A00';
@@ -311,7 +316,8 @@ export function OrderTrackingScreen() {
     refetchInterval: (query) =>
       isActiveOrderStatus(query.state.data?.status) ? 8_000 : false,
   });
-  const tracking = useOrderTracking(id, {
+  // Prefer delivery-service full tracker (partner coords, timeline, shareToken)
+  const tracking = useDeliveryTracking(id, {
     refetchInterval: (query) => {
       const st = query.state.data?.status ?? order.data?.status;
       return isActiveOrderStatus(st) ? 8_000 : false;
@@ -321,7 +327,20 @@ export function OrderTrackingScreen() {
   const o = order.data;
   const t = tracking.data;
 
-  const combinedStatusEarly = o?.status ?? t?.status;
+  // ── Socket live updates ────────────────────────────────────────────────────
+  // order:status / order:cancelled push real-time status without polling delay
+  const { status: socketStatus } = useOrderStatusSocket(
+    id,
+    () => { void order.refetch(); void tracking.refetch(); },
+    () => { void order.refetch(); }
+  );
+  // partner:location / tracking:location — live GPS overlay
+  const socketLocation = usePartnerLocationSocket(id);
+  // tracking:eta — live ETA chip
+  const socketEta = useEtaSocket(id);
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const combinedStatusEarly = socketStatus ?? o?.status ?? t?.status;
   const trackingActive =
     !combinedStatusEarly || isActiveOrderStatus(combinedStatusEarly);
 
@@ -357,35 +376,39 @@ export function OrderTrackingScreen() {
     return () => clearTimeout(clearTimer);
   }, [newOrder, clearCart]);
 
-  const combinedStatus = o?.status ?? t?.status;
+  const combinedStatus = socketStatus ?? o?.status ?? t?.status;
   // Assume live until status is known (avoids a flash of "completed")
   const active = !combinedStatus || isActiveOrderStatus(combinedStatus);
   const completed = isOrderCompleted(combinedStatus);
   const cancelled = isTerminalCancelled(combinedStatus);
+  // t?.partner from delivery-service full tracker; partner query from /tracking/order/:id/partner
+  const trackerPartner = t?.partner;
   const partnerAssigned = Boolean(
-    partner?.name ||
-      partner?.phone ||
-      t?.deliveryPartnerName ||
-      (o?.raw?.deliveryPartnerName as string | undefined)
+    partner?.name || partner?.phone || trackerPartner?.name
   );
   const partnerName =
     partner?.name ||
-    t?.deliveryPartnerName ||
-    (o?.raw?.deliveryPartnerName as string | undefined) ||
+    trackerPartner?.name ||
     (active ? 'Finding a partner' : undefined);
-  const partnerPhone =
-    partner?.phone ||
-    t?.deliveryPartnerPhone ||
-    (o?.raw?.deliveryPartnerPhone as string | undefined);
+  const partnerPhone = partner?.phone || trackerPartner?.phone;
   const partnerRating =
-    partner && partner.rating > 0 ? partner.rating.toFixed(1) : null;
-  const partnerVehicle = partner
-    ? [partner.vehicleType, partner.vehicleNumber].filter(Boolean).join(' · ')
+    (partner ?? trackerPartner) && ((partner ?? trackerPartner)!.rating ?? 0) > 0
+      ? ((partner ?? trackerPartner)!.rating).toFixed(1)
+      : null;
+  const partnerVehicle = (partner ?? trackerPartner)
+    ? [(partner ?? trackerPartner)!.vehicleType, (partner ?? trackerPartner)!.vehicleNumber]
+        .filter(Boolean)
+        .join(' · ')
     : '';
+  // Prefer socket live GPS, then partner query coords, then tracker coords
   const partnerLat =
-    partner?.currentLocation?.lat ?? t?.deliveryPartnerLat;
+    socketLocation?.lat ??
+    partner?.currentLocation?.lat ??
+    trackerPartner?.currentLocation?.lat;
   const partnerLng =
-    partner?.currentLocation?.lng ?? t?.deliveryPartnerLng;
+    socketLocation?.lng ??
+    partner?.currentLocation?.lng ??
+    trackerPartner?.currentLocation?.lng;
 
   const restLat = t?.restaurantLat ?? 26.2183;
   const restLng = t?.restaurantLng ?? 78.1828;
@@ -587,14 +610,20 @@ export function OrderTrackingScreen() {
       .join(', ') ||
     'Delivery address';
 
+  // Prefer socket ETA (pushed every ~30s) over polled value
   const etaRaw =
+    socketEta?.etaText ||
+    (typeof socketEta?.etaMinutes === 'number' ? `${socketEta.etaMinutes} mins` : null) ||
     t?.etaText ||
     (typeof t?.etaMinutes === 'number'
       ? `${t.etaMinutes} mins`
       : distanceInfo?.time) ||
     '—';
   const etaNumber = String(etaRaw).replace(/\s*mins?/i, '').trim();
-  const showMins = /min/i.test(String(etaRaw)) || typeof t?.etaMinutes === 'number';
+  const showMins =
+    /min/i.test(String(etaRaw)) ||
+    typeof t?.etaMinutes === 'number' ||
+    typeof socketEta?.etaMinutes === 'number';
 
   const goBack = () => {
     if (newOrder === 'true') {

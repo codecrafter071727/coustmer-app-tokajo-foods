@@ -51,6 +51,11 @@ import { syncCartItemQuantity } from '@/lib/order/add-to-cart';
 import { DeliveryPreferences } from '@/components/order/DeliveryPreferences';
 import { CartSuggestionsFromStore } from '@/components/order/CartSuggestions';
 import { useCreateOrder } from '@/lib/order/hooks';
+import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
+import type { DeliveryLocationResult } from '@/components/location/DeliveryLocationPicker';
+import { parseDropPin } from '@/lib/location/drop-pin';
+import { extractCityFromAddress, normalizeCityName } from '@/lib/location/format';
+import { checkoutBlockCopy } from '@/lib/cart/checkout-block';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
   useInitiatePayment,
@@ -234,6 +239,7 @@ export function CartScreen() {
   const serverTotal = useCartStore((s) => s.serverTotal);
 
   const location = useDeliveryLocationStore((s) => s.location);
+  const setDeliveryLocation = useDeliveryLocationStore((s) => s.setLocation);
   const profile = useUserProfile();
   const paymentMethods = usePaymentMethods();
   const wallet = usePaymentWallet();
@@ -267,6 +273,7 @@ export function CartScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherBusy, setVoucherBusy] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
 
   const couponApplied = Boolean(couponCode);
 
@@ -348,34 +355,10 @@ export function CartScreen() {
   }, [couponCode]);
 
   useEffect(() => {
-    if (!location || !isLoggedIn) return;
-    if (!location.formattedAddress?.trim()) return;
-
-    const parsed = parseDeliveryAddress({
-      formattedAddress: location.formattedAddress,
-      label: location.label,
-      city: location.city,
-      lat: location.lat,
-      lng: location.lng,
-    });
-
-    const phoneForCart = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : '';
+    if (!isLoggedIn || !location?.savedAddressId) return;
 
     void updateAddress
-      .mutateAsync({
-        label: parsed.label || location.label,
-        formattedAddress: parsed.formattedAddress,
-        street: parsed.street,
-        area: parsed.area,
-        city: parsed.city,
-        state: parsed.state,
-        pincode: parsed.pincode,
-        lat: parsed.lat ?? location.lat,
-        lng: parsed.lng ?? location.lng,
-        contactName: displayName !== 'Guest' ? displayName : undefined,
-        contactPhone: phoneForCart || undefined,
-        addressId: location.savedAddressId,
-      })
+      .mutateAsync({ addressId: location.savedAddressId })
       .catch((e) => {
         if (__DEV__) {
           console.warn(
@@ -385,15 +368,7 @@ export function CartScreen() {
         }
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    location?.formattedAddress,
-    location?.savedAddressId,
-    location?.lat,
-    location?.lng,
-    isLoggedIn,
-    displayName,
-    phoneDigits,
-  ]);
+  }, [location?.savedAddressId, isLoggedIn]);
 
   const isFocused = useIsFocused();
 
@@ -842,16 +817,51 @@ export function CartScreen() {
         }
       }
 
-      const result = await validateCart.mutateAsync();
+      const isDelivery = deliveryType !== 'takeaway';
+      const pin = parseDropPin(location?.lat, location?.lng);
+      if (isDelivery && !pin) {
+        Alert.alert(
+          'Drop a pin for delivery',
+          'We need your exact map pin to check if we deliver here and to calculate the fee.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Set pin', onPress: () => setLocationOpen(true) },
+          ]
+        );
+        return;
+      }
+
+      const result = await validateCart.mutateAsync(pin ?? {});
       if (result.cart) {
         applyServerCartToStore(result.cart);
       }
       if (!result.valid) {
+        const code = result.code || result.issues[0]?.code;
+        const needsPin =
+          code === 'DROP_PIN_REQUIRED' ||
+          (result.message ?? '').toLowerCase().includes('drop pin');
         const msg =
           result.issues.map((i) => i.message).join('\n') ||
           result.message ||
           'Cart validation failed';
-        Alert.alert('Cart needs attention', msg);
+        if (needsPin) {
+          Alert.alert(
+            'Drop a pin for delivery',
+            'Your cart has no delivery pin yet. Open the map and drop your pin, then try again.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Set pin', onPress: () => setLocationOpen(true) },
+            ]
+          );
+        } else {
+          const copy = checkoutBlockCopy(code, msg);
+          Alert.alert(copy.title, copy.message, [
+            { text: 'OK' },
+            ...(code === 'OUT_OF_ZONE'
+              ? [{ text: 'Change pin', onPress: () => setLocationOpen(true) }]
+              : []),
+          ]);
+        }
         void remoteCart.refetch();
         return;
       }
@@ -1003,9 +1013,7 @@ export function CartScreen() {
           {/* Address */}
           <Pressable
             style={styles.addressCard}
-            onPress={() =>
-              router.push('/profile/addresses' as import('expo-router').Href)
-            }
+            onPress={() => setLocationOpen(true)}
           >
             <View style={styles.addressIcon}>
               <MapPin color={ORANGE} size={16} strokeWidth={2.4} />
@@ -1346,6 +1354,27 @@ export function CartScreen() {
           onPaymentComplete={handlePaymentComplete}
           orderAmount={currentOrder?.total ?? estimatedTotal}
           orderNumber={currentOrder?.orderNumber}
+        />
+
+        <DeliveryLocationPicker
+          visible={locationOpen}
+          onClose={() => setLocationOpen(false)}
+          onConfirm={(result: DeliveryLocationResult) => {
+            setDeliveryLocation({
+              label: result.label,
+              formattedAddress: result.formattedAddress,
+              city: normalizeCityName(
+                extractCityFromAddress(result.formattedAddress)
+              ),
+              lat: result.lat,
+              lng: result.lng,
+              source: result.source,
+              savedAddressId: result.savedAddressId,
+              updatedAt: Date.now(),
+            });
+            setLocationOpen(false);
+          }}
+          initial={location ? { lat: location.lat, lng: location.lng } : null}
         />
       </View>
     </KeyboardAvoidingView>

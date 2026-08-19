@@ -64,6 +64,12 @@ export type CartValidationResult = {
   issues: CartValidationIssue[];
   cart?: Cart;
   message?: string;
+  code?: string;
+};
+
+export type CartValidatePayload = {
+  dropLat?: number;
+  dropLng?: number;
 };
 
 export type Cart = {

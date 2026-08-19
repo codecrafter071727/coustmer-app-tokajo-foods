@@ -65,27 +65,16 @@ function toCard(r: FallbackRestaurant): RestaurantCard {
   };
 }
 
-export function CustomerRecommendations({ fallbackRestaurants = [] }: Props) {
+export function CustomerRecommendations({ fallbackRestaurants: _fallback = [] }: Props) {
   const router = useRouter();
   const recommended = useRecommended();
   const { isFavorite, toggleFavorite } = useFavoriteToggle();
 
-  const fallbackKey = useMemo(
-    () => fallbackRestaurants.map((r) => String(r.id)).join('|'),
-    [fallbackRestaurants]
-  );
-
   const items = useMemo(() => {
-    const fromApi = (recommended.data ?? []).filter((r) => r?.id);
-    if (fromApi.length > 0) return fromApi;
+    return (recommended.data ?? []).filter((r) => r?.id);
+  }, [recommended.data]);
 
-    const pool = fallbackRestaurants.filter((r) => r?.id);
-    if (!pool.length) return [];
-    return shuffle(pool).slice(0, FALLBACK_LIMIT).map(toCard);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommended.data, fallbackKey]);
-
-  const isFromApi = (recommended.data?.length ?? 0) > 0;
+  const isFromApi = items.length > 0;
 
   if (recommended.isLoading && !items.length) {
     return (

@@ -10,6 +10,7 @@ import type {
   CartCoupon,
   CartHealth,
   CartLineItem,
+  CartValidatePayload,
   CartValidationIssue,
   CartValidationResult,
   PaginationMeta,
@@ -412,11 +413,23 @@ function mapValidation(data: unknown): CartValidationResult {
       ? validExplicit
       : issues.filter((i) => i.severity !== 'warning').length === 0;
 
+  const code = typeof raw.code === 'string' ? raw.code : undefined;
+  const message = (raw.message as string) || undefined;
+
+  if (issues.length === 0 && code && validExplicit !== true) {
+    issues.push({
+      code,
+      message: message || code,
+      severity: 'error',
+    });
+  }
+
   return {
     valid,
     issues,
     cart: raw.cart || raw.items ? mapCart(raw.cart ?? raw) : undefined,
-    message: (raw.message as string) || undefined,
+    message,
+    code,
   };
 }
 
@@ -561,14 +574,26 @@ export const cartApi = {
     return mapCart(res.data ?? res);
   },
 
-  /** POST /cart/validate — OptAuth; prices / availability / stock. */
-  validate: async (): Promise<CartValidationResult> => {
+  /** POST /cart/validate — OptAuth; delivery carts must send dropLat + dropLng. */
+  validate: async (
+    payload: CartValidatePayload = {}
+  ): Promise<CartValidationResult> => {
     const sessionId = await getCartSessionId();
+    const requestBody: CartValidatePayload = {};
+    if (
+      payload.dropLat != null &&
+      payload.dropLng != null &&
+      Number.isFinite(payload.dropLat) &&
+      Number.isFinite(payload.dropLng)
+    ) {
+      requestBody.dropLat = payload.dropLat;
+      requestBody.dropLng = payload.dropLng;
+    }
     try {
       const response = await api.request<Envelope<unknown> | unknown>({
         url: `${CART_BASE}/validate`,
         method: 'POST',
-        data: {},
+        data: requestBody,
         withCredentials: true,
         headers: {
           Accept: 'application/json',
@@ -594,11 +619,19 @@ export const cartApi = {
 
       // HTTP error without a structured validation payload
       if (response.status >= 400 && mapped.valid && mapped.issues.length === 0) {
+        const envelope = asRecord(payload);
         const msg =
-          (asRecord(payload).message as string) ||
-          (asRecord(payload).error as string) ||
+          (envelope.message as string) ||
+          (envelope.error as string) ||
           `Cart validation failed (${response.status})`;
-        return { valid: false, issues: [{ message: msg }], message: msg };
+        const code =
+          typeof envelope.code === 'string' ? envelope.code : mapped.code;
+        return {
+          valid: false,
+          issues: [{ message: msg, code }],
+          message: msg,
+          code,
+        };
       }
 
       // Non-2xx with issues → invalid
@@ -780,38 +813,15 @@ export const cartApi = {
     throw lastError ?? new Error('Failed to update tip');
   },
 
-  /** PUT /cart/delivery-address — Auth; set address on the server cart. */
+  /** PUT /cart/delivery-address — Auth; cart-service only accepts saved addressId. */
   updateDeliveryAddress: async (
     payload: UpdateDeliveryAddressPayload
   ): Promise<Cart> => {
-    const address = {
-      label: payload.label,
-      formattedAddress: payload.formattedAddress,
-      street: payload.street,
-      area: payload.area,
-      city: payload.city,
-      state: payload.state,
-      pincode: payload.pincode,
-      contactName: payload.contactName,
-      contactPhone: payload.contactPhone,
-      lat: payload.lat,
-      lng: payload.lng,
-      addressId: payload.addressId,
-    };
-
-    return mutateCart(`${CART_BASE}/delivery-address`, 'PUT', [
-      { ...address },
-      { deliveryAddress: address },
-      { address },
-      { address, deliveryAddress: address },
-      // Some backends want saved-address id at the root
-      ...(address.addressId
-        ? [
-            { addressId: address.addressId, deliveryAddress: address },
-            { addressId: address.addressId },
-          ]
-        : []),
-    ]);
+    const addressId = String(payload.addressId ?? '').trim();
+    if (!addressId) {
+      throw new Error('Pick a saved address to attach to this cart');
+    }
+    return mutateCart(`${CART_BASE}/delivery-address`, 'PUT', [{ addressId }]);
   },
 
   /** PUT /cart/delivery-type — Auth; accepts delivery / takeaway (and pickup aliases). */

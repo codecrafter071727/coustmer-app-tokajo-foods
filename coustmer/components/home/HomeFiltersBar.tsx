@@ -32,10 +32,8 @@ import { findCategoryBySlug } from '@/lib/restaurant/categories';
 import { HOME_CATEGORY_PREVIEW_COUNT } from '@/lib/restaurant/home-categories';
 import type { CuisineChip as LiveCuisineChip, Restaurant } from '@/lib/restaurant/types';
 
-const POPULAR_IMAGE =
-  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=120&h=120&fit=crop&q=80';
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=120&h=120&fit=crop&q=80';
+const POPULAR_IMAGE = '';
+const FALLBACK_IMAGE = '';
 
 type CuisineChip = {
   id: HomeCuisineId;

@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 import { api } from '@/lib/api';
-import { getDummyHomeDiscovery } from '@/lib/home/dummy';
 import type {
   HomeCategory,
   HomeDiscovery,
@@ -178,10 +177,7 @@ async function fetchDiscoveryFromPath(
   return mapDiscoveryPayload(data);
 }
 
-/**
- * Loads home rails. When your discovery API is live, real data is used.
- * Until then, polished dummy content keeps the UI production-shaped.
- */
+/** Loads home discovery rails from the backend. Returns empty arrays if no endpoint responds. */
 export async function getHomeDiscovery(city?: string): Promise<HomeDiscovery> {
   for (const path of DISCOVERY_PATHS) {
     try {

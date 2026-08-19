@@ -56,6 +56,33 @@ export function useOrders(params?: { page?: number; limit?: number }) {
   });
 }
 
+/** Recent delivered orders for "Order Again" rail */
+export function useRecentOrders() {
+  return useQuery({
+    queryKey: [...orderKeys.all, 'recent'] as const,
+    queryFn: async () => {
+      const result = await orderApi.getOrders({ page: 1, limit: 10 });
+      return result.orders
+        .filter((o) => o.status === 'delivered')
+        .slice(0, 5)
+        .map((o) => ({
+          id: o.id,
+          restaurantId: o.restaurantId || '',
+          restaurantName: o.restaurantName || 'Restaurant',
+          restaurantImage: (o.raw?.restaurantImage as string) || (o.raw?.restaurantLogo as string) || undefined,
+          itemsSummary:
+            o.items
+              .slice(0, 2)
+              .map((i) => i.name)
+              .join(', ') + (o.items.length > 2 ? ` +${o.items.length - 2}` : ''),
+          deliveryTime: undefined,
+          rating: typeof o.raw?.rating === 'number' ? String(o.raw.rating) : undefined,
+        }));
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** GET /orders/active */
 export function useActiveOrders(options?: { refetchInterval?: number }) {
   return useQuery({

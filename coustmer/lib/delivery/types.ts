@@ -1,16 +1,7 @@
 /**
- * Delivery Service API types.
+ * Delivery Service API types — customer-facing.
  * Gateway prefix: /api/v1/delivery-service
- * Routes: /deliveries, /delivery-partners, /tracking
  */
-
-export type DeliveryStatus = 
-  | 'assigned'
-  | 'picked_up'
-  | 'on_the_way'
-  | 'delivered'
-  | 'cancelled'
-  | 'failed';
 
 export type DeliveryPartner = {
   id: string;
@@ -32,102 +23,125 @@ export type DeliveryPartner = {
   };
 };
 
-export type DeliveryLocation = {
-  address: string;
+/** Full tracker DTO from GET /tracking/order/:orderId */
+export type OrderTracker = {
+  orderId: string;
+  deliveryId?: string;
+  status?: string;
+  orderStatus?: string;
+  etaMinutes?: number;
+  etaText?: string;
+  partner?: DeliveryPartner;
+  restaurantLat?: number;
+  restaurantLng?: number;
+  customerLat?: number;
+  customerLng?: number;
+  routePolyline?: string;
+  timeline?: TrackingTimelineEvent[];
+  shareToken?: string;
+  dropOtp?: string;
+  raw: Record<string, unknown>;
+};
+
+export type TrackingTimelineEvent = {
+  status: string;
+  label?: string;
+  timestamp?: string;
+};
+
+export type LiveLocation = {
   lat: number;
   lng: number;
+  heading?: number;
+  accuracy?: number;
+  speed?: number;
+  updatedAt?: string;
+};
+
+export type TrackingEta = {
+  etaMinutes?: number;
+  etaText?: string;
+  distanceKm?: number;
+};
+
+export type TrackingRoute = {
+  polyline?: string;
+  coordinates?: [number, number][];
+  distanceMeters?: number;
+  durationSeconds?: number;
+};
+
+export type ChatMessage = {
+  id: string;
+  orderId: string;
+  from: 'customer' | 'partner';
+  text: string;
+  sentAt: string;
+};
+
+export type ShareLink = {
+  shareToken: string;
+  url: string;
+  expiresAt?: string;
+};
+
+export type DropOtp = {
+  otp: string;
+  expiresAt?: string;
+};
+
+export type City = {
+  id: string;
+  name: string;
+  slug?: string;
+  lat?: number;
+  lng?: number;
+  polygon?: [number, number][];
+  isActive?: boolean;
+};
+
+export type Zone = {
+  id: string;
+  name: string;
+  cityId?: string;
+  isActive?: boolean;
+};
+
+export type SurgeStatus = {
+  zoneId: string;
+  isSurge: boolean;
+  multiplier?: number;
+  label?: string;
+};
+
+export type RatePartnerPayload = {
+  rating: number; // 1–5
+  comment?: string;
+  tags?: string[];
+};
+
+export type ContactlessPayload = {
+  enabled: boolean;
   instructions?: string;
-  contactName?: string;
-  contactPhone?: string;
 };
 
-export type DeliveryTracking = {
-  id: string;
-  orderId: string;
-  partnerId?: string;
-  partner?: DeliveryPartner;
-  status: DeliveryStatus;
-  pickupLocation: DeliveryLocation;
-  dropoffLocation: DeliveryLocation;
-  estimatedTime?: number; // minutes
-  actualPickupTime?: string;
-  actualDeliveryTime?: string;
-  route?: {
-    coordinates: [number, number][]; // [lng, lat] pairs
-    distance: number; // in meters
-    duration: number; // in seconds
-  };
-  timeline: DeliveryTimelineEvent[];
-  otp?: string;
-  proofOfDelivery?: {
-    type: 'photo' | 'signature' | 'otp';
-    url?: string;
-    signature?: string;
-    verifiedAt: string;
-  };
-  createdAt: string;
-  updatedAt: string;
+export type AddressChangePayload = {
+  addressId?: string;
+  lat: number;
+  lng: number;
+  formattedAddress?: string;
+  instructions?: string;
 };
 
-export type DeliveryTimelineEvent = {
-  id: string;
-  status: DeliveryStatus;
-  message: string;
-  timestamp: string;
-  location?: {
-    lat: number;
-    lng: number;
-    address?: string;
-  };
-  imageUrl?: string;
+export type DeliveryInstructionsPayload = {
+  instructions: string;
 };
 
-export type DeliveryEstimate = {
-  estimatedTime: number; // minutes
-  distance: number; // km
-  fee: number;
-  currency: string;
-  breakdown?: {
-    baseFee: number;
-    distanceFee: number;
-    timeFee: number;
-    surcharge?: number;
-    discount?: number;
-  };
+export type TrackingTipPayload = {
+  tip: number;
+  idempotencyKey?: string;
 };
 
-export type CreateDeliveryPayload = {
-  orderId: string;
-  pickupLocation: Omit<DeliveryLocation, 'contactName' | 'contactPhone'> & {
-    restaurantId: string;
-  };
-  dropoffLocation: DeliveryLocation;
-  preferredPartnerType?: 'bike' | 'scooter' | 'bicycle' | 'car';
-  priority?: 'normal' | 'high' | 'urgent';
-  scheduledFor?: string;
-  specialInstructions?: string;
-};
-
-export type UpdateDeliveryStatusPayload = {
-  status: DeliveryStatus;
-  location?: {
-    lat: number;
-    lng: number;
-  };
-  notes?: string;
-  imageUrl?: string;
-  otp?: string;
-};
-
-export type DeliveryListResult = {
-  deliveries: DeliveryTracking[];
-  meta?: PaginationMeta;
-};
-
-export type PaginationMeta = {
-  total?: number;
-  page?: number;
-  limit?: number;
-  totalPages?: number;
-  hasNext?: boolean;
+export type SendChatPayload = {
+  text: string;
 };

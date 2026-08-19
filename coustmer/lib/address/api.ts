@@ -1,481 +1,218 @@
-import axios from 'axios';
-
-import { api, refreshCsrfToken } from '@/lib/api';
+import { api } from '@/lib/api';
 import type {
-  AddressSuggestion,
+  AutocompleteItem,
   CreateAddressPayload,
   GeocodeResult,
+  ReverseGeocodeResult,
   SavedAddress,
+  ServiceabilityResult,
   UpdateAddressPayload,
-} from '@/lib/address/types';
-import { toAddressLabelEnum } from '@/lib/address/types';
+} from './types';
+import { toAddressLabelEnum } from './types';
 
-const ADDRESS_SERVICE = '/api/v1/address-service';
-const ADDRESS_BASE = `${ADDRESS_SERVICE}/addresses`;
+const BASE = '/api/v1/address-service';
 
-type Envelope<T> = {
-  success?: boolean;
-  message?: string;
-  data?: T;
-};
+type Envelope<T> = { success?: boolean; message?: string; data?: T };
 
-function extractError(error: unknown, fallback: string) {
-  if (axios.isAxiosError(error)) {
-    if (!error.response) {
-      return 'Network request failed. Check your internet and try again.';
-    }
-    const data = error.response.data as
-      | { message?: string; error?: string }
-      | undefined;
-    return (
-      data?.message ||
-      data?.error ||
-      `Request failed (${error.response.status})`
-    );
-  }
-  if (error instanceof Error) return error.message;
-  return fallback;
-}
-
-async function request<T>(
-  path: string,
-  options: {
-    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-    body?: unknown;
-    params?: Record<string, string | number | undefined>;
-  } = {}
-): Promise<Envelope<T>> {
-  const { method = 'GET', body, params } = options;
-  const isMutating = method !== 'GET';
-
-  try {
-    if (isMutating) {
-      await refreshCsrfToken();
-    }
-
-    const response = await api.request<Envelope<T> | T>({
-      url: path,
-      method,
-      data: isMutating ? (body ?? {}) : body,
-      params,
-      withCredentials: true,
-      headers: isMutating
-        ? {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        }
-        : { Accept: 'application/json' },
-    });
-
-    const payload = response.data as Envelope<T> | T;
-    if (
-      payload &&
-      typeof payload === 'object' &&
-      ('data' in (payload as object) || 'success' in (payload as object))
-    ) {
-      return payload as Envelope<T>;
-    }
-
-    return { success: true, data: payload as T };
-  } catch (error) {
-    throw new Error(extractError(error, 'Address request failed'));
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function extractList(data: unknown): Record<string, unknown>[] {
-  if (Array.isArray(data)) return data as Record<string, unknown>[];
-  if (!data || typeof data !== 'object') return [];
-  const record = data as Record<string, unknown>;
-  const nested =
-    record.addresses ??
-    record.items ??
-    record.results ??
-    record.docs ??
-    record.list ??
-    record.data ??
-    [];
-  if (Array.isArray(nested)) return nested as Record<string, unknown>[];
-  if (nested && typeof nested === 'object') return extractList(nested);
-  return [];
-}
-
-function readCoords(raw: Record<string, unknown>): { lat: number; lng: number } {
-  const location = asRecord(raw.location ?? raw.coordinates ?? raw.geo);
-  const nestedLoc = asRecord(location.location);
-
-  let lat = Number(
-    raw.lat ??
-    raw.latitude ??
-    location.lat ??
-    location.latitude ??
-    nestedLoc.lat
-  );
-  let lng = Number(
-    raw.lng ??
-    raw.longitude ??
-    location.lng ??
-    location.longitude ??
-    nestedLoc.lng
-  );
-
-  const coords =
-    (Array.isArray(raw.coordinates) ? raw.coordinates : null) ||
-    (Array.isArray(location.coordinates) ? location.coordinates : null);
-
-  if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && coords) {
-    // GeoJSON [lng, lat]
-    lng = Number(coords[0]);
-    lat = Number(coords[1]);
-  }
-
-  return {
-    lat: Number.isFinite(lat) ? lat : 0,
-    lng: Number.isFinite(lng) ? lng : 0,
-  };
-}
-
-export function mapSavedAddress(raw: Record<string, unknown>): SavedAddress {
-  const { lat, lng } = readCoords(raw);
-  const addressObj = asRecord(raw.address);
-
+function mapAddress(raw: Record<string, unknown>): SavedAddress {
+  const loc = raw.location as { coordinates?: number[] } | undefined;
   return {
     id: String(raw._id ?? raw.id ?? ''),
-    label: toAddressLabelEnum(
-      String(raw.label ?? raw.tag ?? raw.type ?? addressObj.label ?? 'home')
-    ),
-    formattedAddress: String(
-      raw.formattedAddress ??
-      raw.formatted_address ??
-      raw.fullAddress ??
-      raw.addressLine ??
-      (typeof raw.address === 'string' ? raw.address : '') ??
-      addressObj.formattedAddress ??
-      ''
-    ),
-    street:
-      (raw.street as string) ||
-      (raw.addressLine1 as string) ||
-      (addressObj.street as string) ||
+    label: toAddressLabelEnum(raw.label as string),
+    customLabel: (raw.customLabel as string) || undefined,
+    flat: (raw.flat as string) || (raw.flatNo as string) || undefined,
+    floor: (raw.floor as string) || undefined,
+    landmark: (raw.landmark as string) || undefined,
+    street: (raw.street as string) || undefined,
+    area: (raw.area as string) || (raw.locality as string) || undefined,
+    city: (raw.city as string) || undefined,
+    state: (raw.state as string) || undefined,
+    pincode: String(raw.pincode ?? raw.pinCode ?? raw.zip ?? '') || undefined,
+    country: (raw.country as string) || undefined,
+    formattedAddress:
+      (raw.formattedAddress as string) ||
+      (raw.fullAddress as string) ||
+      (raw.address as string) ||
       undefined,
-    area:
-      (raw.area as string) ||
-      (raw.locality as string) ||
-      (addressObj.area as string) ||
-      undefined,
-    city:
-      (raw.city as string) ||
-      (addressObj.city as string) ||
-      undefined,
-    state:
-      (raw.state as string) ||
-      (addressObj.state as string) ||
-      undefined,
-    pincode: String(
-      raw.pincode ??
-      raw.postalCode ??
-      raw.zip ??
-      addressObj.pincode ??
-      ''
-    ).trim() || undefined,
-    landmark:
-      (raw.landmark as string) ||
-      (raw.nearby as string) ||
-      undefined,
-    contactName:
-      (raw.contactName as string) ||
-      (raw.name as string) ||
-      (raw.receiverName as string) ||
-      undefined,
-    contactPhone:
-      (raw.contactPhone as string) ||
-      (raw.phone as string) ||
-      (raw.mobile as string) ||
-      undefined,
-    lat,
-    lng,
-    isDefault: Boolean(
-      raw.isDefault ?? raw.default ?? raw.is_default ?? false
-    ),
+    lat: typeof raw.lat === 'number' ? raw.lat : (loc?.coordinates?.[1] ?? 0),
+    lng: typeof raw.lng === 'number' ? raw.lng : (loc?.coordinates?.[0] ?? 0),
+    isDefault: raw.isDefault === true,
+    contactName: (raw.contactName as string) || undefined,
+    contactPhone: (raw.contactPhone as string) || undefined,
     createdAt: (raw.createdAt as string) || undefined,
     updatedAt: (raw.updatedAt as string) || undefined,
   };
 }
 
-function mapSuggestion(item: Record<string, unknown>): AddressSuggestion {
-  const structured = item.structured_formatting as
-    | Record<string, unknown>
-    | undefined;
-  const mainText = String(
-    item.description ??
-    item.label ??
-    item.text ??
-    item.formattedAddress ??
-    item.formatted_address ??
-    item.mainText ??
-    item.main_text ??
-    structured?.main_text ??
-    ''
-  );
-  const secondary = String(
-    item.secondaryText ??
-    item.secondary_text ??
-    structured?.secondary_text ??
-    ''
-  );
-  const description =
-    mainText && secondary && !mainText.includes(secondary)
-      ? `${mainText}, ${secondary}`
-      : mainText || secondary;
-
-  const placeId =
-    (item.placeId as string) ||
-    (item.place_id as string) ||
-    (item.id as string) ||
-    undefined;
-
-  return { description, placeId, ...item };
-}
-
-function normalizeSuggestions(payload: unknown): AddressSuggestion[] {
-  if (Array.isArray(payload)) {
-    return payload.map((item) => mapSuggestion(item as Record<string, unknown>));
-  }
-  if (!payload || typeof payload !== 'object') return [];
-
-  const record = payload as Record<string, unknown>;
-  const list =
-    record.suggestions ??
-    record.predictions ??
-    record.results ??
-    record.items ??
-    record.addresses ??
-    [];
-
-  if (!Array.isArray(list)) return [];
-  return list.map((item) => mapSuggestion(item as Record<string, unknown>));
-}
-
-function toApiBody(payload: CreateAddressPayload | UpdateAddressPayload) {
-  const label =
-    payload.label != null ? toAddressLabelEnum(payload.label) : undefined;
-
-  return {
-    ...payload,
-    label,
-    tag: label,
-    type: label,
-    formatted_address: payload.formattedAddress,
-    fullAddress: payload.formattedAddress,
-    addressLine1: payload.street,
-    locality: payload.area,
-    postalCode: payload.pincode,
-    zip: payload.pincode,
-    phone: payload.contactPhone,
-    mobile: payload.contactPhone,
-    name: payload.contactName,
-    receiverName: payload.contactName,
-    latitude: payload.lat,
-    longitude: payload.lng,
-    location:
-      payload.lat != null && payload.lng != null
-        ? {
-          type: 'Point',
-          coordinates: [payload.lng, payload.lat],
-          lat: payload.lat,
-          lng: payload.lng,
-        }
-        : undefined,
-    isDefault: payload.setAsDefault,
-    setAsDefault: payload.setAsDefault,
-  };
-}
-
 export const addressApi = {
-  /** GET /health */
-  health: async (): Promise<{ ok: boolean; service?: string }> => {
-    try {
-      const res = await request<{ service?: string } | undefined>(
-        `${ADDRESS_SERVICE}/health`
-      );
-      return {
-        ok: res.success !== false,
-        service:
-          (res.data as { service?: string } | undefined)?.service ||
-          (asRecord(res.data).service as string | undefined),
-      };
-    } catch {
-      return { ok: false };
-    }
-  },
-
-  /** GET /addresses/autocomplete */
-  autocomplete: async (query: string): Promise<AddressSuggestion[]> => {
-    const trimmed = query.trim();
-    if (!trimmed) return [];
-
-    try {
-      await refreshCsrfToken();
-      const res = await api.get<Envelope<unknown>>(`${ADDRESS_BASE}/autocomplete`, {
-        params: { query: trimmed, input: trimmed, q: trimmed },
-        withCredentials: true,
-      });
-      const payload = res.data?.data ?? res.data;
-      return normalizeSuggestions(payload).filter((s) => s.description.trim());
-    } catch (error) {
-      throw new Error(extractError(error, 'Failed to load address suggestions'));
-    }
-  },
-
   /** POST /addresses/geocode */
-  geocode: async (input: {
-    placeId?: string;
-    address?: string;
-  }): Promise<GeocodeResult> => {
-    try {
-      await refreshCsrfToken();
-      const res = await api.post<Envelope<Record<string, unknown>>>(
-        `${ADDRESS_BASE}/geocode`,
-        {
-          placeId: input.placeId,
-          place_id: input.placeId,
-          address: input.address,
-          query: input.address,
-        },
-        { withCredentials: true }
-      );
-      const data = (res.data?.data ?? res.data) as Record<string, unknown>;
-      const { lat, lng } = readCoords(data);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (!lat && !lng)) {
-        throw new Error('Could not detect location for this address');
-      }
-
-      return {
-        lat,
-        lng,
-        formattedAddress: String(
-          data.formattedAddress ?? data.formatted_address ?? ''
-        ),
-      };
-    } catch (error) {
-      throw new Error(extractError(error, 'Failed to detect location'));
-    }
+  geocode: async (query: string): Promise<GeocodeResult[]> => {
+    const res = await api.post<Envelope<unknown>>(`${BASE}/addresses/geocode`, { query });
+    const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+    return rows.map((r: Record<string, unknown>) => ({
+      lat: Number(r.lat ?? (r.location as { coordinates?: number[] })?.coordinates?.[1] ?? 0),
+      lng: Number(r.lng ?? (r.location as { coordinates?: number[] })?.coordinates?.[0] ?? 0),
+      formattedAddress: (r.formattedAddress as string) || (r.address as string) || undefined,
+      street: (r.street as string) || undefined,
+      area: (r.area as string) || undefined,
+      city: (r.city as string) || undefined,
+      state: (r.state as string) || undefined,
+      pincode: String(r.pincode ?? '') || undefined,
+      country: (r.country as string) || undefined,
+    }));
   },
 
   /** POST /addresses/reverse-geocode */
-  reverseGeocode: async (input: {
-    lat: number;
-    lng: number;
-  }): Promise<string | null> => {
-    try {
-      await refreshCsrfToken();
-      const res = await api.post<Envelope<Record<string, unknown>>>(
-        `${ADDRESS_BASE}/reverse-geocode`,
-        {
-          lat: input.lat,
-          lng: input.lng,
-          latitude: input.lat,
-          longitude: input.lng,
-          coordinates: [input.lng, input.lat],
-        },
-        { withCredentials: true }
-      );
-      const data = (res.data?.data ?? res.data) as Record<string, unknown>;
-      const formatted =
-        (data.formattedAddress as string) ||
-        (data.formatted_address as string) ||
-        (data.address as string) ||
-        (data.displayName as string) ||
-        (data.display_name as string);
-      return formatted ? String(formatted) : null;
-    } catch {
-      return null;
-    }
+  reverseGeocode: async (lat: number, lng: number): Promise<ReverseGeocodeResult> => {
+    const res = await api.post<Envelope<Record<string, unknown>>>(`${BASE}/addresses/reverse-geocode`, { lat, lng });
+    const r = res.data?.data ?? {};
+    return {
+      lat,
+      lng,
+      formattedAddress: (r.formattedAddress as string) || (r.address as string) || undefined,
+      street: (r.street as string) || undefined,
+      area: (r.area as string) || (r.locality as string) || undefined,
+      city: (r.city as string) || undefined,
+      state: (r.state as string) || undefined,
+      pincode: String(r.pincode ?? '') || undefined,
+      country: (r.country as string) || undefined,
+    };
+  },
+
+  /** GET /addresses/autocomplete?q= */
+  autocomplete: async (query: string): Promise<AutocompleteItem[]> => {
+    const res = await api.get<Envelope<unknown>>(`${BASE}/addresses/autocomplete`, {
+      params: { q: query },
+    });
+    const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+    return rows.map((r: Record<string, unknown>) => ({
+      placeId: String(r.placeId ?? r.place_id ?? r.id ?? ''),
+      description: String(r.description ?? r.formattedAddress ?? ''),
+      mainText: (r.mainText ?? r.main_text) as string | undefined,
+      secondaryText: (r.secondaryText ?? r.secondary_text) as string | undefined,
+    }));
+  },
+
+  /** GET /addresses/serviceability?lat=&lng= */
+  checkServiceability: async (lat: number, lng: number): Promise<ServiceabilityResult> => {
+    const res = await api.get<Envelope<Record<string, unknown>>>(`${BASE}/addresses/serviceability`, {
+      params: { lat, lng },
+    });
+    const d = res.data?.data ?? {};
+    return {
+      serviceable: d.serviceable === true || d.isServiceable === true,
+      city: (d.city as string) || undefined,
+      zone: (d.zone as string) || (d.zoneName as string) || undefined,
+      message: (d.message as string) || undefined,
+    };
   },
 
   /** GET /addresses */
-  list: async (): Promise<SavedAddress[]> => {
-    const res = await request<unknown>(ADDRESS_BASE);
-    return extractList(res.data)
-      .map(mapSavedAddress)
-      .filter((a) => a.id)
-      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
-  },
-
-  /** GET /addresses/:addressId */
-  getById: async (addressId: string): Promise<SavedAddress> => {
-    const res = await request<unknown>(`${ADDRESS_BASE}/${addressId}`);
-    const raw = Array.isArray(res.data)
-      ? (res.data[0] as Record<string, unknown>)
-      : asRecord(res.data);
-    const mapped = mapSavedAddress(raw);
-    if (!mapped.id) throw new Error('Address not found');
-    return mapped;
+  listAddresses: async (): Promise<SavedAddress[]> => {
+    const res = await api.get<Envelope<unknown>>(`${BASE}/addresses`);
+    const rows = Array.isArray(res.data?.data)
+      ? res.data.data
+      : Array.isArray((res.data?.data as Record<string, unknown>)?.addresses)
+        ? (res.data.data as Record<string, unknown>).addresses
+        : [];
+    return (rows as Record<string, unknown>[]).map(mapAddress);
   },
 
   /** POST /addresses */
-  create: async (payload: CreateAddressPayload): Promise<SavedAddress> => {
-    const res = await request<unknown>(ADDRESS_BASE, {
-      method: 'POST',
-      body: toApiBody(payload),
-    });
-    const mapped = mapSavedAddress(asRecord(res.data));
-    if (!mapped.id) {
-      // Some APIs return { address: {...} }
-      const nested = mapSavedAddress(asRecord(asRecord(res.data).address));
-      if (nested.id) return nested;
-      throw new Error(res.message || 'Failed to save address');
-    }
-    return mapped;
-  },
-
-  /** PUT /addresses/:addressId */
-  update: async (
-    addressId: string,
-    payload: UpdateAddressPayload
-  ): Promise<SavedAddress> => {
-    const res = await request<unknown>(`${ADDRESS_BASE}/${addressId}`, {
-      method: 'PUT',
-      body: toApiBody(payload),
-    });
-    const mapped = mapSavedAddress(asRecord(res.data));
-    if (!mapped.id) {
-      const nested = mapSavedAddress(asRecord(asRecord(res.data).address));
-      if (nested.id) return nested;
-      // Fall back to refetch-friendly stub
-      return { ...mapSavedAddress({ ...payload, _id: addressId }), id: addressId };
-    }
-    return mapped;
-  },
-
-  /** DELETE /addresses/:addressId */
-  remove: async (addressId: string): Promise<void> => {
-    await request(`${ADDRESS_BASE}/${addressId}`, { method: 'DELETE' });
-  },
-
-  /** PUT /addresses/:addressId/default */
-  setDefault: async (addressId: string): Promise<SavedAddress> => {
-    const res = await request<unknown>(`${ADDRESS_BASE}/${addressId}/default`, {
-      method: 'PUT',
-      body: {},
-    });
-    const mapped = mapSavedAddress(asRecord(res.data));
-    if (mapped.id) return mapped;
-    return {
-      id: addressId,
-      label: 'home',
-      formattedAddress: '',
-      lat: 0,
-      lng: 0,
-      isDefault: true,
+  createAddress: async (payload: CreateAddressPayload): Promise<SavedAddress> => {
+    const body = {
+      tag: payload.label,
+      label: payload.customLabel || payload.label,
+      flatNo: payload.flat,
+      landmark: payload.landmark,
+      line1: payload.street,
+      city: payload.city,
+      state: payload.state,
+      pinCode: payload.pincode,
+      country: payload.country || 'India',
+      formattedAddress: payload.formattedAddress,
+      latitude: payload.lat,
+      longitude: payload.lng,
+      contactName: payload.contactName,
+      contactPhone: payload.contactPhone,
+      isDefault: false,
     };
+    const res = await api.post<Envelope<Record<string, unknown>>>(`${BASE}/addresses`, body);
+    return mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+  },
+
+  /** GET /addresses/:id */
+  getAddress: async (id: string): Promise<SavedAddress> => {
+    const res = await api.get<Envelope<Record<string, unknown>>>(`${BASE}/addresses/${id}`);
+    return mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+  },
+
+  /** PUT /addresses/:id */
+  updateAddress: async (id: string, payload: UpdateAddressPayload): Promise<SavedAddress> => {
+    const body: Record<string, unknown> = {};
+    if (payload.label) body.tag = payload.label;
+    if (payload.customLabel) body.label = payload.customLabel;
+    if (payload.flat) body.flatNo = payload.flat;
+    if (payload.landmark) body.landmark = payload.landmark;
+    if (payload.street) body.line1 = payload.street;
+    if (payload.city) body.city = payload.city;
+    if (payload.state) body.state = payload.state;
+    if (payload.pincode) body.pinCode = payload.pincode;
+    if (payload.country) body.country = payload.country;
+    if (payload.formattedAddress) body.formattedAddress = payload.formattedAddress;
+    if (payload.lat != null && payload.lng != null) {
+      body.latitude = payload.lat;
+      body.longitude = payload.lng;
+    }
+    if (payload.contactName) body.contactName = payload.contactName;
+    if (payload.contactPhone) body.contactPhone = payload.contactPhone;
+    const res = await api.put<Envelope<Record<string, unknown>>>(`${BASE}/addresses/${id}`, body);
+    return mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+  },
+
+  /** DELETE /addresses/:id */
+  deleteAddress: async (id: string): Promise<void> => {
+    await api.delete(`${BASE}/addresses/${id}`);
+  },
+
+  /** PUT /addresses/:id/default */
+  setDefault: async (id: string): Promise<SavedAddress> => {
+    const res = await api.put<Envelope<Record<string, unknown>>>(`${BASE}/addresses/${id}/default`, {});
+    return mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+  },
+
+  /** POST /addresses/:id/label */
+  setLabel: async (id: string, label: string): Promise<SavedAddress> => {
+    const res = await api.post<Envelope<Record<string, unknown>>>(`${BASE}/addresses/${id}/label`, { label });
+    return mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+  },
+
+  /** Alias for createAddress (used by home screen save-address flow) */
+  create: async (payload: CreateAddressPayload & { setAsDefault?: boolean; displayLabel?: string }): Promise<SavedAddress> => {
+    const body: Record<string, unknown> = {
+      tag: payload.label || 'other',
+      label: payload.customLabel || payload.label || 'other',
+      city: payload.city || 'Unknown',
+      state: payload.state || 'Unknown',
+      country: payload.country || 'India',
+      formattedAddress: payload.formattedAddress,
+      latitude: payload.lat,
+      longitude: payload.lng,
+      isDefault: payload.setAsDefault ?? false,
+    };
+    if (payload.flat) body.flatNo = payload.flat;
+    if (payload.landmark) body.landmark = payload.landmark;
+    if (payload.street) body.line1 = payload.street;
+    if (payload.pincode) body.pinCode = payload.pincode;
+    if (payload.contactName) body.contactName = payload.contactName;
+    if (payload.contactPhone) body.contactPhone = payload.contactPhone;
+    const res = await api.post<Envelope<Record<string, unknown>>>(`${BASE}/addresses`, body);
+    const saved = mapAddress(res.data?.data ?? (res.data as unknown as Record<string, unknown>));
+    if (payload.setAsDefault && saved.id) {
+      try {
+        await api.put(`${BASE}/addresses/${saved.id}/default`, {});
+      } catch { /* best effort */ }
+    }
+    return saved;
   },
 };
-
-// Re-export types used by search.ts / google-places consumers.
-export type { AddressSuggestion, GeocodeResult } from '@/lib/address/types';

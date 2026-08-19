@@ -1,109 +1,116 @@
 /**
- * Delivery Service – customer-facing partner lookup.
- * Gateway: /api/v1/delivery-service
+ * Delivery Service — all customer-facing APIs.
+ * Gateway prefix: /api/v1/delivery-service
  *
- * GET /restaurant/orders/:orderId/partner
- *   Assigned delivery partner for an order (name, phone, vehicle, rating…).
+ * §10 CUSTOMER_APP_ALL_APIS.md — 26 endpoints.
  */
 
 import axios from 'axios';
 
 import { api } from '@/lib/api';
-import type { DeliveryPartner } from '@/lib/delivery/types';
+import type {
+  AddressChangePayload,
+  ChatMessage,
+  City,
+  ContactlessPayload,
+  DeliveryInstructionsPayload,
+  DeliveryPartner,
+  DropOtp,
+  LiveLocation,
+  OrderTracker,
+  RatePartnerPayload,
+  SendChatPayload,
+  ShareLink,
+  SurgeStatus,
+  TrackingEta,
+  TrackingRoute,
+  TrackingTipPayload,
+  Zone,
+} from '@/lib/delivery/types';
 
-const DELIVERY_SERVICE = '/api/v1/delivery-service';
+const DS = '/api/v1/delivery-service';
+const TRACKING = `${DS}/tracking/order`;
 
-type Envelope<T> = {
-  success?: boolean;
-  message?: string;
-  data?: T;
-};
+type Envelope<T> = { success?: boolean; message?: string; data?: T };
 
-async function request<T>(path: string): Promise<Envelope<T>> {
+async function get<T>(path: string): Promise<T> {
   try {
-    const response = await api.get<Envelope<T> | T>(path, {
+    const res = await api.get<Envelope<T> | T>(path, {
       withCredentials: true,
       headers: { Accept: 'application/json' },
-      timeout: 12_000,
-      validateStatus: (status) => status >= 200 && status < 500,
+      timeout: 15_000,
     });
-
-    if (response.status >= 400) {
-      const data = response.data as
-        | { message?: string; error?: string }
-        | undefined;
-      const err = new Error(
-        data?.message || data?.error || `Request failed (${response.status})`
-      ) as Error & { status?: number };
-      err.status = response.status;
-      throw err;
+    const payload = res.data as Envelope<T> | T;
+    if (payload && typeof payload === 'object' && 'data' in (payload as object)) {
+      const env = payload as Envelope<T>;
+      if (env.success === false) throw apiError(env.message, 404);
+      return env.data as T;
     }
-
-    const payload = response.data as Envelope<T> | T;
-    if (
-      payload &&
-      typeof payload === 'object' &&
-      ('data' in (payload as object) || 'success' in (payload as object))
-    ) {
-      const envelope = payload as Envelope<T>;
-      if (envelope.success === false) {
-        const err = new Error(
-          envelope.message || 'Delivery service unavailable'
-        ) as Error & { status?: number };
-        err.status = 404;
-        throw err;
-      }
-      return envelope;
-    }
-
-    return { success: true, data: payload as T };
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (!error.response) {
-        throw new Error(
-          'Network request failed. Check your internet connection and try again.'
-        );
-      }
-      const data = error.response.data as
-        | { message?: string; error?: string }
-        | undefined;
-      const err = new Error(
-        data?.message ||
-          data?.error ||
-          `Request failed (${error.response.status})`
-      ) as Error & { status?: number };
-      err.status = error.response.status;
-      throw err;
-    }
-    throw error;
+    return payload as T;
+  } catch (err) {
+    throw normaliseError(err);
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : {};
+async function mutate<T>(
+  method: 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>
+): Promise<T> {
+  try {
+    const res = await api.request<Envelope<T> | T>({
+      url: path,
+      method,
+      data: body ?? {},
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...extraHeaders,
+      },
+      timeout: 15_000,
+    });
+    const payload = res.data as Envelope<T> | T;
+    if (payload && typeof payload === 'object' && 'data' in (payload as object)) {
+      return (payload as Envelope<T>).data as T;
+    }
+    return payload as T;
+  } catch (err) {
+    throw normaliseError(err);
+  }
 }
 
-function mapVehicleType(raw: unknown): DeliveryPartner['vehicleType'] {
-  const v = String(raw ?? '').toLowerCase();
-  if (v.includes('scooter')) return 'scooter';
-  if (v.includes('bicycle') || v.includes('cycle')) return 'bicycle';
-  if (v.includes('car') || v.includes('auto')) return 'car';
-  return 'bike';
+function apiError(msg?: string, status?: number): Error & { status?: number } {
+  const e = new Error(msg || 'Delivery service error') as Error & { status?: number };
+  e.status = status;
+  return e;
 }
+
+function normaliseError(err: unknown): Error {
+  if (axios.isAxiosError(err)) {
+    if (!err.response) return new Error('Network error. Check your connection.');
+    const d = err.response.data as { message?: string; error?: string } | undefined;
+    const msg = d?.message || d?.error || `Request failed (${err.response.status})`;
+    const e = new Error(msg) as Error & { status?: number };
+    e.status = err.response.status;
+    return e;
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+// ─── Mappers ─────────────────────────────────────────────────────────────────
 
 export function mapDeliveryPartner(raw: unknown): DeliveryPartner | null {
-  const record = asRecord(raw);
+  const r = asRecord(raw);
   const nested = asRecord(
-    record.partner ??
-      record.deliveryPartner ??
-      record.rider ??
-      record.driver ??
-      record
+    r.partner ?? r.deliveryPartner ?? r.rider ?? r.driver ?? r
   );
-
-  const id = String(nested._id ?? nested.id ?? record.partnerId ?? '');
+  const id = String(nested._id ?? nested.id ?? r.partnerId ?? '');
   const name = String(
     nested.name ??
       nested.fullName ??
@@ -111,31 +118,19 @@ export function mapDeliveryPartner(raw: unknown): DeliveryPartner | null {
       [nested.firstName, nested.lastName].filter(Boolean).join(' ') ??
       ''
   ).trim();
-  const phone = String(
-    nested.phone ?? nested.mobile ?? nested.phoneNumber ?? ''
-  ).trim();
-
+  const phone = String(nested.phone ?? nested.mobile ?? nested.phoneNumber ?? '').trim();
   if (!name && !phone && !id) return null;
 
   const loc = asRecord(nested.currentLocation ?? nested.location ?? {});
-  const coords = Array.isArray(loc.coordinates)
-    ? (loc.coordinates as number[])
-    : undefined;
-
+  const coords = Array.isArray(loc.coordinates) ? (loc.coordinates as number[]) : undefined;
   return {
     id: id || phone || name,
     name: name || 'Delivery partner',
     phone,
     email: (nested.email as string) || undefined,
-    vehicleType: mapVehicleType(
-      nested.vehicleType ?? nested.vehicle ?? nested.vehicleCategory
-    ),
+    vehicleType: mapVehicle(nested.vehicleType ?? nested.vehicle ?? nested.vehicleCategory),
     vehicleNumber: String(
-      nested.vehicleNumber ??
-        nested.vehicleNo ??
-        nested.plateNumber ??
-        nested.registrationNumber ??
-        ''
+      nested.vehicleNumber ?? nested.vehicleNo ?? nested.plateNumber ?? nested.registrationNumber ?? ''
     ),
     rating:
       typeof nested.rating === 'number'
@@ -143,77 +138,301 @@ export function mapDeliveryPartner(raw: unknown): DeliveryPartner | null {
         : typeof nested.avgRating === 'number'
           ? nested.avgRating
           : Number(nested.rating) || 0,
-    totalDeliveries:
-      Number(
-        nested.totalDeliveries ??
-          nested.deliveriesCount ??
-          nested.completedDeliveries ??
-          0
-      ) || 0,
+    totalDeliveries: Number(nested.totalDeliveries ?? nested.deliveriesCount ?? 0) || 0,
     imageUrl:
-      (nested.imageUrl as string) ||
-      (nested.photoUrl as string) ||
-      (nested.avatar as string) ||
-      (nested.profilePhoto as string) ||
-      undefined,
+      (nested.imageUrl as string) || (nested.photoUrl as string) || (nested.avatar as string) || undefined,
     isOnline: nested.isOnline !== undefined ? Boolean(nested.isOnline) : true,
     currentLocation:
-      typeof loc.lat === 'number' ||
-      typeof loc.lng === 'number' ||
-      (Array.isArray(coords) && coords.length >= 2)
+      typeof loc.lat === 'number' || (Array.isArray(coords) && coords.length >= 2)
         ? {
-            lat:
-              typeof loc.lat === 'number'
-                ? loc.lat
-                : Array.isArray(coords)
-                  ? Number(coords[1])
-                  : 0,
-            lng:
-              typeof loc.lng === 'number'
-                ? loc.lng
-                : Array.isArray(coords)
-                  ? Number(coords[0])
-                  : 0,
-            accuracy:
-              typeof loc.accuracy === 'number' ? loc.accuracy : undefined,
+            lat: typeof loc.lat === 'number' ? loc.lat : Number(coords![1]),
+            lng: typeof loc.lng === 'number' ? loc.lng : Number(coords![0]),
+            accuracy: typeof loc.accuracy === 'number' ? loc.accuracy : undefined,
             heading: typeof loc.heading === 'number' ? loc.heading : undefined,
-            lastUpdate: String(
-              loc.lastUpdate ?? loc.updatedAt ?? new Date().toISOString()
-            ),
+            lastUpdate: String(loc.lastUpdate ?? loc.updatedAt ?? new Date().toISOString()),
           }
         : undefined,
   };
 }
 
-function isNotAssignedError(error: unknown): boolean {
-  const status = (error as Error & { status?: number }).status;
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  return (
-    status === 404 ||
-    message.includes('no delivery') ||
-    message.includes('not found') ||
-    message.includes('not assigned') ||
-    message.includes('no partner')
-  );
+function mapVehicle(raw: unknown): DeliveryPartner['vehicleType'] {
+  const v = String(raw ?? '').toLowerCase();
+  if (v.includes('scooter')) return 'scooter';
+  if (v.includes('bicycle') || v.includes('cycle')) return 'bicycle';
+  if (v.includes('car') || v.includes('auto')) return 'car';
+  return 'bike';
 }
 
+function mapTracker(raw: unknown, orderId: string): OrderTracker {
+  const r = asRecord(raw);
+  const partner = r.deliveryPartner ?? r.partner ?? r.rider;
+  const partnerMapped = partner ? mapDeliveryPartner(partner) : undefined;
+
+  const restLoc = asRecord(r.restaurantLocation ?? r.pickupLocation ?? {});
+  const custLoc = asRecord(r.customerLocation ?? r.dropLocation ?? r.deliveryLocation ?? {});
+
+  const restCoords = Array.isArray(restLoc.coordinates) ? (restLoc.coordinates as number[]) : undefined;
+  const custCoords = Array.isArray(custLoc.coordinates) ? (custLoc.coordinates as number[]) : undefined;
+
+  return {
+    orderId: String(r.orderId ?? orderId),
+    deliveryId: (r.deliveryId as string) || (r._id as string) || undefined,
+    status: (r.status as string) || undefined,
+    orderStatus: (r.orderStatus as string) || undefined,
+    etaMinutes: typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined,
+    etaText: (r.etaText as string) || (r.estimatedArrival as string) || undefined,
+    partner: partnerMapped ?? undefined,
+    restaurantLat:
+      typeof restLoc.lat === 'number' ? restLoc.lat : restCoords ? Number(restCoords[1]) : undefined,
+    restaurantLng:
+      typeof restLoc.lng === 'number' ? restLoc.lng : restCoords ? Number(restCoords[0]) : undefined,
+    customerLat:
+      typeof custLoc.lat === 'number' ? custLoc.lat : custCoords ? Number(custCoords[1]) : undefined,
+    customerLng:
+      typeof custLoc.lng === 'number' ? custLoc.lng : custCoords ? Number(custCoords[0]) : undefined,
+    routePolyline: (r.routePolyline as string) || (r.polyline as string) || undefined,
+    timeline: Array.isArray(r.timeline)
+      ? (r.timeline as OrderTracker['timeline'])
+      : Array.isArray(r.statusHistory)
+        ? (r.statusHistory as OrderTracker['timeline'])
+        : undefined,
+    shareToken: (r.shareToken as string) || undefined,
+    dropOtp: (r.dropOtp as string) || (r.otp as string) || undefined,
+    raw: r,
+  };
+}
+
+function mapChat(raw: unknown, orderId: string): ChatMessage {
+  const r = asRecord(raw);
+  return {
+    id: String(r._id ?? r.id ?? ''),
+    orderId: String(r.orderId ?? orderId),
+    from: (r.senderRole as ChatMessage['from']) === 'partner' ? 'partner' : 'customer',
+    text: String(r.text ?? r.message ?? r.content ?? ''),
+    sentAt: String(r.sentAt ?? r.createdAt ?? new Date().toISOString()),
+  };
+}
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+
 export const deliveryApi = {
-  /**
-   * GET /restaurant/orders/:orderId/partner
-   * Returns null when no partner is assigned yet.
-   */
-  getOrderPartner: async (
-    orderId: string
-  ): Promise<DeliveryPartner | null> => {
+  // ── Cities & zones (public) ────────────────────────────────────────────────
+
+  /** GET /public/cities — launch city list */
+  getCities: async (): Promise<City[]> => {
+    const raw = await get<unknown>(`${DS}/public/cities`);
+    const list = Array.isArray(raw) ? raw : Array.isArray(asRecord(raw).cities) ? asRecord(raw).cities as unknown[] : [];
+    return (list as unknown[]).map((c) => {
+      const r = asRecord(c);
+      return {
+        id: String(r._id ?? r.id ?? ''),
+        name: String(r.name ?? r.city ?? ''),
+        slug: (r.slug as string) || undefined,
+        lat: typeof r.lat === 'number' ? r.lat : undefined,
+        lng: typeof r.lng === 'number' ? r.lng : undefined,
+        isActive: r.isActive !== undefined ? Boolean(r.isActive) : true,
+      };
+    });
+  },
+
+  /** GET /zones */
+  getZones: async (): Promise<Zone[]> => {
+    const raw = await get<unknown>(`${DS}/zones`);
+    const list = Array.isArray(raw) ? raw : Array.isArray(asRecord(raw).zones) ? asRecord(raw).zones as unknown[] : [];
+    return (list as unknown[]).map((z) => {
+      const r = asRecord(z);
+      return {
+        id: String(r._id ?? r.id ?? ''),
+        name: String(r.name ?? ''),
+        cityId: (r.cityId as string) || undefined,
+        isActive: r.isActive !== undefined ? Boolean(r.isActive) : true,
+      };
+    });
+  },
+
+  /** GET /zones/:zoneId/surge-status */
+  getSurgeStatus: async (zoneId: string): Promise<SurgeStatus> => {
+    const raw = await get<unknown>(`${DS}/zones/${zoneId}/surge-status`);
+    const r = asRecord(raw);
+    return {
+      zoneId,
+      isSurge: Boolean(r.isSurge ?? r.surge ?? false),
+      multiplier: typeof r.multiplier === 'number' ? r.multiplier : undefined,
+      label: (r.label as string) || undefined,
+    };
+  },
+
+  // ── Tracking ───────────────────────────────────────────────────────────────
+
+  /** GET /tracking/order/:orderId — full tracker DTO */
+  getTracking: async (orderId: string): Promise<OrderTracker> => {
+    const raw = await get<unknown>(`${TRACKING}/${orderId}`);
+    return mapTracker(raw, orderId);
+  },
+
+  /** GET /tracking/order/:orderId/location — live GPS (~5s poll) */
+  getLiveLocation: async (orderId: string): Promise<LiveLocation | null> => {
+    try {
+      const raw = await get<unknown>(`${TRACKING}/${orderId}/location`);
+      const r = asRecord(raw);
+      const loc = asRecord(r.location ?? r.currentLocation ?? r);
+      const coords = Array.isArray(loc.coordinates) ? (loc.coordinates as number[]) : undefined;
+      const lat = typeof loc.lat === 'number' ? loc.lat : coords ? Number(coords[1]) : undefined;
+      const lng = typeof loc.lng === 'number' ? loc.lng : coords ? Number(coords[0]) : undefined;
+      if (!lat || !lng) return null;
+      return {
+        lat,
+        lng,
+        heading: typeof loc.heading === 'number' ? loc.heading : undefined,
+        accuracy: typeof loc.accuracy === 'number' ? loc.accuracy : undefined,
+        speed: typeof loc.speed === 'number' ? loc.speed : undefined,
+        updatedAt: (loc.updatedAt as string) || (loc.lastUpdate as string) || undefined,
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /** GET /tracking/order/:orderId/eta */
+  getEta: async (orderId: string): Promise<TrackingEta> => {
+    const raw = await get<unknown>(`${TRACKING}/${orderId}/eta`);
+    const r = asRecord(raw);
+    return {
+      etaMinutes: typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined,
+      etaText: (r.etaText as string) || undefined,
+      distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : undefined,
+    };
+  },
+
+  /** GET /tracking/order/:orderId/route */
+  getRoute: async (orderId: string): Promise<TrackingRoute> => {
+    const raw = await get<unknown>(`${TRACKING}/${orderId}/route`);
+    const r = asRecord(raw);
+    return {
+      polyline: (r.polyline as string) || (r.overviewPolyline as string) || undefined,
+      coordinates: Array.isArray(r.coordinates) ? (r.coordinates as [number, number][]) : undefined,
+      distanceMeters: typeof r.distanceMeters === 'number' ? r.distanceMeters : undefined,
+      durationSeconds: typeof r.durationSeconds === 'number' ? r.durationSeconds : undefined,
+    };
+  },
+
+  /** GET /tracking/order/:orderId/partner — masked rider */
+  getOrderPartner: async (orderId: string): Promise<DeliveryPartner | null> => {
     if (!orderId) return null;
     try {
-      const res = await request<unknown>(
-        `${DELIVERY_SERVICE}/restaurant/orders/${orderId}/partner`
-      );
-      return mapDeliveryPartner(res.data);
-    } catch (error) {
-      if (isNotAssignedError(error)) return null;
-      throw error;
+      const raw = await get<unknown>(`${TRACKING}/${orderId}/partner`);
+      return mapDeliveryPartner(raw);
+    } catch (err) {
+      const status = (err as Error & { status?: number }).status;
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (status === 404 || msg.includes('not found') || msg.includes('not assigned')) return null;
+      throw err;
     }
+  },
+
+  /** GET /tracking/order/:orderId/otp — drop OTP */
+  getDropOtp: async (orderId: string): Promise<DropOtp | null> => {
+    try {
+      const raw = await get<unknown>(`${TRACKING}/${orderId}/otp`);
+      const r = asRecord(raw);
+      const otp = String(r.otp ?? r.dropOtp ?? r.code ?? '');
+      if (!otp) return null;
+      return { otp, expiresAt: (r.expiresAt as string) || undefined };
+    } catch {
+      return null;
+    }
+  },
+
+  /** GET /tracking/order/:orderId/chat */
+  getChatHistory: async (orderId: string): Promise<ChatMessage[]> => {
+    const raw = await get<unknown>(`${TRACKING}/${orderId}/chat`);
+    const list = Array.isArray(raw)
+      ? raw
+      : Array.isArray(asRecord(raw).messages)
+        ? (asRecord(raw).messages as unknown[])
+        : [];
+    return (list as unknown[]).map((m) => mapChat(m, orderId));
+  },
+
+  /** POST /tracking/order/:orderId/chat */
+  sendChat: async (orderId: string, payload: SendChatPayload): Promise<ChatMessage> => {
+    const raw = await mutate<unknown>('POST', `${TRACKING}/${orderId}/chat`, {
+      text: payload.text,
+      message: payload.text,
+    });
+    return mapChat(asRecord(raw), orderId);
+  },
+
+  /** POST /tracking/order/:orderId/share — family share link */
+  createShareLink: async (orderId: string): Promise<ShareLink> => {
+    const raw = await mutate<unknown>('POST', `${TRACKING}/${orderId}/share`, {});
+    const r = asRecord(raw);
+    return {
+      shareToken: String(r.shareToken ?? r.token ?? ''),
+      url: String(r.url ?? r.shareUrl ?? ''),
+      expiresAt: (r.expiresAt as string) || undefined,
+    };
+  },
+
+  /** DELETE /tracking/order/:orderId/share */
+  revokeShareLink: async (orderId: string): Promise<void> => {
+    await mutate<unknown>('DELETE', `${TRACKING}/${orderId}/share`);
+  },
+
+  /** GET /tracking/share/:shareToken — public live track (no auth) */
+  getPublicShare: async (shareToken: string): Promise<OrderTracker> => {
+    const raw = await get<unknown>(`${DS}/tracking/share/${shareToken}`);
+    return mapTracker(raw, '');
+  },
+
+  /** POST /tracking/order/:orderId/nudge-partner */
+  nudgePartner: async (orderId: string): Promise<void> => {
+    await mutate<unknown>('POST', `${TRACKING}/${orderId}/nudge-partner`, {});
+  },
+
+  /** POST /tracking/order/:orderId/contact-partner */
+  contactPartner: async (orderId: string): Promise<{ callId?: string; maskedPhone?: string }> => {
+    const raw = await mutate<unknown>('POST', `${TRACKING}/${orderId}/contact-partner`, {});
+    const r = asRecord(raw);
+    return {
+      callId: (r.callId as string) || undefined,
+      maskedPhone: (r.maskedPhone as string) || (r.phone as string) || undefined,
+    };
+  },
+
+  /** POST /tracking/order/:orderId/contact-support */
+  contactSupport: async (orderId: string, reason?: string): Promise<void> => {
+    await mutate<unknown>('POST', `${TRACKING}/${orderId}/contact-support`, { reason: reason ?? '' });
+  },
+
+  /** PUT /tracking/order/:orderId/delivery-instructions */
+  setDeliveryInstructions: async (
+    orderId: string,
+    payload: DeliveryInstructionsPayload
+  ): Promise<void> => {
+    await mutate<unknown>('PUT', `${TRACKING}/${orderId}/delivery-instructions`, payload);
+  },
+
+  /** PUT /tracking/order/:orderId/contactless */
+  setContactless: async (orderId: string, payload: ContactlessPayload): Promise<void> => {
+    await mutate<unknown>('PUT', `${TRACKING}/${orderId}/contactless`, payload);
+  },
+
+  /** PUT /tracking/order/:orderId/address-change — pre-pickup only */
+  changeAddress: async (orderId: string, payload: AddressChangePayload): Promise<void> => {
+    await mutate<unknown>('PUT', `${TRACKING}/${orderId}/address-change`, payload);
+  },
+
+  /** POST /tracking/order/:orderId/tip — in-flight tip (Idempotency-Key required) */
+  addTip: async (orderId: string, payload: TrackingTipPayload): Promise<void> => {
+    const key = payload.idempotencyKey ?? `tip-${orderId}-${Date.now()}`;
+    await mutate<unknown>('POST', `${TRACKING}/${orderId}/tip`, { tip: payload.tip, amount: payload.tip }, {
+      'Idempotency-Key': key,
+    });
+  },
+
+  /** POST /tracking/order/:orderId/rate-partner */
+  ratePartner: async (orderId: string, payload: RatePartnerPayload): Promise<void> => {
+    await mutate<unknown>('POST', `${TRACKING}/${orderId}/rate-partner`, payload);
   },
 };

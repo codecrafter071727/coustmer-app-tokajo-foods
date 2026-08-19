@@ -13,7 +13,9 @@ import type {
   ReportIssuePayload,
   TipPayload,
 } from '@/lib/order/types';
-import { indianPhoneVariants } from '@/lib/order/phone';
+import { createIdempotencyKey } from '@/lib/order/idempotency';
+import { toTenDigitIndianMobile } from '@/lib/order/phone';
+import { geoPointFromPin, parseDropPin } from '@/lib/location/drop-pin';
 
 const ORDER_SERVICE = '/api/v1/order-service';
 const ORDERS_BASE = `${ORDER_SERVICE}/orders`;
@@ -30,10 +32,11 @@ async function request<T>(
   options: {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
+    headers?: Record<string, string>;
     responseType?: 'json' | 'blob' | 'arraybuffer';
   } = {}
 ): Promise<Envelope<T>> {
-  const { method = 'GET', body, responseType } = options;
+  const { method = 'GET', body, headers, responseType } = options;
   const isMutating = method !== 'GET';
 
   try {
@@ -44,12 +47,11 @@ async function request<T>(
       data: isMutating ? (body ?? {}) : body,
       withCredentials: true,
       responseType: responseType === 'json' || !responseType ? 'json' : responseType,
-      headers: isMutating
-        ? {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          }
-        : { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(isMutating ? { 'Content-Type': 'application/json' } : {}),
+        ...headers,
+      },
     });
 
     const payload = response.data as Envelope<T> | T;
@@ -74,6 +76,7 @@ async function request<T>(
         | {
             message?: string | string[];
             error?: string;
+            code?: string;
             errors?: Record<string, string[] | string> | string[];
           }
         | undefined;
@@ -101,7 +104,13 @@ async function request<T>(
         );
       }
 
-      throw new Error(message);
+      const err = new Error(message) as Error & {
+        status?: number;
+        code?: string;
+      };
+      err.status = error.response.status;
+      err.code = data?.code;
+      throw err;
     }
 
     throw error;
@@ -450,76 +459,66 @@ export const orderApi = {
     };
   },
 
-  /** POST /orders */
+  /** POST /orders — Idempotency-Key required (8–64 chars). */
   createOrder: async (payload: CreateOrderPayload): Promise<Order> => {
-    const phoneRaw = payload.deliveryAddress.contactPhone;
-    const phoneVariants = indianPhoneVariants(phoneRaw);
-    const phones =
-      phoneVariants.length > 0 ? phoneVariants : [phoneRaw].filter(Boolean);
+    const phone =
+      toTenDigitIndianMobile(payload.deliveryAddress.contactPhone) ||
+      payload.deliveryAddress.contactPhone.replace(/\D/g, '').slice(-10);
 
-    const bodies: Record<string, unknown>[] = [];
+    const pin = parseDropPin(
+      payload.deliveryAddress.lat,
+      payload.deliveryAddress.lng
+    );
+    const deliveryAddress = {
+      ...payload.deliveryAddress,
+      contactPhone: phone,
+      phone,
+      mobile: phone,
+      location:
+        payload.deliveryAddress.location ??
+        (pin ? geoPointFromPin(pin) : undefined),
+    };
 
-    for (const phone of phones) {
-      const deliveryAddress = {
-        ...payload.deliveryAddress,
-        contactPhone: phone,
-        phone,
-        mobile: phone,
-      };
-
-      bodies.push({
-        restaurantId: payload.restaurantId,
-        restaurantName: payload.restaurantName,
-        items: payload.items,
-        deliveryAddress,
-        paymentMethod: payload.paymentMethod,
-        specialInstructions: payload.specialInstructions,
-        tip: payload.tip ?? 0,
-        deliveryTip: payload.tip ?? 0,
-        tipAmount: payload.tip ?? 0,
-        scheduledFor: payload.scheduledFor,
-        deliveryType: payload.deliveryType,
-        fulfillmentType: payload.deliveryType,
-      });
-
-      bodies.push({
-        restaurantId: payload.restaurantId,
-        restaurantName: payload.restaurantName,
-        items: payload.items,
-        deliveryAddress,
-        paymentMethod: payload.paymentMethod,
-        notes: payload.specialInstructions,
-        tip: payload.tip ?? 0,
-        deliveryTip: payload.tip ?? 0,
-        scheduledFor: payload.scheduledFor,
-        contactPhone: phone,
-        deliveryType: payload.deliveryType,
-        fulfillmentType: payload.deliveryType,
-      });
-    }
+    const idempotencyKey = createIdempotencyKey('place');
+    const headers = { 'Idempotency-Key': idempotencyKey };
+    const body = {
+      restaurantId: payload.restaurantId,
+      restaurantName: payload.restaurantName,
+      items: payload.items,
+      deliveryAddress,
+      paymentMethod: payload.paymentMethod,
+      specialInstructions: payload.specialInstructions,
+      tip: payload.tip ?? 0,
+      deliveryTip: payload.tip ?? 0,
+      tipAmount: payload.tip ?? 0,
+      scheduledFor: payload.scheduledFor,
+      deliveryType:
+        payload.deliveryType === 'takeaway' ? 'pickup' : payload.deliveryType,
+      fulfillmentType: payload.deliveryType,
+      idempotencyKey,
+    };
 
     let lastError: Error | null = null;
-    for (const body of bodies) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const res = await request<Record<string, unknown>>(ORDERS_BASE, {
           method: 'POST',
           body,
+          headers,
         });
         return mapOrder(asRecord(res.data ?? res));
       } catch (error) {
         lastError =
           error instanceof Error ? error : new Error('Failed to place order');
-        const message = lastError.message.toLowerCase();
-        // Only keep trying when the failure looks phone-format related
-        if (
-          !message.includes('contactphone') &&
-          !message.includes('contact_phone') &&
-          !message.includes('phone')
-        ) {
-          break;
+        const code = (error as Error & { code?: string }).code;
+        if (code === 'IDEMPOTENCY_IN_PROGRESS') {
+          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+          continue;
         }
+        throw lastError;
       }
     }
+
     throw lastError ?? new Error('Failed to place order');
   },
 

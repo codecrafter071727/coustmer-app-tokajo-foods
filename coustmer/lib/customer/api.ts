@@ -3,19 +3,33 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import { handleCustomerServiceError } from '@/lib/customer/error-handler';
 import type {
+  ActiveSubscription,
   AddTicketMessagePayload,
+  AppConfig,
+  AppFeedbackPayload,
+  CallbackRequestPayload,
+  Collection,
+  CollectionRestaurantsResult,
+  CrashReportPayload,
   CreateTicketPayload,
   CustomerProfile,
   Deal,
+  FaqItem,
+  FavouriteDish,
   HomeBanner,
   HomeFeed,
+  LoyaltyStatus,
+  LoyaltyTransaction,
   OnboardingStatus,
   PaginationMeta,
   RateTicketPayload,
   RecentActivity,
   Recommendation,
   RestaurantCard,
+  ScratchCard,
+  SubscriptionPlan,
   SupportTicket,
+  UpdateCustomerPrefsPayload,
 } from '@/lib/customer/types';
 import { mapKitchenAlert, mapRestaurant } from '@/lib/restaurant/mappers';
 import type { KitchenAlert } from '@/lib/restaurant/types';
@@ -224,6 +238,25 @@ function mapRestaurantCard(raw: Record<string, unknown>): RestaurantCard {
   };
 }
 
+function asRecord(v: unknown): Record<string, unknown> {
+  return (v && typeof v === 'object' && !Array.isArray(v))
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+function mapCollection(raw: Record<string, unknown>, index: number): Collection {
+  return {
+    id: String(raw._id ?? raw.id ?? `col-${index}`),
+    title: String(raw.title ?? raw.name ?? raw.heading ?? 'Collection'),
+    slug: String(raw.slug ?? raw.name ?? raw.title ?? `col-${index}`)
+      .toLowerCase().replace(/\s+/g, '-'),
+    imageUrl: (raw.imageUrl as string) || (raw.image as string) || (raw.coverUrl as string) || undefined,
+    description: (raw.description as string) || undefined,
+    restaurantCount: typeof raw.restaurantCount === 'number' ? raw.restaurantCount : undefined,
+    sortOrder: typeof raw.sortOrder === 'number' ? raw.sortOrder : index,
+  };
+}
+
 export const customerApi = {
   /** GET /health */
   health: async (): Promise<boolean> => {
@@ -235,10 +268,55 @@ export const customerApi = {
     }
   },
 
-  /** GET /customers/home */
-  getHome: async (): Promise<HomeFeed> => {
+  /** GET /health/ready — Mongo + Redis readiness */
+  healthReady: async (): Promise<boolean> => {
+    try {
+      const res = await request<unknown>('/api/v1/customer-service/health/ready');
+      return res.success !== false;
+    } catch {
+      return false;
+    }
+  },
+
+  /** GET /customers/config — splash: versions, forceUpdate, cities, flags */
+  getConfig: async (): Promise<AppConfig> => {
+    try {
+      const res = await request<Record<string, unknown>>(`${CUSTOMER_BASE}/config`);
+      const data = (res.data ?? res ?? {}) as Record<string, unknown>;
+      return {
+        minVersion: (data.minVersion as string) || (data.minimumVersion as string) || undefined,
+        latestVersion: (data.latestVersion as string) || undefined,
+        forceUpdate: Boolean(data.forceUpdate ?? data.force_update ?? false),
+        maintenanceMode: Boolean(data.maintenanceMode ?? data.maintenance ?? false),
+        maintenanceMessage: (data.maintenanceMessage as string) || undefined,
+        cities: Array.isArray(data.cities)
+          ? (data.cities as Record<string, unknown>[]).map((c) => ({
+              id: String(c._id ?? c.id ?? ''),
+              name: String(c.name ?? ''),
+              slug: (c.slug as string) || undefined,
+              isActive: c.isActive !== undefined ? Boolean(c.isActive) : true,
+            }))
+          : [],
+        flags: (data.flags as Record<string, boolean | string | number>) || {},
+        announcement: data.announcement
+          ? {
+              message: String((data.announcement as Record<string, unknown>).message ?? ''),
+              type: (data.announcement as Record<string, unknown>).type as 'info' | 'warning' | 'success' | undefined,
+            }
+          : null,
+      };
+    } catch {
+      return {};
+    }
+  },
+
+  /** GET /customers/home?lat=&lng= — home rails with open+closed cards */
+  getHome: async (coords?: { lat: number; lng: number }): Promise<HomeFeed> => {
+    const params = coords?.lat && coords?.lng
+      ? `?lat=${coords.lat}&lng=${coords.lng}`
+      : '';
     const res = await request<HomeFeed & Record<string, unknown>>(
-      `${CUSTOMER_BASE}/home`
+      `${CUSTOMER_BASE}/home${params}`
     );
     const data = (res.data ?? res ?? {}) as Record<string, unknown>;
     const banners = unwrapList(
@@ -332,30 +410,10 @@ export const customerApi = {
     }
   },
 
-  /** Combined offers for home ticker: banners + deals (deduped). */
+  /** Deals only — banners come from useHomeFeed directly. */
   getOffersFeed: async (): Promise<{ banners: HomeBanner[]; deals: Deal[] }> => {
-    const [home, deals, banners] = await Promise.all([
-      customerApi.getHome().catch(() => ({
-        banners: [] as HomeBanner[],
-        trending: [],
-        forYou: [],
-        newlyAdded: [],
-      })),
-      customerApi.getDeals().catch(() => [] as Deal[]),
-      customerApi.getBanners().catch(() => [] as HomeBanner[]),
-    ]);
-
-    const bannerMap = new Map<string, HomeBanner>();
-    for (const b of [...home.banners, ...banners]) {
-      if (!b.title?.trim()) continue;
-      const key = `${b.id}|${b.title}`.toLowerCase();
-      if (!bannerMap.has(key)) bannerMap.set(key, b);
-    }
-
-    return {
-      banners: [...bannerMap.values()],
-      deals,
-    };
+    const deals = await customerApi.getDeals().catch(() => [] as Deal[]);
+    return { banners: [], deals };
   },
 
   /** GET /customers/recommended */
@@ -539,6 +597,42 @@ export const customerApi = {
     return mapTicket(res.data ?? {});
   },
 
+  /** GET /customers/collections — collection rails */
+  getCollections: async (): Promise<Collection[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/collections`);
+      const list = Array.isArray(res.data)
+        ? res.data
+        : Array.isArray((res.data as Record<string, unknown>)?.collections)
+          ? (res.data as Record<string, unknown>).collections as unknown[]
+          : unwrapList(res.data ?? res);
+      return (list as Record<string, unknown>[])
+        .map(mapCollection)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /customers/collections/:slug — restaurants in a collection */
+  getCollectionRestaurants: async (
+    slug: string,
+    page = 1
+  ): Promise<CollectionRestaurantsResult> => {
+    const res = await request<unknown>(
+      `${CUSTOMER_BASE}/collections/${encodeURIComponent(slug)}?page=${page}&limit=20`
+    );
+    const data = (res.data ?? res ?? {}) as Record<string, unknown>;
+    const colRaw = asRecord(data.collection ?? data);
+    const collection = mapCollection(colRaw, 0);
+    const restList = unwrapList(data.restaurants ?? data.items ?? data.data ?? data);
+    return {
+      collection,
+      restaurants: restList.map(mapRestaurantCard),
+      meta: res.meta,
+    };
+  },
+
   /** POST /customers/support/tickets/:ticketId/rate */
   rateTicket: async (
     ticketId: string,
@@ -549,5 +643,259 @@ export const customerApi = {
       { method: 'POST', body: payload }
     );
     return mapTicket(res.data ?? {});
+  },
+
+  /** POST /customers/support/tickets/:ticketId/close */
+  closeTicket: async (ticketId: string): Promise<SupportTicket> => {
+    const res = await request<Record<string, unknown>>(
+      `${CUSTOMER_BASE}/support/tickets/${ticketId}/close`,
+      { method: 'POST', body: {} }
+    );
+    return mapTicket(res.data ?? {});
+  },
+
+  /** POST /customers/support/callback */
+  requestCallback: async (payload: CallbackRequestPayload): Promise<void> => {
+    await request(`${CUSTOMER_BASE}/support/callback`, {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  /** GET /customers/support/faq */
+  getFaqs: async (): Promise<FaqItem[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/support/faq`);
+      const rows = unwrapList(res.data ?? res);
+      return rows.map((raw) => ({
+        id: String(raw._id ?? raw.id ?? ''),
+        question: String(raw.question ?? raw.title ?? raw.q ?? ''),
+        answer: (raw.answer ?? raw.body ?? raw.content ?? raw.a) as string | undefined,
+        category: raw.category as string | undefined,
+        sortOrder: typeof raw.sortOrder === 'number' ? raw.sortOrder : undefined,
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /customers/support/faq/:faqId */
+  getFaq: async (faqId: string): Promise<FaqItem> => {
+    const res = await request<Record<string, unknown>>(
+      `${CUSTOMER_BASE}/support/faq/${faqId}`
+    );
+    const raw = (res.data ?? res ?? {}) as Record<string, unknown>;
+    return {
+      id: String(raw._id ?? raw.id ?? faqId),
+      question: String(raw.question ?? raw.title ?? raw.q ?? ''),
+      answer: (raw.answer ?? raw.body ?? raw.content ?? raw.a) as string | undefined,
+      category: raw.category as string | undefined,
+    };
+  },
+
+  /** PUT /customers/me — update veg preference, cuisine prefs */
+  updatePrefs: async (payload: UpdateCustomerPrefsPayload): Promise<CustomerProfile> => {
+    const res = await request<Record<string, unknown>>(`${CUSTOMER_BASE}/me`, {
+      method: 'PUT',
+      body: payload,
+    });
+    return mapProfile((res.data ?? res ?? {}) as Record<string, unknown>);
+  },
+
+  /** GET /customers/me/favorites/dishes */
+  getFavouriteDishes: async (): Promise<FavouriteDish[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/me/favorites/dishes`);
+      const rows = unwrapList(
+        Array.isArray(res.data) ? res.data
+          : (res.data as Record<string, unknown>)?.dishes
+          ?? (res.data as Record<string, unknown>)?.items
+          ?? res.data
+          ?? res
+      );
+      return rows.map((raw) => ({
+        id: String(raw._id ?? raw.id ?? ''),
+        name: String(raw.name ?? raw.itemName ?? ''),
+        imageUrl: (raw.imageUrl ?? raw.image) as string | undefined,
+        price: typeof raw.price === 'number' ? raw.price : typeof raw.basePrice === 'number' ? raw.basePrice : undefined,
+        restaurantId: (raw.restaurantId ?? raw.restaurant_id) as string | undefined,
+        restaurantName: (raw.restaurantName ?? raw.restaurant?.name) as string | undefined,
+        isVeg: raw.isVeg as boolean | undefined,
+        rating: typeof raw.rating === 'number' ? raw.rating : undefined,
+        ...raw,
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** POST /customers/me/favorites/dishes/:itemId */
+  addFavouriteDish: async (itemId: string, restaurantId: string): Promise<void> => {
+    await request(`${CUSTOMER_BASE}/me/favorites/dishes/${itemId}`, {
+      method: 'POST',
+      body: { restaurantId },
+    });
+  },
+
+  /** DELETE /customers/me/favorites/dishes/:itemId */
+  removeFavouriteDish: async (itemId: string): Promise<void> => {
+    await request(`${CUSTOMER_BASE}/me/favorites/dishes/${itemId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** GET /customers/loyalty */
+  getLoyalty: async (): Promise<LoyaltyStatus> => {
+    try {
+      const res = await request<Record<string, unknown>>(`${CUSTOMER_BASE}/loyalty`);
+      const d = (res.data ?? res ?? {}) as Record<string, unknown>;
+      return {
+        points: typeof d.points === 'number' ? d.points : 0,
+        tier: String(d.tier ?? d.level ?? 'bronze'),
+        tierLabel: (d.tierLabel ?? d.tierName) as string | undefined,
+        nextTierPoints: typeof d.nextTierPoints === 'number' ? d.nextTierPoints : undefined,
+        expiringPoints: typeof d.expiringPoints === 'number' ? d.expiringPoints : undefined,
+        expiringDate: (d.expiringDate ?? d.expiresAt) as string | undefined,
+      };
+    } catch {
+      return { points: 0, tier: 'bronze' };
+    }
+  },
+
+  /** GET /customers/loyalty/history */
+  getLoyaltyHistory: async (): Promise<LoyaltyTransaction[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/loyalty/history`);
+      const rows = unwrapList(
+        (res.data as Record<string, unknown>)?.transactions
+        ?? (res.data as Record<string, unknown>)?.history
+        ?? res.data
+        ?? res
+      );
+      return rows.map((raw) => ({
+        id: String(raw._id ?? raw.id ?? ''),
+        type: String(raw.type ?? raw.action ?? 'earn') as LoyaltyTransaction['type'],
+        points: typeof raw.points === 'number' ? raw.points : 0,
+        description: (raw.description ?? raw.label ?? raw.title) as string | undefined,
+        orderId: (raw.orderId ?? raw.order_id) as string | undefined,
+        createdAt: String(raw.createdAt ?? raw.date ?? ''),
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /customers/subscriptions/plans */
+  getSubscriptionPlans: async (): Promise<SubscriptionPlan[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/subscriptions/plans`);
+      const rows = unwrapList(
+        (res.data as Record<string, unknown>)?.plans
+        ?? res.data
+        ?? res
+      );
+      return rows.map((raw) => ({
+        id: String(raw._id ?? raw.id ?? ''),
+        name: String(raw.name ?? raw.title ?? ''),
+        description: (raw.description ?? raw.subtitle) as string | undefined,
+        price: typeof raw.price === 'number' ? raw.price : 0,
+        durationDays: typeof raw.durationDays === 'number' ? raw.durationDays : undefined,
+        benefits: Array.isArray(raw.benefits) ? (raw.benefits as string[]) : [],
+        badgeColor: raw.badgeColor as string | undefined,
+        isPopular: Boolean(raw.isPopular ?? raw.featured ?? false),
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /customers/subscriptions/me */
+  getMySubscription: async (): Promise<ActiveSubscription> => {
+    try {
+      const res = await request<Record<string, unknown>>(`${CUSTOMER_BASE}/subscriptions/me`);
+      const d = (res.data ?? res ?? null) as Record<string, unknown> | null;
+      if (!d || !d.id) return null;
+      return {
+        id: String(d._id ?? d.id),
+        planId: String(d.planId ?? d.plan ?? ''),
+        planName: String(d.planName ?? d.name ?? ''),
+        status: String(d.status ?? 'active'),
+        startDate: (d.startDate ?? d.start) as string | undefined,
+        endDate: (d.endDate ?? d.end ?? d.expiresAt) as string | undefined,
+        cancelAtPeriodEnd: Boolean(d.cancelAtPeriodEnd ?? d.cancelAt ?? false),
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /** POST /customers/subscriptions/cancel */
+  cancelSubscription: async (): Promise<void> => {
+    await request(`${CUSTOMER_BASE}/subscriptions/cancel`, {
+      method: 'POST',
+      body: {},
+    });
+  },
+
+  /** GET /customers/scratch-cards */
+  getScratchCards: async (): Promise<ScratchCard[]> => {
+    try {
+      const res = await request<unknown>(`${CUSTOMER_BASE}/scratch-cards`);
+      const rows = unwrapList(
+        (res.data as Record<string, unknown>)?.cards
+        ?? (res.data as Record<string, unknown>)?.scratchCards
+        ?? res.data
+        ?? res
+      );
+      return rows.map((raw) => ({
+        id: String(raw._id ?? raw.id ?? ''),
+        status: String(raw.status ?? 'pending') as ScratchCard['status'],
+        reward: (raw.reward ?? raw.title) as string | undefined,
+        couponCode: (raw.couponCode ?? raw.code) as string | undefined,
+        discount: typeof raw.discount === 'number' ? raw.discount : undefined,
+        expiresAt: (raw.expiresAt ?? raw.expiryDate) as string | undefined,
+        orderId: (raw.orderId ?? raw.order_id) as string | undefined,
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** POST /customers/scratch-cards/:cardId/reveal */
+  revealScratchCard: async (cardId: string): Promise<ScratchCard> => {
+    const res = await request<Record<string, unknown>>(
+      `${CUSTOMER_BASE}/scratch-cards/${cardId}/reveal`,
+      { method: 'POST', body: {} }
+    );
+    const raw = (res.data ?? res ?? {}) as Record<string, unknown>;
+    return {
+      id: String(raw._id ?? raw.id ?? cardId),
+      status: String(raw.status ?? 'revealed') as ScratchCard['status'],
+      reward: (raw.reward ?? raw.title) as string | undefined,
+      couponCode: (raw.couponCode ?? raw.code) as string | undefined,
+      discount: typeof raw.discount === 'number' ? raw.discount : undefined,
+      expiresAt: (raw.expiresAt ?? raw.expiryDate) as string | undefined,
+      orderId: (raw.orderId ?? raw.order_id) as string | undefined,
+    };
+  },
+
+  /** POST /customers/app/crash-report */
+  reportCrash: async (payload: CrashReportPayload): Promise<void> => {
+    try {
+      await request(`${CUSTOMER_BASE}/app/crash-report`, {
+        method: 'POST',
+        body: payload,
+      });
+    } catch {
+      // fire-and-forget: crash reporting must never throw
+    }
+  },
+
+  /** POST /customers/app/feedback */
+  submitFeedback: async (payload: AppFeedbackPayload): Promise<void> => {
+    await request(`${CUSTOMER_BASE}/app/feedback`, {
+      method: 'POST',
+      body: payload,
+    });
   },
 };

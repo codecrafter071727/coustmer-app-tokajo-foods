@@ -7,29 +7,55 @@ import {
 import { customerApi } from '@/lib/customer/api';
 import type {
   AddTicketMessagePayload,
+  AppFeedbackPayload,
+  CallbackRequestPayload,
+  CrashReportPayload,
   CreateTicketPayload,
   RateTicketPayload,
+  UpdateCustomerPrefsPayload,
 } from '@/lib/customer/types';
+import { useDeliveryCoords } from '@/store/delivery-location-store';
 import { useAuthStore } from '@/store/auth-store';
 
 export const customerKeys = {
   all: ['customer'] as const,
+  config: () => [...customerKeys.all, 'config'] as const,
   health: () => [...customerKeys.all, 'health'] as const,
-  home: () => [...customerKeys.all, 'home'] as const,
+  home: (lat?: number, lng?: number) => [...customerKeys.all, 'home', lat, lng] as const,
   deals: () => [...customerKeys.all, 'deals'] as const,
   offers: () => [...customerKeys.all, 'offers'] as const,
   recommended: () => [...customerKeys.all, 'recommended'] as const,
   profile: () => [...customerKeys.all, 'profile'] as const,
   favorites: () => [...customerKeys.all, 'favorites'] as const,
+  favouriteDishes: () => [...customerKeys.all, 'favouriteDishes'] as const,
   recent: () => [...customerKeys.all, 'recent'] as const,
   onboarding: () => [...customerKeys.all, 'onboarding'] as const,
   tickets: () => [...customerKeys.all, 'tickets'] as const,
   ticket: (id: string) => [...customerKeys.all, 'ticket', id] as const,
   alerts: () => [...customerKeys.all, 'alerts'] as const,
+  collections: () => [...customerKeys.all, 'collections'] as const,
+  collection: (slug: string) => [...customerKeys.all, 'collection', slug] as const,
+  faqs: () => [...customerKeys.all, 'faqs'] as const,
+  faq: (id: string) => [...customerKeys.all, 'faq', id] as const,
+  loyalty: () => [...customerKeys.all, 'loyalty'] as const,
+  loyaltyHistory: () => [...customerKeys.all, 'loyaltyHistory'] as const,
+  subscriptionPlans: () => [...customerKeys.all, 'subscriptionPlans'] as const,
+  mySubscription: () => [...customerKeys.all, 'mySubscription'] as const,
+  scratchCards: () => [...customerKeys.all, 'scratchCards'] as const,
 };
 
 function useIsAuthed() {
   return useAuthStore((s) => Boolean(s.token && s.user));
+}
+
+/** App config — splash screen: versions, forceUpdate, cities, feature flags */
+export function useAppConfig() {
+  return useQuery({
+    queryKey: customerKeys.config(),
+    queryFn: customerApi.getConfig,
+    staleTime: 5 * 60_000,
+    retry: 2,
+  });
 }
 
 export function useCustomerServiceHealth() {
@@ -43,13 +69,34 @@ export function useCustomerServiceHealth() {
 }
 
 export function useHomeFeed() {
-  const authed = useIsAuthed();
+  const coords = useDeliveryCoords();
+  const hasCoords = Boolean(coords?.lat && coords?.lng);
   return useQuery({
-    queryKey: customerKeys.home(),
-    queryFn: customerApi.getHome,
-    enabled: authed,
+    queryKey: customerKeys.home(coords?.lat, coords?.lng),
+    queryFn: () => customerApi.getHome(coords ?? undefined),
+    enabled: hasCoords,
     staleTime: 60_000,
     retry: 1,
+  });
+}
+
+/** Collection rails for home screen */
+export function useCollections() {
+  return useQuery({
+    queryKey: customerKeys.collections(),
+    queryFn: customerApi.getCollections,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
+/** Restaurants within a specific collection */
+export function useCollectionRestaurants(slug: string, page = 1) {
+  return useQuery({
+    queryKey: customerKeys.collection(slug),
+    queryFn: () => customerApi.getCollectionRestaurants(slug, page),
+    enabled: Boolean(slug),
+    staleTime: 2 * 60_000,
   });
 }
 
@@ -215,5 +262,164 @@ export function useRateTicket(ticketId: string) {
       queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
       queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
     },
+  });
+}
+
+export function useCloseTicket(ticketId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => customerApi.closeTicket(ticketId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
+      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
+    },
+  });
+}
+
+export function useRequestCallback() {
+  return useMutation({
+    mutationFn: (payload: CallbackRequestPayload) =>
+      customerApi.requestCallback(payload),
+  });
+}
+
+export function useFaqs() {
+  return useQuery({
+    queryKey: customerKeys.faqs(),
+    queryFn: customerApi.getFaqs,
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useFaq(faqId: string) {
+  return useQuery({
+    queryKey: customerKeys.faq(faqId),
+    queryFn: () => customerApi.getFaq(faqId),
+    enabled: Boolean(faqId),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useUpdatePrefs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateCustomerPrefsPayload) =>
+      customerApi.updatePrefs(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.profile() });
+    },
+  });
+}
+
+export function useFavouriteDishes() {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.favouriteDishes(),
+    queryFn: customerApi.getFavouriteDishes,
+    enabled: authed,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+export function useAddFavouriteDish() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, restaurantId }: { itemId: string; restaurantId: string }) =>
+      customerApi.addFavouriteDish(itemId, restaurantId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.favouriteDishes() });
+    },
+  });
+}
+
+export function useRemoveFavouriteDish() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => customerApi.removeFavouriteDish(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.favouriteDishes() });
+    },
+  });
+}
+
+export function useLoyalty() {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.loyalty(),
+    queryFn: customerApi.getLoyalty,
+    enabled: authed,
+    staleTime: 60_000,
+  });
+}
+
+export function useLoyaltyHistory() {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.loyaltyHistory(),
+    queryFn: customerApi.getLoyaltyHistory,
+    enabled: authed,
+    staleTime: 60_000,
+  });
+}
+
+export function useSubscriptionPlans() {
+  return useQuery({
+    queryKey: customerKeys.subscriptionPlans(),
+    queryFn: customerApi.getSubscriptionPlans,
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useMySubscription() {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.mySubscription(),
+    queryFn: customerApi.getMySubscription,
+    enabled: authed,
+    staleTime: 60_000,
+  });
+}
+
+export function useCancelSubscription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: customerApi.cancelSubscription,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.mySubscription() });
+    },
+  });
+}
+
+export function useScratchCards() {
+  const authed = useIsAuthed();
+  return useQuery({
+    queryKey: customerKeys.scratchCards(),
+    queryFn: customerApi.getScratchCards,
+    enabled: authed,
+    staleTime: 30_000,
+  });
+}
+
+export function useRevealScratchCard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (cardId: string) => customerApi.revealScratchCard(cardId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.scratchCards() });
+    },
+  });
+}
+
+export function useReportCrash() {
+  return useMutation({
+    mutationFn: (payload: CrashReportPayload) => customerApi.reportCrash(payload),
+  });
+}
+
+export function useSubmitFeedback() {
+  return useMutation({
+    mutationFn: (payload: AppFeedbackPayload) => customerApi.submitFeedback(payload),
   });
 }

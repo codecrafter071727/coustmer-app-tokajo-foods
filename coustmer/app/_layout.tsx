@@ -16,6 +16,8 @@ import { ScreenTopOffsetProvider } from '@/components/common/ScreenTopOffsetProv
 import { useAppFonts } from '@/lib/fonts';
 import { queryClient, asyncStoragePersister } from '@/lib/query-client';
 import { useAuthStore } from '@/store/auth-store';
+import { CrashBoundary } from '@/components/common/CrashBoundary';
+import { SocketProvider } from '@/lib/socket/SocketProvider';
 
 // Keep the native splash visible while we initialise.
 // Web has no native splash — calling this there leaves a blank white page.
@@ -91,19 +93,23 @@ export default function RootLayout() {
           persistOptions={{ persister: asyncStoragePersister }}
         >
           <ScreenTopOffsetProvider>
-            <View
-              style={{ flex: 1, backgroundColor: authTheme.bg }}
-              onLayout={onLayoutRootView}
-            >
-              <StatusBar style="dark" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  animation: 'fade',
-                  contentStyle: { backgroundColor: authTheme.bg },
-                }}
-              />
-            </View>
+            <CrashBoundary>
+            <SocketProvider>
+              <View
+                style={{ flex: 1, backgroundColor: authTheme.bg }}
+                onLayout={onLayoutRootView}
+              >
+                <StatusBar style="dark" />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    animation: 'fade',
+                    contentStyle: { backgroundColor: authTheme.bg },
+                  }}
+                />
+              </View>
+            </SocketProvider>
+            </CrashBoundary>
           </ScreenTopOffsetProvider>
         </PersistQueryClientProvider>
       </SafeAreaProvider>

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Bell, MapPin, Search, UtensilsCrossed } from 'lucide-react-native';
+import { Bell, MapPin, Search, Sparkles } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SmoothPressable } from '@/components/common/SmoothPressable';
 import { fonts } from '@/constants/typography';
@@ -60,20 +60,17 @@ export function SwiggyHomeChrome({
 
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
-      {/* Background hero image */}
-      <Image
-        source={{
-          uri: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1200&auto=format&fit=crop',
-        }}
+      {/* Vibrant gradient background */}
+      <LinearGradient
+        colors={['#FF6B6B', '#FF8E53', '#FFA94D']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
-        contentFit="cover"
       />
 
-      {/* Dark overlay gradient */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)']}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* Animated circles for depth */}
+      <View style={[styles.circle, styles.circle1]} />
+      <View style={[styles.circle, styles.circle2]} />
 
       {/* ── Top bar ──────────────────────────────────── */}
       <View style={styles.topBar}>
@@ -96,13 +93,15 @@ export function SwiggyHomeChrome({
         </SmoothPressable>
 
         {/* Delivery location */}
-        <SmoothPressable style={styles.locationWrap} onPress={onLocationPress} pressScale={0.96}>
-          <Text style={styles.locationLabel}>Delivery location</Text>
-          <View style={styles.locationRow}>
-            <MapPin color="#F97316" size={12} strokeWidth={3} />
-            <Text style={styles.locationText} numberOfLines={1}>
-              {locationText}
-            </Text>
+        <SmoothPressable style={styles.locationWrap} onPress={onLocationPress} pressScale={0.97}>
+          <View style={styles.locationPill}>
+            <MapPin color="#FF6B6B" size={14} strokeWidth={2.5} fill="#FFE5E5" />
+            <View style={styles.locationTextWrap}>
+              <Text style={styles.locationLabel}>Deliver to</Text>
+              <Text style={styles.locationText} numberOfLines={1}>
+                {locationText}
+              </Text>
+            </View>
           </View>
         </SmoothPressable>
 
@@ -116,7 +115,7 @@ export function SwiggyHomeChrome({
               : 'Notifications'
           }
         >
-          <Bell color="#FFFFFF" size={20} strokeWidth={2.2} />
+          <Bell color="#1F2937" size={20} strokeWidth={2.2} />
           {unreadCount > 0 ? (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
@@ -127,46 +126,31 @@ export function SwiggyHomeChrome({
         </SmoothPressable>
       </View>
 
-      {/* ── Hero promo ───────────────────────────────── */}
-      <View style={styles.promoWrap}>
-        {/* Big percentage row */}
-        <View style={styles.promoAmountRow}>
-          <Text style={styles.promoPercent}>15%</Text>
-          <View style={styles.promoWords}>
-            <Text style={styles.promoExtra}>EXTRA</Text>
-            <Text style={styles.promoDiscount}>DISCOUNT</Text>
-          </View>
-        </View>
-        <Text style={styles.promoSub}>
-          Get your first order{'\n'}delivery free!
-        </Text>
-      </View>
-
       {/* ── Search bar ───────────────────────────────── */}
       <View style={styles.searchRow}>
         <Pressable
           style={styles.searchBox}
           onPress={() => router.push('/search')}
         >
-          <Search color="#64748B" size={18} strokeWidth={2.4} />
+          <Search color="#9CA3AF" size={20} strokeWidth={2.2} />
           <Text style={styles.searchPlaceholder}>
-            Search dishes, restaurants…
+            Search for dishes, restaurants
           </Text>
         </Pressable>
 
         <SmoothPressable
-          style={styles.browseBtn}
+          style={styles.sparkleBtn}
           onPress={() => router.push('/restaurants')}
-          accessibilityLabel="Browse all restaurants"
+          accessibilityLabel="Explore restaurants"
           pressScale={0.92}
         >
           <LinearGradient
-            colors={['#FF8A4C', '#EA580C']}
+            colors={['#FEF3C7', '#FDE68A']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.browseBtnGrad}
+            style={styles.sparkleBtnGrad}
           >
-            <UtensilsCrossed color="#FFFFFF" size={20} strokeWidth={2.4} />
+            <Sparkles color="#F59E0B" size={20} strokeWidth={2.2} fill="#FCD34D" />
           </LinearGradient>
         </SmoothPressable>
       </View>
@@ -176,184 +160,183 @@ export function SwiggyHomeChrome({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111',
-    paddingBottom: 32,
-    // Large rounded bottom corners
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
+    backgroundColor: '#FF6B6B',
+    paddingBottom: 28,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
     overflow: 'hidden',
+  },
+
+  // Decorative circles
+  circle: {
+    position: 'absolute',
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  circle1: {
+    width: 200,
+    height: 200,
+    top: -80,
+    right: -60,
+  },
+  circle2: {
+    width: 140,
+    height: 140,
+    bottom: -50,
+    left: -30,
   },
 
   // ── Top bar ──
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingTop: 14,
     paddingBottom: 0,
-    gap: 8,
+    gap: 10,
+    zIndex: 10,
   },
   iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   badge: {
     position: 'absolute',
-    top: 2,
-    right: 2,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#F97316',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: '#0B1220',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   badgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
+    color: '#fff',
+    fontSize: 10,
     fontFamily: fonts.uiBold,
-    lineHeight: 11,
+    fontWeight: '700',
   },
   profileBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   profileAvatar: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
   },
   profileFallback: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F97316',
+    backgroundColor: '#FCD34D',
   },
   profileInitials: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: '#92400E',
+    fontSize: 15,
     fontFamily: fonts.displayBold,
-    letterSpacing: 0.4,
+    fontWeight: '700',
   },
   locationWrap: {
     flex: 1,
+  },
+  locationPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  locationTextWrap: {
+    flex: 1,
   },
   locationLabel: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 9,
-    fontFamily: fonts.uiBold,
-    marginBottom: 2,
-    letterSpacing: 0.2,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '600',
+    marginBottom: 1,
   },
   locationText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    color: '#1F2937',
+    fontSize: 14,
     fontFamily: fonts.displayBold,
-    maxWidth: 200,
-  },
-
-  // ── Promo block ──
-  promoWrap: {
-    alignItems: 'center',
-    marginTop: 28,
-    marginBottom: 28,
-    paddingHorizontal: 16,
-  },
-  promoAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  promoPercent: {
-    color: '#F97316',
-    fontSize: 60,
-    fontFamily: fonts.display,
-    letterSpacing: -2,
-    lineHeight: 66,
-  },
-  promoWords: {
-    justifyContent: 'center',
-    gap: 0,
-  },
-  promoExtra: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontFamily: fonts.display,
-    letterSpacing: 1.5,
-    lineHeight: 26,
-  },
-  promoDiscount: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontFamily: fonts.display,
-    letterSpacing: 1.5,
-    lineHeight: 26,
-  },
-  promoSub: {
-    color: '#F3F4F6',
-    fontSize: 17,
-    fontFamily: fonts.uiMedium,
-    textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 24,
+    fontWeight: '700',
   },
 
   // ── Search ──
   searchRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     gap: 10,
     alignItems: 'center',
-    marginTop: 14, // Shifting search bar down slightly
+    marginTop: 16,
+    zIndex: 10,
   },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    height: 52,
-    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 54,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   searchPlaceholder: {
     flex: 1,
-    color: '#475569',
-    fontSize: 14,
-    fontFamily: fonts.uiSemi,
+    color: '#9CA3AF',
+    fontSize: 15,
+    fontWeight: '500',
   },
-  browseBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  sparkleBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 5,
   },
-  browseBtnGrad: {
+  sparkleBtnGrad: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
