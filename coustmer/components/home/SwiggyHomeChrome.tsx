@@ -60,9 +60,9 @@ export function SwiggyHomeChrome({
 
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
-      {/* Vibrant gradient background */}
+      {/* Dark gradient background */}
       <LinearGradient
-        colors={['#FF6B6B', '#FF8E53', '#FFA94D']}
+        colors={['#0F172A', '#1E293B']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -95,7 +95,7 @@ export function SwiggyHomeChrome({
         {/* Delivery location */}
         <SmoothPressable style={styles.locationWrap} onPress={onLocationPress} pressScale={0.97}>
           <View style={styles.locationPill}>
-            <MapPin color="#FF6B6B" size={14} strokeWidth={2.5} fill="#FFE5E5" />
+            <MapPin color="#EA580C" size={14} strokeWidth={2.5} fill="#FED7AA" />
             <View style={styles.locationTextWrap}>
               <Text style={styles.locationLabel}>Deliver to</Text>
               <Text style={styles.locationText} numberOfLines={1}>
@@ -160,7 +160,7 @@ export function SwiggyHomeChrome({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#0F172A',
     paddingBottom: 28,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
