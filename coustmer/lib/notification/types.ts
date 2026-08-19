@@ -40,3 +40,17 @@ export type NotificationListResult = {
 export type UnreadCountResult = {
   count: number;
 };
+
+export type NotificationDevice = {
+  id: string;
+  token?: string;
+  platform?: string;
+  app?: string;
+  createdAt?: string;
+};
+
+export type NotificationPreferences = {
+  orders: boolean;
+  offers: boolean;
+  whatsapp: boolean;
+};

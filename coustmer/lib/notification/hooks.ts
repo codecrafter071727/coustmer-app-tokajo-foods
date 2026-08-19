@@ -13,6 +13,9 @@ export const notificationKeys = {
   list: (params?: { page?: number; limit?: number; unread?: boolean }) =>
     [...notificationKeys.all, 'list', params ?? {}] as const,
   unreadCount: () => [...notificationKeys.all, 'unread-count'] as const,
+  ready: () => [...notificationKeys.all, 'ready'] as const,
+  devices: () => [...notificationKeys.all, 'devices'] as const,
+  preferences: () => [...notificationKeys.all, 'preferences'] as const,
 };
 
 function invalidateNotificationQueries(
@@ -26,6 +29,17 @@ export function useNotificationServiceHealth(enabled = false) {
   return useQuery({
     queryKey: notificationKeys.health(),
     queryFn: notificationApi.health,
+    enabled,
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
+/** GET /health/ready */
+export function useNotificationServiceReady(enabled = false) {
+  return useQuery({
+    queryKey: notificationKeys.ready(),
+    queryFn: notificationApi.ready,
     enabled,
     staleTime: 60_000,
     retry: 1,
@@ -274,5 +288,59 @@ export function useClearAllNotifications() {
     onSettled: () => {
       invalidateNotificationQueries(queryClient);
     },
+  });
+}
+
+/** GET /devices */
+export function useNotificationDevices(enabled = true) {
+  return useQuery({
+    queryKey: notificationKeys.devices(),
+    queryFn: notificationApi.getDevices,
+    enabled,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
+/** POST /devices/register */
+export function useRegisterNotificationDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      token: string;
+      platform: 'android' | 'ios' | 'web';
+      app?: 'customer';
+    }) => notificationApi.registerDevice(payload),
+    onSettled: () => invalidateNotificationQueries(queryClient),
+  });
+}
+
+/** DELETE /devices/:deviceId */
+export function useUnregisterNotificationDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (deviceId: string) => notificationApi.unregisterDevice(deviceId),
+    onSettled: () => invalidateNotificationQueries(queryClient),
+  });
+}
+
+/** GET /preferences */
+export function useNotificationPreferences(enabled = true) {
+  return useQuery({
+    queryKey: notificationKeys.preferences(),
+    queryFn: notificationApi.getPreferences,
+    enabled,
+    staleTime: 15_000,
+    retry: 1,
+  });
+}
+
+/** PUT /preferences */
+export function useUpdateNotificationPreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { orders?: boolean; offers?: boolean; whatsapp?: boolean }) =>
+      notificationApi.updatePreferences(payload),
+    onSettled: () => invalidateNotificationQueries(queryClient),
   });
 }

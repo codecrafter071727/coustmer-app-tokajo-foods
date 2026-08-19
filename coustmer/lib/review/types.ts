@@ -37,6 +37,7 @@ export type RestaurantReview = {
   rating: number;
   comment?: string;
   title?: string;
+  photos?: string[];
   /** Owner/admin reply (Swiggy/Zomato-style). */
   reply?: ReviewOwnerReply;
   createdAt?: string;
@@ -67,4 +68,23 @@ export type SubmitReviewPayload = {
   comment?: string;
   title?: string;
   orderId?: string;
+  photos?: string[];
+};
+
+export type ReportReviewPayload = {
+  reason: string;
+};
+
+export type SubmitOrderReviewPayload = {
+  restaurantId?: string;
+  rating: number;
+  comment?: string;
+  title?: string;
+  photos?: string[];
+  packagingRating?: number;
+  deliveryRating?: number;
+};
+
+export type SubmitDishReviewsPayload = {
+  dishes: { itemId: string; rating: 1 | -1 }[];
 };

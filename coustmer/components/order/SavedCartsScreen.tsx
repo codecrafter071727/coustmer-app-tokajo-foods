@@ -1,221 +1,119 @@
-import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
-import { Bookmark, RotateCcw, Trash2 } from 'lucide-react-native';
-import { ActivityIndicator,
+import { ArrowLeft, Bookmark, RotateCcw, Trash2 } from 'lucide-react-native';
+import {
+  ActivityIndicator,
   Alert,
   FlatList,
-  
-  RefreshControl,
   StyleSheet,
   Text,
-  View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ScreenHeader } from '@/components/common/ScreenHeader';
-import {
-  EmptyView,
-  ErrorView,
-  LoadingView,
-} from '@/components/common/StateViews';
-import { authTheme } from '@/constants/auth-theme';
+import { SmoothPressable } from '@/components/common/SmoothPressable';
+import { fonts } from '@/constants/typography';
 import {
   useDeleteSavedCart,
   useRestoreSavedCart,
   useSavedCarts,
 } from '@/lib/cart/hooks';
 import type { SavedCart } from '@/lib/cart/types';
-import { useAuthStore } from '@/store/auth-store';
+
+const BG = '#F4F5F7';
+const WHITE = '#FFFFFF';
+const ORANGE = '#F97316';
+const TEXT = '#0B1220';
+const TEXT_SEC = '#64748B';
+const TEXT_MUTED = '#94A3B8';
+const BORDER = '#E5E7EB';
 
 export function SavedCartsScreen() {
   const router = useRouter();
-  const isLoggedIn = Boolean(useAuthStore((s) => s.token));
-  const saved = useSavedCarts(isLoggedIn);
-  const restore = useRestoreSavedCart();
-  const remove = useDeleteSavedCart();
+  const insets = useSafeAreaInsets();
+  const { data: carts, isLoading } = useSavedCarts();
+  const restoreMut = useRestoreSavedCart();
+  const deleteMut = useDeleteSavedCart();
 
-  const handleRestore = (cart: SavedCart) => {
-    Alert.alert(
-      'Restore cart?',
-      'This will replace your current active cart.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          onPress: async () => {
-            try {
-              await restore.mutateAsync(cart.id);
-              router.replace('/cart');
-            } catch (e) {
-              Alert.alert(
-                'Restore failed',
-                e instanceof Error ? e.message : 'Could not restore cart'
-              );
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDelete = (cart: SavedCart) => {
-    Alert.alert('Delete saved cart?', cart.name || 'This saved cart', [
+  const handleRestore = (id: string) => {
+    Alert.alert('Restore cart?', 'This will replace your current cart.', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await remove.mutateAsync(cart.id);
-          } catch (e) {
-            Alert.alert(
-              'Delete failed',
-              e instanceof Error ? e.message : 'Could not delete'
-            );
-          }
-        },
+        text: 'Restore',
+        onPress: () =>
+          restoreMut.mutate(id, {
+            onSuccess: () => router.replace('/cart'),
+            onError: (e) => Alert.alert('Error', e instanceof Error ? e.message : 'Failed'),
+          }),
       },
     ]);
   };
 
-  if (!isLoggedIn) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.pad}>
-          <ScreenHeader title="Saved carts" />
-          <EmptyView
-            title="Sign in to view saved carts"
-            subtitle="Save carts while logged in to restore them later."
-          />
-          <Pressable
-            style={styles.loginBtn}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.loginText}>Sign in</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const handleDelete = (id: string) => {
+    Alert.alert('Delete saved cart?', '', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMut.mutate(id) },
+    ]);
+  };
+
+  const renderItem = ({ item }: { item: SavedCart }) => (
+    <View style={styles.card}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardName}>{item.name || item.restaurantName || 'Saved Cart'}</Text>
+        <Text style={styles.cardMeta}>
+          {item.itemCount ?? item.items?.length ?? 0} items
+          {item.subtotal ? ` · ₹${item.subtotal.toFixed(0)}` : ''}
+        </Text>
+      </View>
+      <TouchableOpacity onPress={() => handleRestore(item.id)} style={styles.actionBtn}>
+        <RotateCcw color={ORANGE} size={18} strokeWidth={2.2} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionBtn}>
+        <Trash2 color="#EF4444" size={18} strokeWidth={2.2} />
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.pad}>
-        <ScreenHeader
-          title="Saved carts"
-          subtitle="Restore favourites anytime"
-        />
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        <SmoothPressable onPress={() => router.back()} style={styles.iconBtn} pressScale={0.9}>
+          <ArrowLeft color={TEXT} size={22} strokeWidth={2.2} />
+        </SmoothPressable>
+        <Text style={styles.headerTitle}>Saved Carts</Text>
+        <View style={styles.iconBtn} />
       </View>
 
-      {saved.isLoading ? (
-        <LoadingView label="Loading saved carts…" />
-      ) : saved.isError ? (
-        <ErrorView
-          message={
-            saved.error instanceof Error
-              ? saved.error.message
-              : 'Failed to load saved carts'
-          }
-          onRetry={saved.refetch}
-        />
+      {isLoading ? (
+        <ActivityIndicator color={ORANGE} style={{ marginTop: 40 }} size="large" />
+      ) : !carts?.length ? (
+        <View style={styles.emptyWrap}>
+          <Bookmark color={TEXT_MUTED} size={60} strokeWidth={1.2} />
+          <Text style={styles.emptyTitle}>No saved carts</Text>
+          <Text style={styles.emptySub}>Save a cart from the cart screen to reorder later</Text>
+        </View>
       ) : (
         <FlatList
-          data={saved.data ?? []}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl
-              refreshing={saved.isRefetching}
-              onRefresh={saved.refetch}
-              tintColor={authTheme.brand}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyView
-              title="No saved carts"
-              subtitle="From your cart, tap “Save cart for later”."
-            />
-          }
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={styles.icon}>
-                <Bookmark color={authTheme.brand} size={18} />
-              </View>
-              <View style={styles.body}>
-                <Text style={styles.title}>
-                  {item.name || item.restaurantName || 'Saved cart'}
-                </Text>
-                <Text style={styles.meta}>
-                  {item.itemCount ?? item.items?.length ?? 0} items
-                  {typeof item.subtotal === 'number'
-                    ? ` · ₹${item.subtotal.toFixed(0)}`
-                    : ''}
-                </Text>
-                {item.createdAt ? (
-                  <Text style={styles.date}>
-                    {new Date(item.createdAt).toLocaleString()}
-                  </Text>
-                ) : null}
-              </View>
-              <Pressable
-                style={styles.action}
-                onPress={() => handleRestore(item)}
-                disabled={restore.isPending}
-              >
-                {restore.isPending ? (
-                  <ActivityIndicator color={authTheme.brand} size="small" />
-                ) : (
-                  <RotateCcw color={authTheme.brand} size={18} />
-                )}
-              </Pressable>
-              <Pressable
-                style={styles.action}
-                onPress={() => handleDelete(item)}
-                disabled={remove.isPending}
-              >
-                <Trash2 color="#DC2626" size={18} />
-              </Pressable>
-            </View>
-          )}
+          data={carts}
+          keyExtractor={(c) => c.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: insets.bottom + 20 }}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: authTheme.bg },
-  pad: { paddingHorizontal: 20, paddingTop: 8 },
-  list: { padding: 20, gap: 10, paddingBottom: 40 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: authTheme.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: authTheme.cardBorder,
-    padding: 14,
-  },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: authTheme.brandSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  body: { flex: 1 },
-  title: { color: authTheme.text, fontWeight: '800', fontSize: 14 },
-  meta: { color: authTheme.textMuted, fontSize: 12, marginTop: 2 },
-  date: { color: authTheme.textDim, fontSize: 11, marginTop: 2 },
-  action: { padding: 6 },
-  loginBtn: {
-    alignSelf: 'center',
-    marginTop: 12,
-    backgroundColor: authTheme.brand,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  loginText: { color: '#FFFFFF', fontWeight: '800' },
+  root: { flex: 1, backgroundColor: BG },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
+  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', fontFamily: fonts.displayBold, fontSize: 17, color: TEXT },
+  card: { backgroundColor: WHITE, borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: BORDER },
+  cardName: { fontFamily: fonts.displayBold, fontSize: 14, color: TEXT },
+  cardMeta: { fontFamily: fonts.ui, fontSize: 12, color: TEXT_SEC, marginTop: 2 },
+  actionBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  emptyTitle: { fontFamily: fonts.displayBold, fontSize: 18, color: TEXT },
+  emptySub: { fontFamily: fonts.ui, fontSize: 14, color: TEXT_SEC, textAlign: 'center', paddingHorizontal: 40 },
 });

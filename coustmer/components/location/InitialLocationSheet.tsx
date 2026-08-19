@@ -1,7 +1,7 @@
 import { Pressable } from '@/components/common/Pressable';
 import * as Location from 'expo-location';
 import { Crosshair, Home, Search } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,12 @@ import { useSavedAddresses } from '@/lib/address/hooks';
 import { reverseGeocodeAddress } from '@/lib/address/search';
 import { formatAddressLabel } from '@/lib/address/types';
 import type { SavedAddress } from '@/lib/address/types';
+import {
+  useCities,
+  useSurgeStatus,
+  useZone,
+  useZones,
+} from '@/lib/delivery/hooks';
 import {
   extractCityFromAddress,
   normalizeCityName,
@@ -54,6 +60,11 @@ export function InitialLocationSheet({
     servicesOn: true,
   });
   const [statusReady, setStatusReady] = useState(false);
+  const cities = useCities();
+  const zones = useZones();
+  const firstZoneId = useMemo(() => zones.data?.[0]?.id ?? '', [zones.data]);
+  const zoneDetail = useZone(firstZoneId);
+  const surge = useSurgeStatus(firstZoneId);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -279,6 +290,31 @@ export function InitialLocationSheet({
                 No saved addresses yet. Use current location or enter manually.
               </Text>
             )}
+
+            <View style={styles.publicMetaCard}>
+              <Text style={styles.publicMetaTitle}>Delivery coverage</Text>
+              <Text style={styles.publicMetaLine}>
+                Cities live: {cities.data?.length ?? 0}
+              </Text>
+              <Text style={styles.publicMetaLine}>
+                Zones available: {zones.data?.length ?? 0}
+              </Text>
+              {zoneDetail.data ? (
+                <Text style={styles.publicMetaLine}>
+                  Active zone: {zoneDetail.data.name}
+                </Text>
+              ) : null}
+              {surge.data ? (
+                <Text style={styles.publicMetaLine}>
+                  Surge:{' '}
+                  {surge.data.isSurge
+                    ? surge.data.multiplier
+                      ? `${surge.data.multiplier.toFixed(1)}x`
+                      : 'ON'
+                    : 'OFF'}
+                </Text>
+              ) : null}
+            </View>
           </ScrollView>
 
           <View style={styles.manualWrapper}>
@@ -387,6 +423,28 @@ const styles = StyleSheet.create({
     color: '#93959F',
     paddingHorizontal: 16,
     paddingVertical: 20,
+  },
+  publicMetaCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFE0CC',
+    backgroundColor: '#FFF7F2',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  publicMetaTitle: {
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: '#C2410C',
+    letterSpacing: 0.3,
+  },
+  publicMetaLine: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: '#7C2D12',
   },
   manualWrapper: {
     paddingHorizontal: 16,

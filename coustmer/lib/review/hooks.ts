@@ -5,11 +5,17 @@ import {
 } from '@tanstack/react-query';
 
 import { reviewApi } from '@/lib/review/api';
-import type { SubmitReviewPayload } from '@/lib/review/types';
+import type {
+  ReportReviewPayload,
+  SubmitDishReviewsPayload,
+  SubmitOrderReviewPayload,
+  SubmitReviewPayload,
+} from '@/lib/review/types';
 
 export const reviewKeys = {
   all: ['review'] as const,
   health: () => [...reviewKeys.all, 'health'] as const,
+  ready: () => [...reviewKeys.all, 'ready'] as const,
   restaurantReviews: (
     restaurantId: string,
     params?: { page?: number; limit?: number }
@@ -26,6 +32,17 @@ export function useReviewServiceHealth(enabled = false) {
   return useQuery({
     queryKey: reviewKeys.health(),
     queryFn: reviewApi.health,
+    enabled,
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
+/** GET /health/ready */
+export function useReviewServiceReady(enabled = false) {
+  return useQuery({
+    queryKey: reviewKeys.ready(),
+    queryFn: reviewApi.ready,
     enabled,
     staleTime: 60_000,
     retry: 1,
@@ -92,6 +109,73 @@ export function useSubmitRestaurantReview(restaurantId: string) {
         });
       }
       queryClient.invalidateQueries({ queryKey: reviewKeys.all });
+    },
+  });
+}
+
+/** PUT /restaurants/:restaurantId/reviews/:reviewId */
+export function useUpdateRestaurantReview(restaurantId: string, reviewId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SubmitReviewPayload) =>
+      reviewApi.updateRestaurantReview(restaurantId, reviewId, payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [...reviewKeys.all, 'restaurant', restaurantId],
+      });
+      if (variables.orderId) {
+        queryClient.invalidateQueries({
+          queryKey: reviewKeys.orderReview(variables.orderId),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: reviewKeys.all });
+    },
+  });
+}
+
+/** DELETE /restaurants/:restaurantId/reviews/:reviewId */
+export function useDeleteRestaurantReview(restaurantId: string, reviewId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => reviewApi.deleteRestaurantReview(restaurantId, reviewId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [...reviewKeys.all, 'restaurant', restaurantId],
+      });
+      queryClient.invalidateQueries({ queryKey: reviewKeys.all });
+    },
+  });
+}
+
+/** POST /restaurants/:restaurantId/reviews/:reviewId/report */
+export function useReportRestaurantReview(restaurantId: string, reviewId: string) {
+  return useMutation({
+    mutationFn: (payload: ReportReviewPayload) =>
+      reviewApi.reportRestaurantReview(restaurantId, reviewId, payload),
+  });
+}
+
+/** POST /orders/:orderId/reviews */
+export function useSubmitOrderReview(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SubmitOrderReviewPayload) =>
+      reviewApi.submitOrderReview(orderId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: reviewKeys.orderReview(orderId) });
+      queryClient.invalidateQueries({ queryKey: reviewKeys.all });
+    },
+  });
+}
+
+/** POST /orders/:orderId/reviews/dishes */
+export function useSubmitDishReviews(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SubmitDishReviewsPayload) =>
+      reviewApi.submitDishReviews(orderId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: reviewKeys.orderReview(orderId) });
     },
   });
 }

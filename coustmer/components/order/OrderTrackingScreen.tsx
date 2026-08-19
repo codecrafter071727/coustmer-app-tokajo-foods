@@ -21,9 +21,11 @@ import {
   Alert,
   LayoutChangeEvent,
   Linking,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import Animated, {
@@ -41,7 +43,27 @@ import { WebView } from 'react-native-webview';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
-import { useOrderDeliveryPartner, useOrderTracking as useDeliveryTracking } from '@/lib/delivery/hooks';
+import { deliveryApi } from '@/lib/delivery/api';
+import {
+  useChatHistory,
+  useChangeAddress,
+  useContactPartner,
+  useContactSupport,
+  useCreateShareLink,
+  useDropOtp,
+  useLiveLocation,
+  useNudgePartner,
+  useOrderDeliveryPartner,
+  useOrderTracking as useDeliveryTracking,
+  useRevokeShareLink,
+  useRatePartner,
+  useSendChat,
+  useSetContactless,
+  useSetDeliveryInstructions,
+  useAddTip,
+  useTrackingEta,
+  useTrackingRoute,
+} from '@/lib/delivery/hooks';
 import { GOOGLE_MAPS_API_KEY } from '@/lib/google-maps';
 import { useOrder, useReorder } from '@/lib/order/hooks';
 import { toE164IndianMobile } from '@/lib/order/phone';
@@ -350,10 +372,20 @@ export function OrderTrackingScreen() {
   });
   const partner = partnerQuery.data;
 
+  // GET /tracking/order/:orderId/location — live GPS fallback (5s poll)
+  const liveLocQuery = useLiveLocation(id, trackingActive);
+  // GET /tracking/order/:orderId/eta — polled ETA fallback (30s poll)
+  const etaQuery = useTrackingEta(id, trackingActive);
+
   const [distanceInfo, setDistanceInfo] = useState<{
     dist: string;
     time: string;
   } | null>(null);
+  const [chatText, setChatText] = useState('');
+  const [instructionText, setInstructionText] = useState('');
+  const [contactless, setContactless] = useState(false);
+  const [tipInput, setTipInput] = useState('');
+  const [partnerRatingInput, setPartnerRatingInput] = useState('5');
 
   const mapHeight = useSharedValue(52);
   const pulse = useSharedValue(0);
@@ -400,13 +432,15 @@ export function OrderTrackingScreen() {
         .filter(Boolean)
         .join(' · ')
     : '';
-  // Prefer socket live GPS, then partner query coords, then tracker coords
+  // Prefer socket live GPS → /location poll → partner query → full tracker
   const partnerLat =
     socketLocation?.lat ??
+    liveLocQuery.data?.lat ??
     partner?.currentLocation?.lat ??
     trackerPartner?.currentLocation?.lat;
   const partnerLng =
     socketLocation?.lng ??
+    liveLocQuery.data?.lng ??
     partner?.currentLocation?.lng ??
     trackerPartner?.currentLocation?.lng;
 
@@ -524,6 +558,166 @@ export function OrderTrackingScreen() {
     void Linking.openURL(`tel:${e164}`);
   };
 
+  const routeQuery = useTrackingRoute(id);
+  const otpQuery = useDropOtp(id, trackingActive);
+  const chatQuery = useChatHistory(id);
+  const sendChat = useSendChat(id);
+  const createShare = useCreateShareLink(id);
+  const revokeShare = useRevokeShareLink(id);
+  const nudgePartner = useNudgePartner(id);
+  const contactPartner = useContactPartner(id);
+  const contactSupport = useContactSupport(id);
+  const setDeliveryInstructions = useSetDeliveryInstructions(id);
+  const setContactless = useSetContactless(id);
+  const changeAddress = useChangeAddress(id);
+  const addTip = useAddTip(id);
+  const ratePartner = useRatePartner(id);
+
+  const routeDistance =
+    typeof routeQuery.data?.distanceMeters === 'number'
+      ? `${(routeQuery.data.distanceMeters / 1000).toFixed(1)} km`
+      : distanceInfo?.dist;
+  const routeDuration =
+    typeof routeQuery.data?.durationSeconds === 'number'
+      ? `${Math.max(1, Math.round(routeQuery.data.durationSeconds / 60))} mins`
+      : distanceInfo?.time;
+
+  const handleSendChat = async () => {
+    const text = chatText.trim();
+    if (!text) return;
+    try {
+      await sendChat.mutateAsync(text);
+      setChatText('');
+      void chatQuery.refetch();
+    } catch (e) {
+      Alert.alert('Could not send', e instanceof Error ? e.message : 'Try again');
+    }
+  };
+
+  const handleShareTracking = async () => {
+    try {
+      const link = await createShare.mutateAsync();
+      if (!link.shareToken || !link.url) {
+        Alert.alert('Share unavailable', 'Tracking link is not ready yet.');
+        return;
+      }
+      // Validate public endpoint before sharing.
+      await deliveryApi.getPublicShare(link.shareToken);
+      await Share.share({
+        message: `Track my order live: ${link.url}`,
+        url: link.url,
+      });
+    } catch (e) {
+      Alert.alert('Share failed', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleNudge = async () => {
+    try {
+      await nudgePartner.mutateAsync();
+      Alert.alert('Sent', 'We nudged your delivery partner.');
+    } catch (e) {
+      Alert.alert('Could not nudge', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleMaskedCall = async () => {
+    try {
+      const res = await contactPartner.mutateAsync();
+      if (res.maskedPhone) {
+        const e164 = toE164IndianMobile(res.maskedPhone) || res.maskedPhone;
+        await Linking.openURL(`tel:${e164}`);
+        return;
+      }
+      Alert.alert('Connected', 'Partner call request was sent.');
+    } catch (e) {
+      Alert.alert('Call failed', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleSupport = async () => {
+    try {
+      await contactSupport.mutateAsync('Customer asked for order tracking help');
+      Alert.alert('Support contacted', 'Our support team has been notified.');
+    } catch (e) {
+      Alert.alert('Could not contact support', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleSaveInstructions = async () => {
+    const text = instructionText.trim();
+    if (!text) {
+      Alert.alert('Add instructions', 'Please write delivery notes first.');
+      return;
+    }
+    try {
+      await setDeliveryInstructions.mutateAsync({ instructions: text });
+      Alert.alert('Saved', 'Delivery instructions updated.');
+    } catch (e) {
+      Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleContactlessToggle = async () => {
+    try {
+      const next = !contactless;
+      await setContactless.mutateAsync({
+        enabled: next,
+        instructions: next ? instructionText.trim() || 'Leave at door' : undefined,
+      });
+      setContactless(next);
+    } catch (e) {
+      Alert.alert('Could not update', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleAddressChange = async () => {
+    if (!o?.deliveryAddress) {
+      Alert.alert('Address unavailable', 'Current delivery address not found.');
+      return;
+    }
+    try {
+      await changeAddress.mutateAsync({
+        lat: Number(o.deliveryAddress.lat ?? custLat),
+        lng: Number(o.deliveryAddress.lng ?? custLng),
+        formattedAddress: address,
+        instructions: instructionText.trim() || undefined,
+      });
+      Alert.alert('Request sent', 'Address change was submitted.');
+    } catch (e) {
+      Alert.alert('Could not change address', e instanceof Error ? e.message : 'Address can be changed only before pickup.');
+    }
+  };
+
+  const handleInFlightTip = async () => {
+    const amount = Number(tipInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Invalid tip', 'Enter a valid tip amount.');
+      return;
+    }
+    try {
+      await addTip.mutateAsync({ tip: amount });
+      setTipInput('');
+      Alert.alert('Tip added', `₹${amount.toFixed(0)} tip sent to your partner.`);
+    } catch (e) {
+      Alert.alert('Could not add tip', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
+  const handleRatePartner = async () => {
+    const rating = Number(partnerRatingInput);
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      Alert.alert('Invalid rating', 'Rating should be between 1 and 5.');
+      return;
+    }
+    try {
+      await ratePartner.mutateAsync({ rating, comment: 'Rated from order tracking' });
+      Alert.alert('Thanks!', 'Partner rating submitted.');
+    } catch (e) {
+      Alert.alert('Could not submit rating', e instanceof Error ? e.message : 'Please try again');
+    }
+  };
+
   if ((order.isLoading || tracking.isLoading) && !o && !t) {
     return <LoadingView label="Loading tracking…" />;
   }
@@ -610,10 +804,12 @@ export function OrderTrackingScreen() {
       .join(', ') ||
     'Delivery address';
 
-  // Prefer socket ETA (pushed every ~30s) over polled value
+  // Prefer socket ETA → delivery-service /eta poll → full tracker
   const etaRaw =
     socketEta?.etaText ||
     (typeof socketEta?.etaMinutes === 'number' ? `${socketEta.etaMinutes} mins` : null) ||
+    etaQuery.data?.etaText ||
+    (typeof etaQuery.data?.etaMinutes === 'number' ? `${etaQuery.data.etaMinutes} mins` : null) ||
     t?.etaText ||
     (typeof t?.etaMinutes === 'number'
       ? `${t.etaMinutes} mins`
@@ -623,7 +819,8 @@ export function OrderTrackingScreen() {
   const showMins =
     /min/i.test(String(etaRaw)) ||
     typeof t?.etaMinutes === 'number' ||
-    typeof socketEta?.etaMinutes === 'number';
+    typeof socketEta?.etaMinutes === 'number' ||
+    typeof etaQuery.data?.etaMinutes === 'number';
 
   const goBack = () => {
     if (newOrder === 'true') {
@@ -746,9 +943,12 @@ export function OrderTrackingScreen() {
           </Pressable>
         </View>
 
-        {active && distanceInfo?.dist ? (
+        {active && routeDistance ? (
           <View style={styles.mapMeta}>
-            <Text style={styles.mapMetaText}>{distanceInfo.dist} away</Text>
+            <Text style={styles.mapMetaText}>
+              {routeDistance} away
+              {routeDuration ? ` · ${routeDuration}` : ''}
+            </Text>
           </View>
         ) : null}
       </Animated.View>
@@ -943,6 +1143,36 @@ export function OrderTrackingScreen() {
                     <Text style={styles.helpBtnText}>Help</Text>
                   </Pressable>
                 </View>
+                <View style={styles.partnerActions}>
+                  <Pressable style={styles.softBtn} onPress={handleNudge}>
+                    <Text style={styles.softBtnText}>
+                      {nudgePartner.isPending ? 'Sending…' : 'Where are you?'}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.softBtn} onPress={handleShareTracking}>
+                    <Text style={styles.softBtnText}>
+                      {createShare.isPending ? 'Creating…' : 'Share track'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.softBtn, styles.softBtnDanger]}
+                    onPress={async () => {
+                      try {
+                        await revokeShare.mutateAsync();
+                        Alert.alert('Revoked', 'Public tracking link has been disabled.');
+                      } catch (e) {
+                        Alert.alert(
+                          'Could not revoke',
+                          e instanceof Error ? e.message : 'Please try again'
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={styles.softBtnDangerText}>
+                      {revokeShare.isPending ? 'Revoking…' : 'Revoke'}
+                    </Text>
+                  </Pressable>
+                </View>
               </LinearGradient>
             </Animated.View>
           ) : (
@@ -998,6 +1228,150 @@ export function OrderTrackingScreen() {
               </Pressable>
             </View>
           ) : null}
+
+          {active && otpQuery.data?.otp ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Delivery OTP</Text>
+              <View style={styles.otpCard}>
+                <Text style={styles.otpLabel}>Share this with partner on arrival</Text>
+                <Text style={styles.otpValue}>{otpQuery.data.otp}</Text>
+                {otpQuery.data.expiresAt ? (
+                  <Text style={styles.otpExpiry}>
+                    Expires {new Date(otpQuery.data.expiresAt).toLocaleTimeString()}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Chat with partner</Text>
+            <View style={styles.chatCard}>
+              {chatQuery.data?.length ? (
+                chatQuery.data.slice(-4).map((m) => (
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.chatBubble,
+                      m.from === 'customer' ? styles.chatBubbleMine : styles.chatBubbleTheirs,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chatText,
+                        m.from === 'customer' && { color: WHITE },
+                      ]}
+                    >
+                      {m.text}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.chatEmpty}>No messages yet</Text>
+              )}
+              <View style={styles.chatInputRow}>
+                <TextInput
+                  value={chatText}
+                  onChangeText={setChatText}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.chatInput}
+                />
+                <Pressable
+                  style={styles.chatSendBtn}
+                  onPress={handleSendChat}
+                  disabled={sendChat.isPending}
+                >
+                  <Text style={styles.chatSendText}>
+                    {sendChat.isPending ? '...' : 'Send'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Delivery controls</Text>
+            <View style={styles.chatCard}>
+              <View style={styles.partnerActions}>
+                <Pressable style={styles.softBtn} onPress={handleMaskedCall}>
+                  <Text style={styles.softBtnText}>
+                    {contactPartner.isPending ? 'Connecting…' : 'Masked call'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.softBtn} onPress={handleSupport}>
+                  <Text style={styles.softBtnText}>
+                    {contactSupport.isPending ? 'Sending…' : 'Contact support'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <TextInput
+                value={instructionText}
+                onChangeText={setInstructionText}
+                placeholder="Add drop instructions (gate no, floor, landmark)"
+                placeholderTextColor="#9CA3AF"
+                style={styles.chatInput}
+              />
+              <View style={styles.partnerActions}>
+                <Pressable style={styles.softBtn} onPress={handleSaveInstructions}>
+                  <Text style={styles.softBtnText}>
+                    {setDeliveryInstructions.isPending ? 'Saving…' : 'Save notes'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.softBtn} onPress={handleContactlessToggle}>
+                  <Text style={styles.softBtnText}>
+                    {setContactless.isPending
+                      ? 'Updating…'
+                      : contactless
+                        ? 'Contactless ON'
+                        : 'Enable contactless'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.softBtn} onPress={handleAddressChange}>
+                  <Text style={styles.softBtnText}>
+                    {changeAddress.isPending ? 'Updating…' : 'Change pin'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {active ? (
+                <View style={styles.chatInputRow}>
+                  <TextInput
+                    value={tipInput}
+                    onChangeText={setTipInput}
+                    placeholder="Tip amount"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="numeric"
+                    style={styles.chatInput}
+                  />
+                  <Pressable style={styles.chatSendBtn} onPress={handleInFlightTip}>
+                    <Text style={styles.chatSendText}>
+                      {addTip.isPending ? '...' : 'Add tip'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {!active && completed ? (
+                <View style={styles.chatInputRow}>
+                  <TextInput
+                    value={partnerRatingInput}
+                    onChangeText={setPartnerRatingInput}
+                    placeholder="Rate rider (1-5)"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="numeric"
+                    style={styles.chatInput}
+                  />
+                  <Pressable style={styles.chatSendBtn} onPress={handleRatePartner}>
+                    <Text style={styles.chatSendText}>
+                      {ratePartner.isPending ? '...' : 'Rate'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          </View>
 
           {/* Summary */}
           <Animated.View
@@ -1547,6 +1921,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: INK,
   },
+  softBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  softBtnText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: '#9A3412',
+  },
+  softBtnDanger: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  softBtnDangerText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: '#B91C1C',
+  },
   btnDisabled: { opacity: 0.45 },
   doneBanner: {
     marginTop: 16,
@@ -1765,5 +2164,96 @@ const styles = StyleSheet.create({
     fontFamily: fonts.uiMedium,
     fontSize: 12,
     color: MUTED,
+  },
+  otpCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+    padding: 12,
+  },
+  otpLabel: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 12,
+    color: '#92400E',
+  },
+  otpValue: {
+    marginTop: 4,
+    fontFamily: fonts.displayBold,
+    fontSize: 30,
+    letterSpacing: 4,
+    color: '#78350F',
+  },
+  otpExpiry: {
+    marginTop: 4,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    color: '#A16207',
+  },
+  chatCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: LINE,
+    backgroundColor: WHITE,
+    padding: 10,
+    gap: 8,
+  },
+  chatBubble: {
+    maxWidth: '90%',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  chatBubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: ORANGE,
+  },
+  chatBubbleTheirs: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F3F4F6',
+  },
+  chatText: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: INK,
+  },
+  chatEmpty: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
+  },
+  chatInputRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  chatInput: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: LINE,
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 10,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    color: INK,
+  },
+  chatSendBtn: {
+    height: 40,
+    minWidth: 56,
+    borderRadius: 10,
+    backgroundColor: ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  chatSendText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: WHITE,
   },
 });

@@ -2,13 +2,18 @@ import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   FileText,
   Headset,
   IndianRupee,
   MapPin,
+  Minus,
   RotateCcw,
   Store,
   Star,
@@ -22,6 +27,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,8 +39,12 @@ import { fonts } from '@/constants/typography';
 import {
   useCancelOrder,
   useCancelScheduledOrder,
+  useCancellationQuote,
   useFetchInvoice,
   useOrder,
+  useOrderHelp,
+  useOrderTimeline,
+  usePartialCancelItems,
   useReorder,
   useUpdateTip,
 } from '@/lib/order/hooks';
@@ -95,11 +105,20 @@ export function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const id = String(orderId ?? '');
 
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [quoteEnabled, setQuoteEnabled] = useState(false);
+  const [partialCancelItems, setPartialCancelItems] = useState<Set<string>>(new Set());
+  const [showPartialCancel, setShowPartialCancel] = useState(false);
+
   const order = useOrder(id);
   const reorder = useReorder(id);
   const cancelOrder = useCancelOrder(id);
   const cancelScheduled = useCancelScheduledOrder(id);
   const updateTip = useUpdateTip(id);
+  const timeline = useOrderTimeline(id, showTimeline);
+  const cancellationQuote = useCancellationQuote(id, quoteEnabled);
+  const partialCancel = usePartialCancelItems(id);
+  const orderHelp = useOrderHelp(id);
   const fetchInvoice = useFetchInvoice(id);
   const review = useOrderReview(id, {
     enabled: canRateOrder(order.data?.status),
@@ -196,12 +215,34 @@ export function OrderDetailScreen() {
       .join(', ') ||
     'Delivery address';
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
+    // Fetch cancellation quote first so user sees refund amount
+    let quoteMsg = scheduled
+      ? 'This removes the future order.'
+      : 'You can cancel only within the allowed window.';
+
+    if (!scheduled) {
+      try {
+        setQuoteEnabled(true);
+        const quote = await cancellationQuote.refetch();
+        if (quote.data) {
+          const { refundable, nonRefundable, message } = quote.data;
+          if (message) {
+            quoteMsg = message;
+          } else if (refundable > 0) {
+            quoteMsg = `You'll receive a refund of ₹${refundable.toFixed(0)}.${nonRefundable > 0 ? ` ₹${nonRefundable.toFixed(0)} is non-refundable.` : ''}`;
+          } else {
+            quoteMsg = 'No refund will be issued for this cancellation.';
+          }
+        }
+      } catch {
+        // proceed without quote
+      }
+    }
+
     Alert.alert(
       scheduled ? 'Cancel scheduled order?' : 'Cancel this order?',
-      scheduled
-        ? 'This removes the future order.'
-        : 'You can cancel only within the allowed window.',
+      quoteMsg,
       [
         { text: 'Keep order', style: 'cancel' },
         {
@@ -226,6 +267,49 @@ export function OrderDetailScreen() {
         },
       ]
     );
+  };
+
+  const handlePartialCancel = async () => {
+    if (!partialCancelItems.size) {
+      Alert.alert('Select items', 'Tap items to select which ones to cancel.');
+      return;
+    }
+    Alert.alert(
+      'Cancel selected items?',
+      `Remove ${partialCancelItems.size} item(s) from this order?`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel items',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await partialCancel.mutateAsync({
+                items: Array.from(partialCancelItems).map((itemId) => ({ itemId })),
+                reason: 'Cancelled by customer',
+              });
+              setShowPartialCancel(false);
+              setPartialCancelItems(new Set());
+              Alert.alert('Done', 'Selected items were removed from your order.');
+              void order.refetch();
+            } catch (e) {
+              Alert.alert('Failed', e instanceof Error ? e.message : 'Could not cancel items');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleHelp = async () => {
+    // Try POST /orders/:id/help first, fallback to issues screen
+    try {
+      const result = await orderHelp.mutateAsync({ type: 'general', message: 'Customer needs help with this order.' });
+      Alert.alert('Support', result.message ?? 'Support request created.');
+    } catch {
+      // Fallback: open issues screen
+      router.push({ pathname: '/orders/[orderId]/issues', params: { orderId: data!.id } });
+    }
   };
 
   const handleInvoice = async () => {
@@ -345,6 +429,7 @@ export function OrderDetailScreen() {
             <Headset color={ORANGE} size={16} strokeWidth={2.4} />
             <Text style={styles.helpBtnText}>Help</Text>
           </Pressable>
+          {/* POST /orders/:id/help — quick help context sent alongside issues route */}
         </View>
 
         <View style={styles.heroCard}>
@@ -410,6 +495,58 @@ export function OrderDetailScreen() {
           />
         </View>
 
+        {/* ── API Timeline (GET /orders/:id/timeline) ─────────────── */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.timelineToggle}
+            onPress={() => setShowTimeline((v) => !v)}
+            activeOpacity={0.8}
+          >
+            <Clock color={ORANGE} size={16} strokeWidth={2.3} />
+            <Text style={styles.timelineToggleText}>Order history</Text>
+            {showTimeline ? (
+              <ChevronUp color={MUTED} size={18} strokeWidth={2} />
+            ) : (
+              <ChevronDown color={MUTED} size={18} strokeWidth={2} />
+            )}
+          </TouchableOpacity>
+
+          {showTimeline && (
+            timeline.isLoading ? (
+              <ActivityIndicator color={ORANGE} style={{ marginVertical: 12 }} />
+            ) : (timeline.data?.length ?? 0) > 0 ? (
+              <View style={styles.apiTimeline}>
+                {timeline.data!.map((event, idx) => (
+                  <View key={`${event.status}-${idx}`} style={styles.apiTimelineRow}>
+                    <View style={styles.apiTimelineDotCol}>
+                      <View style={[styles.apiTimelineDot, idx === 0 && styles.apiTimelineDotActive]} />
+                      {idx < timeline.data!.length - 1 && <View style={styles.apiTimelineConnector} />}
+                    </View>
+                    <View style={styles.apiTimelineContent}>
+                      <Text style={styles.apiTimelineLabel}>
+                        {event.label || event.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </Text>
+                      {event.description ? (
+                        <Text style={styles.apiTimelineDesc}>{event.description}</Text>
+                      ) : null}
+                      {event.at ? (
+                        <Text style={styles.apiTimelineTime}>
+                          {new Date(event.at).toLocaleString(undefined, {
+                            month: 'short', day: 'numeric',
+                            hour: 'numeric', minute: '2-digit', hour12: true,
+                          })}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.apiTimelineEmpty}>No history available</Text>
+            )
+          )}
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.cardEyebrow}>DELIVERING TO</Text>
           <View style={styles.routeRow}>
@@ -440,33 +577,87 @@ export function OrderDetailScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardEyebrow}>ITEMS</Text>
-          {data.items.map((item, idx) => (
-            <View key={`${item.id ?? item.name}-${idx}`}>
-              {idx > 0 ? <View style={styles.hairline} /> : null}
-              <View style={styles.itemRow}>
-                <View style={styles.itemLeft}>
-                  <VegBadge isVeg={item.isVeg ?? true} />
-                  {item.imageUrl ? (
-                    <Image
-                      source={{ uri: item.imageUrl }}
-                      style={styles.itemThumb}
-                      contentFit="cover"
-                    />
-                  ) : null}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemName} numberOfLines={2}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.itemMeta}>Qty {item.quantity}</Text>
-                  </View>
-                </View>
-                <Text style={styles.itemPrice}>
-                  ₹{(item.price * item.quantity).toFixed(2)}
+          <View style={styles.itemsHeader}>
+            <Text style={styles.cardEyebrow}>ITEMS</Text>
+            {/* Partial cancel — only available pre-pickup (placed/confirmed/preparing) */}
+            {['placed', 'confirmed', 'accepted', 'preparing'].includes(
+              normalizeOrderStatus(data.status)
+            ) && data.items.length > 1 && (
+              <TouchableOpacity
+                onPress={() => setShowPartialCancel((v) => !v)}
+                style={styles.partialCancelToggle}
+                activeOpacity={0.8}
+              >
+                <Minus color={ORANGE} size={13} strokeWidth={2.5} />
+                <Text style={styles.partialCancelToggleText}>
+                  {showPartialCancel ? 'Done' : 'Remove items'}
                 </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {data.items.map((item, idx) => {
+            const itemId = item.id ?? item.menuItemId ?? item.name;
+            const isSelected = showPartialCancel && partialCancelItems.has(String(itemId));
+            return (
+              <View key={`${itemId}-${idx}`}>
+                {idx > 0 ? <View style={styles.hairline} /> : null}
+                <TouchableOpacity
+                  activeOpacity={showPartialCancel ? 0.7 : 1}
+                  onPress={() => {
+                    if (!showPartialCancel) return;
+                    setPartialCancelItems((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(String(itemId))) next.delete(String(itemId));
+                      else next.add(String(itemId));
+                      return next;
+                    });
+                  }}
+                  style={[
+                    styles.itemRow,
+                    isSelected && { backgroundColor: '#FEF2F2', borderRadius: 10 },
+                  ]}
+                >
+                  <View style={styles.itemLeft}>
+                    <VegBadge isVeg={item.isVeg ?? true} />
+                    {item.imageUrl ? (
+                      <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.itemThumb}
+                        contentFit="cover"
+                      />
+                    ) : null}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.itemName, isSelected && { color: '#DC2626', textDecorationLine: 'line-through' }]} numberOfLines={2}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.itemMeta}>Qty {item.quantity}</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.itemPrice, isSelected && { color: '#DC2626' }]}>
+                    ₹{(item.price * item.quantity).toFixed(2)}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          ))}
+            );
+          })}
+
+          {showPartialCancel && partialCancelItems.size > 0 && (
+            <TouchableOpacity
+              style={styles.partialCancelBtn}
+              onPress={handlePartialCancel}
+              disabled={partialCancel.isPending}
+              activeOpacity={0.8}
+            >
+              {partialCancel.isPending ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.partialCancelBtnText}>
+                  Remove {partialCancelItems.size} item{partialCancelItems.size > 1 ? 's' : ''}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.card}>
@@ -1100,5 +1291,112 @@ const styles = StyleSheet.create({
     fontFamily: fonts.uiBold,
     fontSize: 13,
     color: GREEN,
+  },
+
+  // ── Timeline ──
+  timelineToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  timelineToggleText: {
+    flex: 1,
+    fontFamily: fonts.uiSemi,
+    fontSize: 14,
+    color: INK,
+  },
+  apiTimeline: {
+    marginTop: 14,
+    paddingLeft: 4,
+  },
+  apiTimelineRow: {
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 48,
+  },
+  apiTimelineDotCol: {
+    alignItems: 'center',
+    width: 18,
+  },
+  apiTimelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: LINE,
+    marginTop: 3,
+  },
+  apiTimelineDotActive: {
+    backgroundColor: ORANGE,
+  },
+  apiTimelineConnector: {
+    flex: 1,
+    width: 2,
+    backgroundColor: LINE,
+    marginVertical: 2,
+  },
+  apiTimelineContent: {
+    flex: 1,
+    paddingBottom: 12,
+  },
+  apiTimelineLabel: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 13,
+    color: INK,
+  },
+  apiTimelineDesc: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
+    marginTop: 2,
+  },
+  apiTimelineTime: {
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    color: MUTED,
+    marginTop: 3,
+  },
+  apiTimelineEmpty: {
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    color: MUTED,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+
+  // ── Items partial cancel ──
+  itemsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  partialCancelToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    backgroundColor: '#FFF7ED',
+  },
+  partialCancelToggleText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: ORANGE,
+  },
+  partialCancelBtn: {
+    marginTop: 12,
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  partialCancelBtnText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: WHITE,
   },
 });

@@ -26,6 +26,7 @@ import type {
   TrackingRoute,
   TrackingTipPayload,
   Zone,
+  ZoneDetail,
 } from '@/lib/delivery/types';
 
 const DS = '/api/v1/delivery-service';
@@ -250,6 +251,27 @@ export const deliveryApi = {
     });
   },
 
+  /** GET /zones/:zoneId */
+  getZone: async (zoneId: string): Promise<ZoneDetail> => {
+    const raw = await get<unknown>(`${DS}/zones/${zoneId}`);
+    const r = asRecord(raw);
+    const polygon = Array.isArray(r.polygon) ? (r.polygon as [number, number][]) : undefined;
+    const center = asRecord(r.center ?? r.centerPoint ?? {});
+    return {
+      id: String(r._id ?? r.id ?? zoneId),
+      name: String(r.name ?? ''),
+      cityId: (r.cityId as string) || undefined,
+      isActive: r.isActive !== undefined ? Boolean(r.isActive) : true,
+      polygon,
+      centerLat: typeof center.lat === 'number' ? center.lat : typeof r.centerLat === 'number' ? r.centerLat : undefined,
+      centerLng: typeof center.lng === 'number' ? center.lng : typeof r.centerLng === 'number' ? r.centerLng : undefined,
+      radiusKm: typeof r.radiusKm === 'number' ? r.radiusKm : undefined,
+      openTime: (r.openTime as string) || (r.opens as string) || undefined,
+      closeTime: (r.closeTime as string) || (r.closes as string) || undefined,
+      description: (r.description as string) || undefined,
+    };
+  },
+
   /** GET /zones/:zoneId/surge-status */
   getSurgeStatus: async (zoneId: string): Promise<SurgeStatus> => {
     const raw = await get<unknown>(`${DS}/zones/${zoneId}/surge-status`);
@@ -273,7 +295,13 @@ export const deliveryApi = {
   /** GET /tracking/order/:orderId/location — live GPS (~5s poll) */
   getLiveLocation: async (orderId: string): Promise<LiveLocation | null> => {
     try {
-      const raw = await get<unknown>(`${TRACKING}/${orderId}/location`);
+      let raw: unknown;
+      try {
+        raw = await get<unknown>(`${TRACKING}/${orderId}/location`);
+      } catch {
+        // Alias support: /tracking/live-location/:orderId
+        raw = await get<unknown>(`${DS}/tracking/live-location/${orderId}`);
+      }
       const r = asRecord(raw);
       const loc = asRecord(r.location ?? r.currentLocation ?? r);
       const coords = Array.isArray(loc.coordinates) ? (loc.coordinates as number[]) : undefined;
@@ -295,7 +323,13 @@ export const deliveryApi = {
 
   /** GET /tracking/order/:orderId/eta */
   getEta: async (orderId: string): Promise<TrackingEta> => {
-    const raw = await get<unknown>(`${TRACKING}/${orderId}/eta`);
+    let raw: unknown;
+    try {
+      raw = await get<unknown>(`${TRACKING}/${orderId}/eta`);
+    } catch {
+      // Alias support: /tracking/eta/:orderId
+      raw = await get<unknown>(`${DS}/tracking/eta/${orderId}`);
+    }
     const r = asRecord(raw);
     return {
       etaMinutes: typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined,
@@ -306,7 +340,13 @@ export const deliveryApi = {
 
   /** GET /tracking/order/:orderId/route */
   getRoute: async (orderId: string): Promise<TrackingRoute> => {
-    const raw = await get<unknown>(`${TRACKING}/${orderId}/route`);
+    let raw: unknown;
+    try {
+      raw = await get<unknown>(`${TRACKING}/${orderId}/route`);
+    } catch {
+      // Alias support: /tracking/route/:orderId
+      raw = await get<unknown>(`${DS}/tracking/route/${orderId}`);
+    }
     const r = asRecord(raw);
     return {
       polyline: (r.polyline as string) || (r.overviewPolyline as string) || undefined,

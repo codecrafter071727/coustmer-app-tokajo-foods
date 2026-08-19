@@ -8,6 +8,7 @@ import { orderApi } from '@/lib/order/api';
 import type {
   CancelOrderPayload,
   CreateOrderPayload,
+  PartialCancelPayload,
   ReportIssuePayload,
   TipPayload,
 } from '@/lib/order/types';
@@ -23,6 +24,8 @@ export const orderKeys = {
   tracking: (id: string) => [...orderKeys.all, 'tracking', id] as const,
   invoice: (id: string) => [...orderKeys.all, 'invoice', id] as const,
   issues: (id: string) => [...orderKeys.all, 'issues', id] as const,
+  timeline: (id: string) => [...orderKeys.all, 'timeline', id] as const,
+  cancellationQuote: (id: string) => [...orderKeys.all, 'cancellationQuote', id] as const,
 };
 
 function invalidateOrderQueries(
@@ -227,5 +230,44 @@ export function useReportIssue(orderId: string) {
 export function useFetchInvoice(orderId: string) {
   return useMutation({
     mutationFn: () => orderApi.getInvoice(orderId),
+  });
+}
+
+/** GET /orders/:orderId/timeline */
+export function useOrderTimeline(orderId: string, enabled = true) {
+  return useQuery({
+    queryKey: orderKeys.timeline(orderId),
+    queryFn: () => orderApi.getTimeline(orderId),
+    enabled: Boolean(orderId) && enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** GET /orders/:orderId/cancellation-quote */
+export function useCancellationQuote(orderId: string, enabled = false) {
+  return useQuery({
+    queryKey: orderKeys.cancellationQuote(orderId),
+    queryFn: () => orderApi.getCancellationQuote(orderId),
+    enabled: Boolean(orderId) && enabled,
+    staleTime: 10_000,
+    retry: 1,
+  });
+}
+
+/** PUT /orders/:orderId/items/cancel — partial item cancel */
+export function usePartialCancelItems(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PartialCancelPayload) =>
+      orderApi.partialCancelItems(orderId, payload),
+    onSuccess: () => invalidateOrderQueries(queryClient, orderId),
+  });
+}
+
+/** POST /orders/:orderId/help — open support with order context */
+export function useOrderHelp(orderId: string) {
+  return useMutation({
+    mutationFn: (payload: { type?: string; message?: string; subject?: string }) =>
+      orderApi.openHelp(orderId, payload),
   });
 }

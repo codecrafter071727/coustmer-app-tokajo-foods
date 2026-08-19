@@ -3,13 +3,16 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import type {
   CancelOrderPayload,
+  CancellationQuote,
   CreateOrderPayload,
   Order,
   OrderInvoice,
   OrderIssue,
   OrderListResult,
+  OrderTimelineEvent,
   OrderTracking,
   PaginationMeta,
+  PartialCancelPayload,
   ReportIssuePayload,
   TipPayload,
 } from '@/lib/order/types';
@@ -761,5 +764,124 @@ export const orderApi = {
   getIssues: async (orderId: string): Promise<OrderIssue[]> => {
     const res = await request<unknown>(`${ORDERS_BASE}/${orderId}/issues`);
     return extractList(res.data).map(mapIssue);
+  },
+
+  /** GET /orders/:orderId/timeline */
+  getTimeline: async (orderId: string): Promise<OrderTimelineEvent[]> => {
+    const res = await request<unknown>(`${ORDERS_BASE}/${orderId}/timeline`);
+    const payload = asRecord(res.data ?? res);
+    const list: unknown[] =
+      Array.isArray(res.data)
+        ? res.data
+        : Array.isArray(payload.timeline)
+          ? payload.timeline
+          : Array.isArray(payload.statusHistory)
+            ? payload.statusHistory
+            : Array.isArray(payload.events)
+              ? payload.events
+              : extractList(res.data);
+    return list.map((item) => {
+      const r = asRecord(item);
+      return {
+        status: String(r.status ?? r.state ?? r.event ?? ''),
+        label: (r.label as string) || (r.title as string) || undefined,
+        at: (r.at as string) || (r.timestamp as string) || (r.createdAt as string) || undefined,
+        description: (r.description as string) || (r.message as string) || undefined,
+      };
+    });
+  },
+
+  /** GET /orders/:orderId/cancellation-quote */
+  getCancellationQuote: async (orderId: string): Promise<CancellationQuote> => {
+    const res = await request<unknown>(`${ORDERS_BASE}/${orderId}/cancellation-quote`);
+    const d = asRecord(res.data ?? res);
+    const total = Number(d.total ?? d.orderAmount ?? d.amount ?? 0);
+    const refundable = Number(
+      d.refundable ?? d.refundAmount ?? d.refund ?? d.refundableAmount ?? total
+    );
+    const nonRefundable = Number(
+      d.nonRefundable ?? d.nonRefundableAmount ?? d.deduction ?? (total - refundable)
+    );
+    return {
+      refundable: Number.isFinite(refundable) ? refundable : total,
+      nonRefundable: Number.isFinite(nonRefundable) ? nonRefundable : 0,
+      total: Number.isFinite(total) ? total : refundable + nonRefundable,
+      reason: (d.reason as string) || (d.policy as string) || undefined,
+      canCancel: d.canCancel !== false,
+      message: (d.message as string) || undefined,
+    };
+  },
+
+  /** PUT /orders/:orderId/items/cancel — Partial cancel pre-pickup */
+  partialCancelItems: async (
+    orderId: string,
+    payload: PartialCancelPayload
+  ): Promise<Order> => {
+    const bodies = [
+      {
+        items: payload.items,
+        reason: payload.reason,
+        cancellationReason: payload.reason,
+      },
+      {
+        cancelledItems: payload.items,
+        reason: payload.reason,
+      },
+    ];
+    let lastError: Error | null = null;
+    for (const body of bodies) {
+      try {
+        const res = await request<Record<string, unknown>>(
+          `${ORDERS_BASE}/${orderId}/items/cancel`,
+          { method: 'PUT', body }
+        );
+        return mapOrder(asRecord(res.data ?? res));
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Partial cancel failed');
+        const msg = lastError.message.toLowerCase();
+        if (msg.includes('unauthorized') || msg.includes('forbidden')) throw lastError;
+      }
+    }
+    throw lastError ?? new Error('Partial cancel failed');
+  },
+
+  /** POST /orders/:orderId/help — Open support with order context */
+  openHelp: async (
+    orderId: string,
+    payload: { type?: string; message?: string; subject?: string }
+  ): Promise<{ ticketId?: string; message?: string }> => {
+    const bodies = [
+      {
+        orderId,
+        type: payload.type ?? 'general',
+        message: payload.message,
+        subject: payload.subject,
+        context: { orderId },
+      },
+      {
+        orderId,
+        description: payload.message,
+        issueType: payload.type ?? 'general',
+      },
+    ];
+    let lastError: Error | null = null;
+    for (const body of bodies) {
+      try {
+        const res = await request<Record<string, unknown>>(
+          `${ORDERS_BASE}/${orderId}/help`,
+          { method: 'POST', body }
+        );
+        const d = asRecord(res.data ?? res);
+        return {
+          ticketId: String(d.ticketId ?? d._id ?? d.id ?? '') || undefined,
+          message: res.message || (d.message as string) || 'Support request submitted',
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Help request failed');
+        const msg = lastError.message.toLowerCase();
+        if (msg.includes('unauthorized') || msg.includes('forbidden')) throw lastError;
+      }
+    }
+    throw lastError ?? new Error('Help request failed');
   },
 };

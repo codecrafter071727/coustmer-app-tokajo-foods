@@ -1,4 +1,5 @@
 import { Pressable } from '@/components/common/Pressable';
+import { Image } from 'expo-image';
 import { MessageSquareQuote, Star } from 'lucide-react-native';
 import { ActivityIndicator,
   
@@ -10,6 +11,8 @@ import { StarRatingInput } from '@/components/review/StarRatingInput';
 import { authTheme } from '@/constants/auth-theme';
 import { useRestaurantRatings } from '@/lib/restaurant/hooks';
 import {
+  useReviewServiceHealth,
+  useReviewServiceReady,
   useRestaurantReviewStats,
   useRestaurantReviews,
 } from '@/lib/review/hooks';
@@ -56,6 +59,18 @@ function ReviewCard({ review }: { review: RestaurantReview }) {
       {review.comment ? (
         <Text style={styles.comment}>{review.comment}</Text>
       ) : null}
+      {review.photos?.length ? (
+        <View style={styles.photoRow}>
+          {review.photos.slice(0, 3).map((uri, idx) => (
+            <Image
+              key={`${uri}-${idx}`}
+              source={{ uri }}
+              style={styles.photoThumb}
+              contentFit="cover"
+            />
+          ))}
+        </View>
+      ) : null}
       {review.reply?.text ? (
         <View style={styles.replyBox}>
           <Text style={styles.replyLabel}>
@@ -74,6 +89,8 @@ function ReviewCard({ review }: { review: RestaurantReview }) {
 }
 
 export function RestaurantReviewsPanel({ restaurantId }: Props) {
+  const health = useReviewServiceHealth(Boolean(restaurantId));
+  const ready = useReviewServiceReady(Boolean(restaurantId));
   const histogram = useRestaurantRatings(restaurantId);
   const stats = useRestaurantReviewStats(restaurantId);
   const reviews = useRestaurantReviews(restaurantId, { page: 1, limit: 20 });
@@ -127,6 +144,37 @@ export function RestaurantReviewsPanel({ restaurantId }: Props) {
 
   return (
     <View style={styles.wrap}>
+      <View style={styles.serviceStatusRow}>
+        <Text style={styles.serviceStatusLabel}>Review service</Text>
+        <View
+          style={[
+            styles.serviceStatusPill,
+            health.data && ready.data
+              ? styles.serviceStatusPillUp
+              : styles.serviceStatusPillDown,
+          ]}
+        >
+          <Text
+            style={[
+              styles.serviceStatusPillText,
+              !(health.data && ready.data) && { color: '#991B1B' },
+            ]}
+          >
+            {health.isLoading || ready.isLoading
+              ? 'Checking...'
+              : health.data && ready.data
+                ? 'LIVE'
+                : 'DEGRADED'}
+          </Text>
+        </View>
+      </View>
+      {ready.data === false ? (
+        <View style={styles.readyWarn}>
+          <Text style={styles.readyWarnText}>
+            Reviews are syncing right now. You may see limited data.
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.statsCard}>
         <View style={styles.avgBlock}>
           <Text style={styles.avgValue}>
@@ -184,6 +232,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 24,
+  },
+  serviceStatusRow: {
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  serviceStatusLabel: {
+    color: authTheme.textDim,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  serviceStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  serviceStatusPillUp: {
+    backgroundColor: '#DCFCE7',
+  },
+  serviceStatusPillDown: {
+    backgroundColor: '#FEE2E2',
+  },
+  serviceStatusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#14532D',
+  },
+  readyWarn: {
+    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  readyWarnText: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '600',
   },
   center: {
     alignItems: 'center',
@@ -342,6 +431,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: authTheme.textMuted,
+  },
+  photoRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  photoThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
   },
   replyBox: {
     marginTop: 12,

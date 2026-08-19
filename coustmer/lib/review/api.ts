@@ -3,11 +3,14 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import type {
   PaginationMeta,
+  ReportReviewPayload,
   RatingDistribution,
   RestaurantReview,
   ReviewListResult,
   ReviewOwnerReply,
   ReviewStats,
+  SubmitDishReviewsPayload,
+  SubmitOrderReviewPayload,
   SubmitReviewPayload,
 } from '@/lib/review/types';
 
@@ -238,6 +241,11 @@ export function mapReview(raw: Record<string, unknown>): RestaurantReview {
       (raw.body as string) ||
       undefined,
     title: (raw.title as string) || undefined,
+    photos: Array.isArray(raw.photos)
+      ? raw.photos.map((p) => String(p)).filter(Boolean)
+      : Array.isArray(raw.images)
+        ? raw.images.map((p) => String(p)).filter(Boolean)
+        : undefined,
     reply: mapReply(raw),
     createdAt:
       (raw.createdAt as string) ||
@@ -348,6 +356,16 @@ export const reviewApi = {
     }
   },
 
+  /** GET /health/ready */
+  ready: async (): Promise<boolean> => {
+    try {
+      const res = await request<unknown>(`${REVIEW_SERVICE}/health/ready`);
+      return res.success !== false;
+    } catch {
+      return false;
+    }
+  },
+
   /** GET /restaurants/:restaurantId/reviews */
   getRestaurantReviews: async (
     restaurantId: string,
@@ -424,6 +442,8 @@ export const reviewApi = {
       review: payload.comment?.trim() || undefined,
       title: payload.title?.trim() || undefined,
       orderId: payload.orderId || undefined,
+      photos: payload.photos?.filter(Boolean),
+      images: payload.photos?.filter(Boolean),
     };
 
     const res = await request<Record<string, unknown>>(
@@ -432,6 +452,62 @@ export const reviewApi = {
     );
 
     return mapReview(asRecord(res.data ?? {}));
+  },
+
+  /** PUT /restaurants/:restaurantId/reviews/:reviewId (auth) */
+  updateRestaurantReview: async (
+    restaurantId: string,
+    reviewId: string,
+    payload: SubmitReviewPayload
+  ): Promise<RestaurantReview> => {
+    if (!restaurantId) throw new Error('Restaurant is missing for this review.');
+    if (!reviewId) throw new Error('Review ID is missing.');
+    const rating = clampRating(payload.rating);
+    if (rating < 1) throw new Error('Please select a rating from 1 to 5 stars.');
+
+    const body = {
+      rating,
+      comment: payload.comment?.trim() || undefined,
+      review: payload.comment?.trim() || undefined,
+      title: payload.title?.trim() || undefined,
+      orderId: payload.orderId || undefined,
+      photos: payload.photos?.filter(Boolean),
+      images: payload.photos?.filter(Boolean),
+    };
+
+    const res = await request<Record<string, unknown>>(
+      `${REVIEW_SERVICE}/restaurants/${restaurantId}/reviews/${reviewId}`,
+      { method: 'PUT', body }
+    );
+    return mapReview(asRecord(res.data ?? {}));
+  },
+
+  /** DELETE /restaurants/:restaurantId/reviews/:reviewId (auth) */
+  deleteRestaurantReview: async (
+    restaurantId: string,
+    reviewId: string
+  ): Promise<void> => {
+    if (!restaurantId) throw new Error('Restaurant is missing for this review.');
+    if (!reviewId) throw new Error('Review ID is missing.');
+    await request<unknown>(
+      `${REVIEW_SERVICE}/restaurants/${restaurantId}/reviews/${reviewId}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  /** POST /restaurants/:restaurantId/reviews/:reviewId/report */
+  reportRestaurantReview: async (
+    restaurantId: string,
+    reviewId: string,
+    payload: ReportReviewPayload
+  ): Promise<void> => {
+    if (!restaurantId) throw new Error('Restaurant is missing for this review.');
+    if (!reviewId) throw new Error('Review ID is missing.');
+    if (!payload.reason?.trim()) throw new Error('Please select a reason to report.');
+    await request<unknown>(
+      `${REVIEW_SERVICE}/restaurants/${restaurantId}/reviews/${reviewId}/report`,
+      { method: 'POST', body: { reason: payload.reason.trim() } }
+    );
   },
 
   /**
@@ -455,5 +531,41 @@ export const reviewApi = {
       }
       throw error;
     }
+  },
+
+  /** POST /orders/:orderId/reviews — combined restaurant + packaging + photos */
+  submitOrderReview: async (
+    orderId: string,
+    payload: SubmitOrderReviewPayload
+  ): Promise<RestaurantReview> => {
+    if (!orderId) throw new Error('Order ID is missing.');
+    const body = {
+      restaurantId: payload.restaurantId,
+      rating: clampRating(payload.rating),
+      comment: payload.comment?.trim() || undefined,
+      review: payload.comment?.trim() || undefined,
+      title: payload.title?.trim() || undefined,
+      photos: payload.photos?.filter(Boolean),
+      images: payload.photos?.filter(Boolean),
+      packagingRating: payload.packagingRating,
+      deliveryRating: payload.deliveryRating,
+    };
+    const res = await request<Record<string, unknown>>(
+      `${REVIEW_SERVICE}/orders/${orderId}/reviews`,
+      { method: 'POST', body }
+    );
+    return mapReview(asRecord(res.data ?? {}));
+  },
+
+  /** POST /orders/:orderId/reviews/dishes — per-item thumbs */
+  submitDishReviews: async (
+    orderId: string,
+    payload: SubmitDishReviewsPayload
+  ): Promise<void> => {
+    if (!orderId) throw new Error('Order ID is missing.');
+    await request<unknown>(`${REVIEW_SERVICE}/orders/${orderId}/reviews/dishes`, {
+      method: 'POST',
+      body: { dishes: payload.dishes },
+    });
   },
 };

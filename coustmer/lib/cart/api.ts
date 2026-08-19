@@ -935,4 +935,151 @@ export const cartApi = {
       body: {},
     });
   },
+
+  /** GET /cart/bill */
+  getBill: async (dropLat?: number, dropLng?: number): Promise<Record<string, unknown>> => {
+    const qs = dropLat != null && dropLng != null
+      ? `?dropLat=${dropLat}&dropLng=${dropLng}`
+      : '';
+    const res = await request<unknown>(`${CART_BASE}/bill${qs}`);
+    return asRecord(res.data ?? res);
+  },
+
+  /** GET /cart/summary */
+  getSummary: async (): Promise<{ itemCount: number; subtotal: number }> => {
+    const res = await request<unknown>(`${CART_BASE}/summary`);
+    const d = asRecord(res.data ?? res);
+    return {
+      itemCount: Number(d.itemCount ?? d.totalItems ?? d.count ?? 0),
+      subtotal: Number(d.subtotal ?? d.total ?? 0),
+    };
+  },
+
+  /** PUT /cart/instructions */
+  updateInstructions: async (instructions: {
+    cooking?: string;
+    cutlery?: boolean;
+    leaveAtDoor?: boolean;
+  }): Promise<Cart> => {
+    return mutateCart(`${CART_BASE}/instructions`, 'PUT', [instructions]);
+  },
+
+  /** GET /cart/slots */
+  getSlots: async (date?: string): Promise<{ date: string; slots: { startTime: string; endTime: string }[] }[]> => {
+    const qs = date ? `?date=${date}` : '';
+    const res = await request<unknown>(`${CART_BASE}/slots${qs}`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload) ? payload : asRecord(payload).slots ?? asRecord(payload).data ?? [];
+    return Array.isArray(list) ? list.map((item) => {
+      const r = asRecord(item);
+      return {
+        date: String(r.date ?? ''),
+        slots: Array.isArray(r.slots) ? r.slots.map((s: unknown) => {
+          const slot = asRecord(s);
+          return { startTime: String(slot.startTime ?? slot.start ?? ''), endTime: String(slot.endTime ?? slot.end ?? '') };
+        }) : [],
+      };
+    }) : [];
+  },
+
+  /** PUT /cart/schedule */
+  setSchedule: async (scheduledFor: string | null): Promise<Cart> => {
+    return mutateCart(`${CART_BASE}/schedule`, 'PUT', [
+      { scheduledFor },
+      { scheduledAt: scheduledFor },
+    ]);
+  },
+
+  /** PUT /cart/wallet */
+  applyWallet: async (): Promise<Cart> => {
+    return mutateCart(`${CART_BASE}/wallet`, 'PUT', [{ apply: true }, {}]);
+  },
+
+  /** DELETE /cart/wallet */
+  removeWallet: async (): Promise<Cart> => {
+    const res = await request<unknown>(`${CART_BASE}/wallet`, { method: 'DELETE', body: {} });
+    return mapCart(res.data ?? res);
+  },
+
+  /** PUT /cart/loyalty */
+  applyLoyalty: async (points?: number): Promise<Cart> => {
+    return mutateCart(`${CART_BASE}/loyalty`, 'PUT', [
+      { points },
+      { apply: true, points },
+    ]);
+  },
+
+  /** DELETE /cart/loyalty */
+  removeLoyalty: async (): Promise<Cart> => {
+    const res = await request<unknown>(`${CART_BASE}/loyalty`, { method: 'DELETE', body: {} });
+    return mapCart(res.data ?? res);
+  },
+
+  /** POST /cart/share */
+  shareCart: async (): Promise<{ shareToken: string; shareUrl: string }> => {
+    const res = await request<unknown>(`${CART_BASE}/share`, { method: 'POST', body: {} });
+    const d = asRecord(res.data ?? res);
+    return {
+      shareToken: String(d.shareToken ?? d.token ?? ''),
+      shareUrl: String(d.shareUrl ?? d.url ?? d.link ?? ''),
+    };
+  },
+
+  /** GET /cart/share/:shareToken */
+  getSharedCart: async (shareToken: string): Promise<Cart> => {
+    const res = await request<unknown>(`${CART_BASE}/share/${shareToken}`);
+    return mapCart(res.data ?? res);
+  },
+
+  /** POST /cart/share/:shareToken/join */
+  joinGroup: async (shareToken: string): Promise<Cart> => {
+    const res = await request<unknown>(`${CART_BASE}/share/${shareToken}/join`, { method: 'POST', body: {} });
+    return mapCart(res.data ?? res);
+  },
+
+  /** GET /cart/group */
+  getGroup: async (): Promise<Record<string, unknown>> => {
+    const res = await request<unknown>(`${CART_BASE}/group`);
+    return asRecord(res.data ?? res);
+  },
+
+  /** PUT /cart/group/lock */
+  lockGroup: async (): Promise<void> => {
+    await request(`${CART_BASE}/group/lock`, { method: 'PUT', body: {} });
+  },
+
+  /** DELETE /cart/group/leave */
+  leaveGroup: async (): Promise<void> => {
+    await request(`${CART_BASE}/group/leave`, { method: 'DELETE', body: {} });
+  },
+
+  /** DELETE /cart/group/members/:userId */
+  kickMember: async (userId: string): Promise<void> => {
+    await request(`${CART_BASE}/group/members/${userId}`, { method: 'DELETE', body: {} });
+  },
+
+  /** DELETE /cart/group */
+  dissolveGroup: async (): Promise<void> => {
+    await request(`${CART_BASE}/group`, { method: 'DELETE', body: {} });
+  },
+
+  /** POST /cart/repeat/:orderId */
+  repeatOrder: async (orderId: string): Promise<Cart> => {
+    const res = await request<unknown>(`${CART_BASE}/repeat/${orderId}`, { method: 'POST', body: {} });
+    return mapCart(res.data ?? res);
+  },
+
+  /** GET /coupons */
+  discoverCoupons: async (): Promise<Record<string, unknown>[]> => {
+    const res = await request<unknown>(`${CART_SERVICE}/coupons`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload) ? payload : extractList(payload);
+    return list.map((row) => asRecord(row));
+  },
+
+  /** GET /coupons/:code/preview */
+  previewCoupon: async (code: string): Promise<Record<string, unknown>> => {
+    const res = await request<unknown>(`${CART_SERVICE}/coupons/${encodeURIComponent(code)}/preview`);
+    return asRecord(res.data ?? res);
+  },
 };

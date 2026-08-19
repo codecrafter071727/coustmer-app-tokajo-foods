@@ -3,7 +3,9 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import type {
   AppNotification,
+  NotificationDevice,
   NotificationListResult,
+  NotificationPreferences,
   PaginationMeta,
   UnreadCountResult,
 } from '@/lib/notification/types';
@@ -153,11 +155,40 @@ function mapUnreadCount(data: unknown): number {
   return typeof count === 'number' ? count : Number(count) || 0;
 }
 
+function mapDevice(raw: Record<string, unknown>): NotificationDevice {
+  return {
+    id: String(raw._id ?? raw.id ?? raw.deviceId ?? ''),
+    token: (raw.token as string) || (raw.fcmToken as string) || (raw.apnsToken as string) || undefined,
+    platform: (raw.platform as string) || undefined,
+    app: (raw.app as string) || undefined,
+    createdAt: (raw.createdAt as string) || undefined,
+  };
+}
+
+function mapPrefs(raw: unknown): NotificationPreferences {
+  const r = asRecord(raw);
+  return {
+    orders: r.orders !== false,
+    offers: r.offers !== false,
+    whatsapp: r.whatsapp !== false,
+  };
+}
+
 export const notificationApi = {
   /** GET /health */
   health: async (): Promise<boolean> => {
     try {
       const res = await request<unknown>(`${NOTIFICATION_SERVICE}/health`);
+      return res.success !== false;
+    } catch {
+      return false;
+    }
+  },
+
+  /** GET /health/ready */
+  ready: async (): Promise<boolean> => {
+    try {
+      const res = await request<unknown>(`${NOTIFICATION_SERVICE}/health/ready`);
       return res.success !== false;
     } catch {
       return false;
@@ -219,5 +250,52 @@ export const notificationApi = {
   /** DELETE /notifications/:id */
   deleteNotification: async (id: string): Promise<void> => {
     await request(`${NOTIFICATIONS_BASE}/${id}`, { method: 'DELETE' });
+  },
+
+  /** GET /devices */
+  getDevices: async (): Promise<NotificationDevice[]> => {
+    const res = await request<unknown>(`${NOTIFICATION_SERVICE}/devices`);
+    return extractList(res.data).map(mapDevice).filter((d) => d.id);
+  },
+
+  /** POST /devices/register */
+  registerDevice: async (payload: {
+    token: string;
+    platform: 'android' | 'ios' | 'web';
+    app?: 'customer';
+  }): Promise<NotificationDevice | null> => {
+    const res = await request<Record<string, unknown>>(
+      `${NOTIFICATION_SERVICE}/devices/register`,
+      {
+        method: 'POST',
+        body: {
+          token: payload.token,
+          app: payload.app ?? 'customer',
+          platform: payload.platform,
+        },
+      }
+    );
+    if (!res.data) return null;
+    return mapDevice(asRecord(res.data));
+  },
+
+  /** DELETE /devices/:deviceId */
+  unregisterDevice: async (deviceId: string): Promise<void> => {
+    await request(`${NOTIFICATION_SERVICE}/devices/${deviceId}`, { method: 'DELETE' });
+  },
+
+  /** GET /preferences */
+  getPreferences: async (): Promise<NotificationPreferences> => {
+    const res = await request<unknown>(`${NOTIFICATION_SERVICE}/preferences`);
+    return mapPrefs(res.data);
+  },
+
+  /** PUT /preferences */
+  updatePreferences: async (payload: Partial<NotificationPreferences>): Promise<NotificationPreferences> => {
+    const res = await request<unknown>(`${NOTIFICATION_SERVICE}/preferences`, {
+      method: 'PUT',
+      body: payload,
+    });
+    return mapPrefs(res.data);
   },
 };

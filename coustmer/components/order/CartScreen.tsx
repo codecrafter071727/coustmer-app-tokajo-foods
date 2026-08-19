@@ -50,6 +50,8 @@ import { applyServerCartToStore } from '@/lib/cart/sync';
 import { syncCartItemQuantity } from '@/lib/order/add-to-cart';
 import { DeliveryPreferences } from '@/components/order/DeliveryPreferences';
 import { CartSuggestionsFromStore } from '@/components/order/CartSuggestions';
+import { GroupOrderSheet } from '@/components/order/GroupOrderSheet';
+import { CouponPickerSheet } from '@/components/order/CouponPickerSheet';
 import { useCreateOrder } from '@/lib/order/hooks';
 import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
 import type { DeliveryLocationResult } from '@/components/location/DeliveryLocationPicker';
@@ -274,6 +276,8 @@ export function CartScreen() {
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherBusy, setVoucherBusy] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
+  const [groupOrderOpen, setGroupOrderOpen] = useState(false);
+  const [couponPickerOpen, setCouponPickerOpen] = useState(false);
 
   const couponApplied = Boolean(couponCode);
 
@@ -1164,6 +1168,18 @@ export function CartScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Browse coupons */}
+          {!couponApplied && isLoggedIn && (
+            <TouchableOpacity
+              style={styles.browseCouponsBtn}
+              onPress={() => setCouponPickerOpen(true)}
+              activeOpacity={0.8}
+            >
+              <Tag color={ORANGE} size={14} strokeWidth={2.3} />
+              <Text style={styles.browseCouponsText}>Browse all offers</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Payment method */}
           <Pressable
             style={styles.paymentCard}
@@ -1301,6 +1317,16 @@ export function CartScreen() {
               >
                 <Text style={styles.menuItemText}>View saved carts</Text>
               </Pressable>
+              <Pressable
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuOpen(false);
+                  if (!isLoggedIn) { requireLogin('start a group order'); return; }
+                  setGroupOrderOpen(true);
+                }}
+              >
+                <Text style={styles.menuItemText}>👥 Group order</Text>
+              </Pressable>
               <Pressable style={styles.menuItem} onPress={handleClear}>
                 <Text style={[styles.menuItemText, { color: '#EF4444' }]}>
                   Clear cart
@@ -1375,6 +1401,22 @@ export function CartScreen() {
             setLocationOpen(false);
           }}
           initial={location ? { lat: location.lat, lng: location.lng } : null}
+        />
+
+        {/* Group Order Sheet */}
+        <GroupOrderSheet
+          visible={groupOrderOpen}
+          onClose={() => setGroupOrderOpen(false)}
+        />
+
+        {/* Coupon Picker Sheet */}
+        <CouponPickerSheet
+          visible={couponPickerOpen}
+          onClose={() => setCouponPickerOpen(false)}
+          onApplied={(code) => {
+            setVoucherCode(code);
+            setCouponPickerOpen(false);
+          }}
         />
       </View>
     </KeyboardAvoidingView>
@@ -1713,6 +1755,23 @@ const styles = StyleSheet.create({
   },
   voucherAction: {
     fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: ORANGE,
+  },
+  browseCouponsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    backgroundColor: '#FFF7ED',
+  },
+  browseCouponsText: {
+    fontFamily: fonts.uiSemi,
     fontSize: 13,
     color: ORANGE,
   },

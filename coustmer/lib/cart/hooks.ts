@@ -23,6 +23,12 @@ export const cartKeys = {
   health: () => [...cartKeys.all, 'health'] as const,
   current: () => [...cartKeys.all, 'current'] as const,
   saved: () => [...cartKeys.all, 'saved'] as const,
+  bill: (lat?: number, lng?: number) => [...cartKeys.all, 'bill', lat, lng] as const,
+  summary: () => [...cartKeys.all, 'summary'] as const,
+  slots: (date?: string) => [...cartKeys.all, 'slots', date] as const,
+  group: () => [...cartKeys.all, 'group'] as const,
+  coupons: () => [...cartKeys.all, 'coupons'] as const,
+  couponPreview: (code: string) => [...cartKeys.all, 'couponPreview', code] as const,
 };
 
 function syncAndInvalidate(
@@ -214,5 +220,181 @@ export function useDeleteSavedCart() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: cartKeys.saved() });
     },
+  });
+}
+
+/** GET /cart/bill */
+export function useCartBill(dropLat?: number, dropLng?: number, enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.bill(dropLat, dropLng),
+    queryFn: () => cartApi.getBill(dropLat, dropLng),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+/** GET /cart/summary — tab badge count */
+export function useCartSummary(enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.summary(),
+    queryFn: cartApi.getSummary,
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+/** PUT /cart/instructions */
+export function useUpdateCartInstructions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { cooking?: string; cutlery?: boolean; leaveAtDoor?: boolean }) =>
+      cartApi.updateInstructions(payload),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** GET /cart/slots */
+export function useCartSlots(date?: string, enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.slots(date),
+    queryFn: () => cartApi.getSlots(date),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** PUT /cart/schedule */
+export function useSetCartSchedule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scheduledFor: string | null) => cartApi.setSchedule(scheduledFor),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** PUT /cart/wallet */
+export function useApplyCartWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.applyWallet(),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** DELETE /cart/wallet */
+export function useRemoveCartWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.removeWallet(),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** PUT /cart/loyalty */
+export function useApplyCartLoyalty() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (points?: number) => cartApi.applyLoyalty(points),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** DELETE /cart/loyalty */
+export function useRemoveCartLoyalty() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.removeLoyalty(),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** POST /cart/share */
+export function useShareCart() {
+  return useMutation({
+    mutationFn: () => cartApi.shareCart(),
+  });
+}
+
+/** POST /cart/share/:token/join */
+export function useJoinGroupCart() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (shareToken: string) => cartApi.joinGroup(shareToken),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** GET /cart/group */
+export function useCartGroup(enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.group(),
+    queryFn: cartApi.getGroup,
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+/** PUT /cart/group/lock */
+export function useLockCartGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.lockGroup(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cartKeys.group() }),
+  });
+}
+
+/** DELETE /cart/group/leave */
+export function useLeaveCartGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.leaveGroup(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cartKeys.all }),
+  });
+}
+
+/** DELETE /cart/group/members/:userId — host kick */
+export function useKickCartGroupMember() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => cartApi.kickMember(userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cartKeys.group() }),
+  });
+}
+
+/** DELETE /cart/group */
+export function useDissolveCartGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cartApi.dissolveGroup(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cartKeys.all }),
+  });
+}
+
+/** POST /cart/repeat/:orderId */
+export function useRepeatOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => cartApi.repeatOrder(orderId),
+    onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
+  });
+}
+
+/** GET /coupons */
+export function useDiscoverCoupons(enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.coupons(),
+    queryFn: cartApi.discoverCoupons,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** GET /coupons/:code/preview */
+export function useCouponPreview(code: string, enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.couponPreview(code),
+    queryFn: () => cartApi.previewCoupon(code),
+    enabled: enabled && code.length >= 2,
+    staleTime: 30_000,
   });
 }

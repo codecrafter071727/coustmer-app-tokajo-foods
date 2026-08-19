@@ -1,6 +1,6 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,8 +22,13 @@ import { getApiErrorMessage } from '@/lib/errors';
 import { useOrder } from '@/lib/order/hooks';
 import { canRateOrder } from '@/lib/order/types';
 import {
+  useDeleteRestaurantReview,
   useOrderReview,
+  useReportRestaurantReview,
+  useSubmitDishReviews,
+  useSubmitOrderReview,
   useSubmitRestaurantReview,
+  useUpdateRestaurantReview,
 } from '@/lib/review/hooks';
 
 const RATING_LABELS = ['', 'Poor', 'Okay', 'Good', 'Great', 'Excellent'];
@@ -44,9 +49,33 @@ export function SubmitReviewScreen() {
   });
   const restaurantId = String(order.data?.restaurantId ?? '');
   const submit = useSubmitRestaurantReview(restaurantId);
+  const submitOrderReview = useSubmitOrderReview(id);
+  const reviewId = String(existing.data?.id ?? '');
+  const updateReview = useUpdateRestaurantReview(restaurantId, reviewId);
+  const deleteReview = useDeleteRestaurantReview(restaurantId, reviewId);
+  const reportReview = useReportRestaurantReview(restaurantId, reviewId);
+  const submitDishReviews = useSubmitDishReviews(id);
 
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
+  const [photosInput, setPhotosInput] = useState('');
+  const [dishThumbs, setDishThumbs] = useState<Record<string, 1 | -1>>({});
+
+  useEffect(() => {
+    if (!existing.data) return;
+    setRating(Math.max(1, Math.min(5, Number(existing.data.rating || 5))));
+    setComment(existing.data.comment ?? '');
+    setPhotosInput((existing.data.photos ?? []).join(', '));
+  }, [existing.data]);
+
+  const parsedPhotos = useMemo(
+    () =>
+      photosInput
+        .split(',')
+        .map((url) => url.trim())
+        .filter((url) => /^https?:\/\//i.test(url)),
+    [photosInput]
+  );
 
   const alreadyReviewed = Boolean(existing.data);
   const canSubmit = useMemo(
@@ -61,10 +90,27 @@ export function SubmitReviewScreen() {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     try {
+      await submitOrderReview.mutateAsync({
+        restaurantId,
+        rating,
+        comment: comment.trim() || undefined,
+        photos: parsedPhotos.length ? parsedPhotos : undefined,
+        packagingRating: rating,
+        deliveryRating: rating,
+      });
+      if (Object.keys(dishThumbs).length) {
+        await submitDishReviews.mutateAsync({
+          dishes: Object.entries(dishThumbs).map(([itemId, score]) => ({
+            itemId,
+            rating: score,
+          })),
+        });
+      }
       await submit.mutateAsync({
         rating,
         comment: comment.trim() || undefined,
         orderId: id,
+        photos: parsedPhotos.length ? parsedPhotos : undefined,
       });
       Alert.alert('Thanks!', 'Your review was submitted.', [
         { text: 'OK', onPress: () => goBackSafe(router) },
@@ -72,6 +118,44 @@ export function SubmitReviewScreen() {
     } catch (e) {
       Alert.alert('Could not submit', getApiErrorMessage(e));
     }
+  };
+
+  const handleUpdate = async () => {
+    if (!alreadyReviewed || !reviewId) return;
+    try {
+      await updateReview.mutateAsync({
+        rating,
+        comment: comment.trim() || undefined,
+        orderId: id,
+        photos: parsedPhotos.length ? parsedPhotos : undefined,
+      });
+      Alert.alert('Updated', 'Your review has been updated.');
+      void existing.refetch();
+    } catch (e) {
+      Alert.alert('Could not update', getApiErrorMessage(e));
+    }
+  };
+
+  const handleDelete = () => {
+    if (!alreadyReviewed || !reviewId) return;
+    Alert.alert('Delete review?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteReview.mutateAsync();
+            Alert.alert('Deleted', 'Your review has been deleted.');
+            void existing.refetch();
+            setComment('');
+            setRating(5);
+          } catch (e) {
+            Alert.alert('Could not delete', getApiErrorMessage(e));
+          }
+        },
+      },
+    ]);
   };
 
   if (order.isLoading || existing.isLoading) {
@@ -95,6 +179,7 @@ export function SubmitReviewScreen() {
   }
 
   const restaurantName = order.data.restaurantName || 'this restaurant';
+  const currentReview = existing.data ?? null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -110,19 +195,81 @@ export function SubmitReviewScreen() {
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
           >
-            {alreadyReviewed && existing.data ? (
+            {alreadyReviewed && currentReview ? (
               <View style={styles.doneCard}>
                 <Text style={styles.doneTitle}>You already rated this order</Text>
-                <StarRatingInput value={existing.data.rating} readonly size={26} />
-                {existing.data.comment ? (
-                  <Text style={styles.doneComment}>{existing.data.comment}</Text>
+                <StarRatingInput value={currentReview.rating} readonly size={26} />
+                {currentReview.comment ? (
+                  <Text style={styles.doneComment}>{currentReview.comment}</Text>
                 ) : null}
+                <View style={styles.card}>
+                  <Text style={styles.label}>Edit your review</Text>
+                  <View style={styles.starsWrap}>
+                    <StarRatingInput value={rating} onChange={setRating} size={32} />
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={comment}
+                    onChangeText={setComment}
+                    placeholder="Update your feedback..."
+                    placeholderTextColor={authTheme.textDim}
+                    multiline
+                    maxLength={500}
+                    textAlignVertical="top"
+                  />
+                  <TextInput
+                    style={[styles.input, { minHeight: 70, marginTop: 10 }]}
+                    value={photosInput}
+                    onChangeText={setPhotosInput}
+                    placeholder="Photo URLs (comma-separated, optional)"
+                    placeholderTextColor={authTheme.textDim}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <Text style={styles.counter}>{comment.length}/500</Text>
+                  <View style={styles.editActions}>
+                    <Pressable style={styles.secondaryBtn} onPress={handleUpdate}>
+                      {updateReview.isPending ? (
+                        <ActivityIndicator color={authTheme.brand} />
+                      ) : (
+                        <Text style={styles.secondaryBtnText}>Update review</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[styles.secondaryBtn, styles.deleteBtn]}
+                      onPress={handleDelete}
+                    >
+                      {deleteReview.isPending ? (
+                        <ActivityIndicator color="#B91C1C" />
+                      ) : (
+                        <Text style={styles.deleteBtnText}>Delete review</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
                 <Pressable
                   style={styles.secondaryBtn}
                   onPress={() => goBackSafe(router)}
                 >
                   <Text style={styles.secondaryBtnText}>Back to order</Text>
                 </Pressable>
+                {reviewId ? (
+                  <Pressable
+                    style={[styles.secondaryBtn, { backgroundColor: '#FFF7ED' }]}
+                    onPress={async () => {
+                      try {
+                        await reportReview.mutateAsync({ reason: 'abusive_or_spam' });
+                        Alert.alert('Reported', 'Thanks, this review has been flagged.');
+                      } catch (e) {
+                        Alert.alert('Could not report', getApiErrorMessage(e));
+                      }
+                    }}
+                  >
+                    <Text style={[styles.secondaryBtnText, { color: '#C2410C' }]}>
+                      Report this review
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             ) : !canRateOrder(order.data.status) ? (
               <View style={styles.doneCard}>
@@ -159,15 +306,58 @@ export function SubmitReviewScreen() {
                     maxLength={500}
                     textAlignVertical="top"
                   />
+                  <TextInput
+                    style={[styles.input, { minHeight: 70, marginTop: 10 }]}
+                    value={photosInput}
+                    onChangeText={setPhotosInput}
+                    placeholder="Photo URLs (comma-separated, optional)"
+                    placeholderTextColor={authTheme.textDim}
+                    multiline
+                    textAlignVertical="top"
+                  />
                   <Text style={styles.counter}>{comment.length}/500</Text>
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.label}>Rate dishes (quick thumbs)</Text>
+                  {(order.data.items ?? []).slice(0, 8).map((item, idx) => {
+                    const key = String(item.menuItemId ?? item.id ?? `${idx}`);
+                    const current = dishThumbs[key];
+                    return (
+                      <View key={key} style={styles.dishRow}>
+                        <Text style={styles.dishName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <View style={styles.dishActions}>
+                          <Pressable
+                            style={[styles.dishBtn, current === 1 && styles.dishBtnUp]}
+                            onPress={() => setDishThumbs((prev) => ({ ...prev, [key]: 1 }))}
+                          >
+                            <Text style={styles.dishBtnText}>👍</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.dishBtn, current === -1 && styles.dishBtnDown]}
+                            onPress={() => setDishThumbs((prev) => ({ ...prev, [key]: -1 }))}
+                          >
+                            <Text style={styles.dishBtnText}>👎</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <Pressable
                   style={[styles.submit, !canSubmit && styles.submitDisabled]}
-                  disabled={!canSubmit || submit.isPending}
+                  disabled={
+                    !canSubmit ||
+                    submit.isPending ||
+                    submitOrderReview.isPending ||
+                    submitDishReviews.isPending
+                  }
                   onPress={handleSubmit}
                 >
-                  {submit.isPending ? (
+                  {submit.isPending || submitOrderReview.isPending || submitDishReviews.isPending ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.submitText}>Submit review</Text>
@@ -280,5 +470,58 @@ const styles = StyleSheet.create({
     color: authTheme.brand,
     fontWeight: '800',
     fontSize: 13,
+  },
+  editActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteBtn: {
+    backgroundColor: '#FEF2F2',
+  },
+  deleteBtnText: {
+    color: '#B91C1C',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  dishRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: authTheme.cardBorder,
+  },
+  dishName: {
+    flex: 1,
+    fontSize: 13,
+    color: authTheme.text,
+    fontWeight: '600',
+    marginRight: 10,
+  },
+  dishActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dishBtn: {
+    width: 36,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: authTheme.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  dishBtnUp: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#6EE7B7',
+  },
+  dishBtnDown: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  dishBtnText: {
+    fontSize: 14,
   },
 });

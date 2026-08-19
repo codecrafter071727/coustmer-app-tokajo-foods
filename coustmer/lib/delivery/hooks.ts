@@ -20,6 +20,7 @@ export const deliveryKeys = {
   chat: (orderId: string) => [...deliveryKeys.all, 'chat', orderId] as const,
   cities: () => [...deliveryKeys.all, 'cities'] as const,
   zones: () => [...deliveryKeys.all, 'zones'] as const,
+  zone: (zoneId: string) => [...deliveryKeys.all, 'zone', zoneId] as const,
   surge: (zoneId: string) => [...deliveryKeys.all, 'surge', zoneId] as const,
 };
 
@@ -38,6 +39,15 @@ export function useZones() {
   return useQuery({
     queryKey: deliveryKeys.zones(),
     queryFn: () => deliveryApi.getZones(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useZone(zoneId: string) {
+  return useQuery({
+    queryKey: deliveryKeys.zone(zoneId),
+    queryFn: () => deliveryApi.getZone(zoneId),
+    enabled: Boolean(zoneId),
     staleTime: 5 * 60_000,
   });
 }
@@ -166,6 +176,12 @@ export function useNudgePartner(orderId: string) {
 export function useContactPartner(orderId: string) {
   return useMutation({
     mutationFn: () => deliveryApi.contactPartner(orderId),
+  });
+}
+
+export function useContactSupport(orderId: string) {
+  return useMutation({
+    mutationFn: (reason?: string) => deliveryApi.contactSupport(orderId, reason),
   });
 }
 

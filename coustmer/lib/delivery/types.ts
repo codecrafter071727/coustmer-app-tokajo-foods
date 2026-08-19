@@ -107,6 +107,16 @@ export type Zone = {
   isActive?: boolean;
 };
 
+export type ZoneDetail = Zone & {
+  polygon?: [number, number][];
+  centerLat?: number;
+  centerLng?: number;
+  radiusKm?: number;
+  openTime?: string;
+  closeTime?: string;
+  description?: string;
+};
+
 export type SurgeStatus = {
   zoneId: string;
   isSurge: boolean;

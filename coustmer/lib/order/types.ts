@@ -177,6 +177,28 @@ export type OrderListResult = {
   meta?: PaginationMeta;
 };
 
+export type OrderTimelineEvent = {
+  status: string;
+  label?: string;
+  at?: string;
+  timestamp?: string;
+  description?: string;
+};
+
+export type CancellationQuote = {
+  refundable: number;
+  nonRefundable: number;
+  total: number;
+  reason?: string;
+  canCancel: boolean;
+  message?: string;
+};
+
+export type PartialCancelPayload = {
+  items: { itemId: string; quantity?: number }[];
+  reason?: string;
+};
+
 export const ORDER_ISSUE_TYPES = [
   { value: 'missing_item', label: 'Missing item' },
   { value: 'wrong_order', label: 'Wrong order' },

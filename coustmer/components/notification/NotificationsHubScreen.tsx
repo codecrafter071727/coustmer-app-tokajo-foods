@@ -32,8 +32,15 @@ import {
   useDeleteNotification,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
+  useNotificationDevices,
+  useNotificationPreferences,
+  useNotificationServiceHealth,
+  useNotificationServiceReady,
   useNotifications,
+  useRegisterNotificationDevice,
   useUnreadNotificationCount,
+  useUnregisterNotificationDevice,
+  useUpdateNotificationPreferences,
 } from '@/lib/notification/hooks';
 import type { AppNotification } from '@/lib/notification/types';
 import { restaurantApi } from '@/lib/restaurant/api';
@@ -130,6 +137,13 @@ export function NotificationsHubScreen() {
   const markAllRead = useMarkAllNotificationsRead();
   const deleteOne = useDeleteNotification();
   const clearAll = useClearAllNotifications();
+  const health = useNotificationServiceHealth(true);
+  const ready = useNotificationServiceReady(true);
+  const devices = useNotificationDevices(authed);
+  const prefs = useNotificationPreferences(authed);
+  const updatePrefs = useUpdateNotificationPreferences();
+  const registerDevice = useRegisterNotificationDevice();
+  const unregisterDevice = useUnregisterNotificationDevice();
 
   const notifications = listQuery.data?.notifications ?? [];
   const count = unreadCount.data ?? 0;
@@ -257,6 +271,82 @@ export function NotificationsHubScreen() {
             </Text>
           </Pressable>
         </View>
+
+        <View style={styles.metaCard}>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaTitle}>Service</Text>
+            <Text style={styles.metaValue}>
+              {health.data && ready.data ? 'LIVE' : 'DEGRADED'}
+            </Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaTitle}>Devices</Text>
+            <Text style={styles.metaValue}>
+              {devices.data?.length ?? 0}
+            </Text>
+          </View>
+        </View>
+
+        {prefs.data ? (
+          <View style={styles.prefCard}>
+            <Text style={styles.prefTitle}>Notification preferences</Text>
+            {([
+              ['orders', 'Order updates'],
+              ['offers', 'Offers & promos'],
+              ['whatsapp', 'WhatsApp alerts'],
+            ] as const).map(([key, label]) => {
+              const value = Boolean(prefs.data?.[key]);
+              return (
+                <Pressable
+                  key={key}
+                  style={styles.prefRow}
+                  onPress={() =>
+                    updatePrefs.mutate({
+                      [key]: !value,
+                    })
+                  }
+                  disabled={updatePrefs.isPending}
+                >
+                  <Text style={styles.prefLabel}>{label}</Text>
+                  <Text style={[styles.prefValue, value && styles.prefValueOn]}>
+                    {value ? 'ON' : 'OFF'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {authed ? (
+          <View style={styles.deviceActions}>
+            <Pressable
+              style={styles.deviceBtn}
+              onPress={() =>
+                registerDevice.mutate({
+                  token: `expo-${Date.now()}`,
+                  platform: 'android',
+                  app: 'customer',
+                })
+              }
+              disabled={registerDevice.isPending}
+            >
+              <Text style={styles.deviceBtnText}>
+                {registerDevice.isPending ? 'Registering...' : 'Register test device'}
+              </Text>
+            </Pressable>
+            {devices.data?.[0]?.id ? (
+              <Pressable
+                style={[styles.deviceBtn, styles.deviceBtnDanger]}
+                onPress={() => unregisterDevice.mutate(devices.data![0]!.id)}
+                disabled={unregisterDevice.isPending}
+              >
+                <Text style={styles.deviceBtnDangerText}>
+                  {unregisterDevice.isPending ? 'Removing...' : 'Unregister first device'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {activeAlerts.length > 0 ? (
           <View style={styles.alertsBlock}>
@@ -403,6 +493,98 @@ const styles = StyleSheet.create({
   segmentTextActive: {
     color: '#202020',
     fontWeight: '700',
+  },
+  metaCard: {
+    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metaTitle: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '700',
+  },
+  metaValue: {
+    fontSize: 12,
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  prefCard: {
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  prefTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  prefLabel: {
+    fontSize: 13,
+    color: '#1F2937',
+    fontWeight: '600',
+  },
+  prefValue: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '800',
+  },
+  prefValueOn: {
+    color: '#16A34A',
+  },
+  deviceActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  deviceBtn: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  deviceBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#3730A3',
+  },
+  deviceBtnDanger: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  deviceBtnDangerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#B91C1C',
   },
   list: {
     paddingBottom: 40,
