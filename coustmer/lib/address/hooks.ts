@@ -89,6 +89,16 @@ export function useAutocomplete(query: string) {
   });
 }
 
+/** Returns the first default saved address (or first in list) */
+export function useDefaultSavedAddress() {
+  const { data: addresses } = useSavedAddresses();
+  const defaultAddress =
+    !addresses || addresses.length === 0
+      ? undefined
+      : (addresses.find((a) => (a as { isDefault?: boolean }).isDefault) ?? addresses[0]);
+  return { defaultAddress };
+}
+
 /** GET /addresses/serviceability?lat=&lng= */
 export function useServiceability(lat: number | undefined, lng: number | undefined) {
   return useQuery({

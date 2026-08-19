@@ -435,6 +435,24 @@ export function useRestaurantTimings(restaurantId: string) {
   });
 }
 
+export function useRestaurantHolidays(restaurantId: string) {
+  return useQuery({
+    queryKey: [...restaurantKeys.all, 'holidays', restaurantId],
+    queryFn: () => restaurantApi.getHolidays(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useRestaurantSpecialHours(restaurantId: string) {
+  return useQuery({
+    queryKey: [...restaurantKeys.all, 'special-hours', restaurantId],
+    queryFn: () => restaurantApi.getSpecialHours(restaurantId),
+    enabled: Boolean(restaurantId),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useRestaurantHygiene(restaurantId: string) {
   return useQuery({
     queryKey: restaurantKeys.hygiene(restaurantId),

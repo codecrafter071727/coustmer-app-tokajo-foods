@@ -261,6 +261,34 @@ export const restaurantApi = {
     );
   },
 
+  /** GET /restaurants/:id/holidays */
+  getHolidays: async (restaurantId: string): Promise<{ date: string; reason?: string }[]> => {
+    const res = await request<unknown>(`${RESTAURANT_BASE}/${restaurantId}/holidays`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload)
+      ? payload
+      : (payload as Record<string, unknown>)?.holidays ?? (payload as Record<string, unknown>)?.data ?? [];
+    return (Array.isArray(list) ? list : []).map((row: Record<string, unknown>) => ({
+      date: String(row.date ?? row.closedDate ?? ''),
+      reason: row.reason ? String(row.reason) : undefined,
+    }));
+  },
+
+  /** GET /restaurants/:id/special-hours */
+  getSpecialHours: async (restaurantId: string): Promise<{ date: string; openTime: string; closeTime: string; reason?: string }[]> => {
+    const res = await request<unknown>(`${RESTAURANT_BASE}/${restaurantId}/special-hours`);
+    const payload = res.data ?? res;
+    const list = Array.isArray(payload)
+      ? payload
+      : (payload as Record<string, unknown>)?.specialHours ?? (payload as Record<string, unknown>)?.data ?? [];
+    return (Array.isArray(list) ? list : []).map((row: Record<string, unknown>) => ({
+      date: String(row.date ?? ''),
+      openTime: String(row.openTime ?? row.open ?? ''),
+      closeTime: String(row.closeTime ?? row.close ?? ''),
+      reason: row.reason ? String(row.reason) : undefined,
+    }));
+  },
+
   /** GET /restaurants/:id/hygiene */
   getHygiene: async (restaurantId: string): Promise<RestaurantHygiene> => {
     const res = await request<Record<string, unknown>>(

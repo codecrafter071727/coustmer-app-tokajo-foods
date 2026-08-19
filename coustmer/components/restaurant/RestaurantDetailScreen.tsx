@@ -57,9 +57,11 @@ import {
   useNotifyOpen,
   useRestaurant,
   useRestaurantBySlug,
+  useRestaurantHolidays,
   useRestaurantHygiene,
   useRestaurantItems,
   useRestaurantOffers,
+  useRestaurantSpecialHours,
   useRestaurantTimings,
 } from '@/lib/restaurant/hooks';
 import type { MenuItem } from '@/lib/restaurant/types';
@@ -152,6 +154,8 @@ export function RestaurantDetailScreen() {
   });
   const offers = useRestaurantOffers(id);
   const timings = useRestaurantTimings(id);
+  const holidays = useRestaurantHolidays(id);
+  const specialHours = useRestaurantSpecialHours(id);
   const hygiene = useRestaurantHygiene(id);
   const alerts = useKitchenAlerts({ enabled: Boolean(token && id) });
   const notifyOpen = useNotifyOpen(id);
@@ -1037,6 +1041,39 @@ export function RestaurantDetailScreen() {
                     </View>
                   );
                 })}
+              </>
+            ) : null}
+
+            {(holidays.data?.length ?? 0) > 0 ? (
+              <>
+                <Text style={[styles.infoLabel, { marginTop: 18 }]}>
+                  Upcoming closed dates
+                </Text>
+                {holidays.data!.slice(0, 5).map((h) => (
+                  <View key={h.date} style={styles.timingRow}>
+                    <Text style={styles.timingDay}>{h.date}</Text>
+                    <Text style={styles.timingValue}>
+                      {h.reason || 'Closed'}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {(specialHours.data?.length ?? 0) > 0 ? (
+              <>
+                <Text style={[styles.infoLabel, { marginTop: 18 }]}>
+                  Special hours
+                </Text>
+                {specialHours.data!.slice(0, 5).map((sh) => (
+                  <View key={sh.date} style={styles.timingRow}>
+                    <Text style={styles.timingDay}>{sh.date}</Text>
+                    <Text style={styles.timingValue}>
+                      {sh.openTime}–{sh.closeTime}
+                      {sh.reason ? ` (${sh.reason})` : ''}
+                    </Text>
+                  </View>
+                ))}
               </>
             ) : null}
 
