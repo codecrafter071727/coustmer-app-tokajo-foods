@@ -197,29 +197,26 @@ export default function HomeScreen() {
 
   const baseRestaurants = useMemo(() => {
     const nearbyRows = nearby.data?.restaurants ?? [];
+
+    // ── Primary: geo-based nearby results ─────────────────────────────────────
+    // When we have real coordinates and the nearby API returned results, those
+    // are already radius-filtered by the backend ($geoNear) so we trust them
+    // completely. Do NOT mix in city-string results that may come from another
+    // location.
+    if (nearbyParams && nearbyRows.length > 0) {
+      return nearbyRows;
+    }
+
+    // ── Fallback: city-string feed (no GPS / nearby still loading) ────────────
     const rows = feed.data?.pages.flatMap((p) => p.restaurants) ?? [];
 
-    // Prefer geo nearby when available (Swiggy/Zomato style), then fill from city list
-    const byId = new Map<string, (typeof rows)[number]>();
-    for (const r of nearbyRows) {
-      if (r.id) byId.set(r.id, r);
-    }
-    for (const r of rows) {
-      if (r.id && !byId.has(r.id)) byId.set(r.id, r);
-    }
-    const merged = [...byId.values()];
+    if (!city) return [];
 
-    if (!city && nearbyRows.length === 0) return [];
-
-    let matched = city
-      ? merged.filter((r) => restaurantMatchesCity(r, city))
-      : merged;
-    // City string mismatch (e.g. "New Delhi" vs "Delhi") must not hide all outlets.
-    if (matched.length === 0 && merged.length > 0) {
-      matched = merged;
-    }
+    // Filter strictly by city. Never fall back to "show all" — that's what
+    // caused Greater Noida restaurants to appear when a different city is chosen.
+    const matched = rows.filter((r) => restaurantMatchesCity(r, city));
     return matched;
-  }, [feed.data?.pages, nearby.data?.restaurants, city]);
+  }, [feed.data?.pages, nearby.data?.restaurants, nearbyParams, city]);
 
   const restaurants = useMemo(
     () =>
