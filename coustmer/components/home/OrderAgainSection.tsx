@@ -16,11 +16,11 @@ export function OrderAgainSection() {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
-          <RotateCcw color="#EA580C" size={18} strokeWidth={2.5} />
+          <RotateCcw color="#F97316" size={17} strokeWidth={2.5} />
           <Text style={styles.title}>Order again</Text>
         </View>
         <Pressable onPress={() => router.push('/orders')}>
-          <Text style={styles.viewAll}>View all</Text>
+          <Text style={styles.viewAll}>See all</Text>
         </Pressable>
       </View>
 
@@ -79,8 +79,8 @@ export function OrderAgainSection() {
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: 22,
+    marginBottom: 4,
   },
   headerRow: {
     flexDirection: 'row',
@@ -92,18 +92,18 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 24,
-    color: '#111827',
-    letterSpacing: -0.5,
+    fontSize: 19,
+    color: '#1C1C1C',
+    letterSpacing: -0.3,
   },
   viewAll: {
     fontFamily: fonts.uiBold,
     fontSize: 13,
-    color: '#EA580C',
+    color: '#F97316',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -155,13 +155,14 @@ const styles = StyleSheet.create({
   },
   name: {
     fontFamily: fonts.displayBold,
-    fontSize: 14,
-    color: '#0B1220',
+    fontSize: 14.5,
+    color: '#1C1C1C',
+    letterSpacing: -0.2,
   },
   itemsText: {
     fontFamily: fonts.ui,
     fontSize: 12,
-    color: '#64748B',
+    color: '#8A8A8A',
   },
   metaRow: {
     flexDirection: 'row',

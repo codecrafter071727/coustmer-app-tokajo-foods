@@ -807,7 +807,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
   },
   pinOverlay: {
     position: 'absolute',
@@ -874,14 +874,14 @@ const styles = StyleSheet.create({
   },
   sectionHead: {
     fontFamily: fonts.displayBold,
-    fontSize: 24,
-    paddingHorizontal: 18,
-    marginBottom: 12,
-    marginTop: 20,
-    letterSpacing: -0.4,
+    fontSize: 19,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    marginTop: 16,
+    letterSpacing: -0.3,
   },
   sectionHeadDark: {
-    color: '#111827',
+    color: '#1C1C1C',
     fontFamily: fonts.displayBold,
   },
   sectionHeadAccent: {

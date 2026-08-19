@@ -40,7 +40,13 @@ export function PopularRestaurantsSection({
 
   return (
     <View style={styles.wrap}>
-      {heading.trim() ? <Text style={styles.title}>{heading}</Text> : null}
+      {heading.trim() ? (
+        <View style={styles.headingRow}>
+          <View style={styles.headingLine} />
+          <Text style={styles.title}>{heading.toUpperCase()}</Text>
+          <View style={styles.headingLine} />
+        </View>
+      ) : null}
 
       {loading && restaurants.length === 0 ? (
         <View>
@@ -75,17 +81,28 @@ export function PopularRestaurantsSection({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 32,
+    marginTop: 26,
     marginBottom: 8,
+  },
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    marginBottom: 18,
+  },
+  headingLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#EAEAEA',
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 24,
+    fontSize: 14,
     fontWeight: '800',
-    color: '#111827',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-    letterSpacing: -0.5,
+    color: '#8A8A8A',
+    letterSpacing: 0.8,
   },
   moreWrap: {
     paddingVertical: 16,

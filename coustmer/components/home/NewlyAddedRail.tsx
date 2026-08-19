@@ -81,8 +81,8 @@ export function NewlyAddedRail({
               <View style={styles.meta}>
                 {typeof r.rating === 'number' && r.rating > 0 && (
                   <View style={styles.rating}>
-                    <Star color="#FFB800" size={12} fill="#FFB800" strokeWidth={0} />
                     <Text style={styles.ratingText}>{r.rating.toFixed(1)}</Text>
+                    <Star color="#1BA672" size={11} fill="#1BA672" strokeWidth={0} />
                   </View>
                 )}
 
@@ -108,40 +108,42 @@ export function NewlyAddedRail({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 28 },
+  wrap: { marginTop: 22 },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    marginBottom: 14,
   },
   title: {
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 4,
+    color: '#1C1C1C',
+    letterSpacing: -0.3,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#8A8A8A',
     fontWeight: '500',
   },
   list: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     gap: 14,
   },
   card: {
-    width: 260,
+    width: 232,
     backgroundColor: '#fff',
     borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   imgWrap: {
-    height: 140,
+    height: 132,
     position: 'relative',
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#F4F4F5',
   },
   img: {
     width: '100%',
@@ -154,16 +156,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     left: 10,
-    backgroundColor: '#FF4757',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: '#F97316',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   newText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   vegMark: {
     position: 'absolute',
@@ -171,32 +173,38 @@ const styles = StyleSheet.create({
     right: 10,
     backgroundColor: '#fff',
     borderRadius: 4,
-    padding: 4,
+    padding: 3,
   },
   info: {
-    padding: 12,
+    paddingTop: 10,
+    paddingHorizontal: 2,
   },
   name: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 6,
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#1C1C1C',
+    letterSpacing: -0.2,
+    marginBottom: 5,
   },
   meta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   rating: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
+    backgroundColor: '#EAF6EC',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   ratingText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#1BA672',
   },
   time: {
     flexDirection: 'row',
@@ -204,13 +212,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   timeText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#8A8A8A',
   },
   cuisines: {
-    fontSize: 12,
-    color: '#94A3B8',
+    fontSize: 12.5,
+    color: '#9A9A9A',
     fontWeight: '500',
   },
 });
