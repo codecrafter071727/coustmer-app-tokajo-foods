@@ -6,11 +6,20 @@ import { useRouter } from 'expo-router';
 import { fonts } from '@/constants/typography';
 import { useRecentOrders } from '@/lib/order/hooks';
 
-export function OrderAgainSection() {
+type Props = {
+  allowedRestaurantIds?: ReadonlySet<string>;
+};
+
+export function OrderAgainSection({ allowedRestaurantIds }: Props) {
   const router = useRouter();
   const { data: orders } = useRecentOrders();
+  const nearbyOrders = orders?.filter(
+    (order) =>
+      !allowedRestaurantIds ||
+      allowedRestaurantIds.has(String(order.restaurantId))
+  );
 
-  if (!orders || orders.length === 0) return null;
+  if (!nearbyOrders || nearbyOrders.length === 0) return null;
 
   return (
     <View style={styles.container}>
@@ -29,7 +38,7 @@ export function OrderAgainSection() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
-        {orders.map((order) => (
+        {nearbyOrders.map((order) => (
           <Pressable
             key={order.id}
             style={styles.card}

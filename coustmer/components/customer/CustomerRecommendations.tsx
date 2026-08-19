@@ -37,6 +37,7 @@ type FallbackRestaurant = {
 
 type Props = {
   fallbackRestaurants?: FallbackRestaurant[];
+  allowedRestaurantIds?: ReadonlySet<string>;
 };
 
 function shuffle<T>(list: T[]): T[] {
@@ -65,14 +66,22 @@ function toCard(r: FallbackRestaurant): RestaurantCard {
   };
 }
 
-export function CustomerRecommendations({ fallbackRestaurants: _fallback = [] }: Props) {
+export function CustomerRecommendations({
+  fallbackRestaurants: _fallback = [],
+  allowedRestaurantIds,
+}: Props) {
   const router = useRouter();
   const recommended = useRecommended();
   const { isFavorite, toggleFavorite } = useFavoriteToggle();
 
   const items = useMemo(() => {
-    return (recommended.data ?? []).filter((r) => r?.id);
-  }, [recommended.data]);
+    return (recommended.data ?? []).filter(
+      (restaurant) =>
+        restaurant?.id &&
+        (!allowedRestaurantIds ||
+          allowedRestaurantIds.has(String(restaurant.id)))
+    );
+  }, [allowedRestaurantIds, recommended.data]);
 
   const isFromApi = items.length > 0;
 

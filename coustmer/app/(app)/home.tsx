@@ -37,6 +37,7 @@ import { APP_BOTTOM_NAV_INSET } from '@/components/navigation/AppBottomNav';
 import { CartFloatingBar } from '@/components/order/CartFloatingBar';
 import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
+import { useQueryClient } from '@tanstack/react-query';
 import { addressApi } from '@/lib/address/api';
 import { formatAddressLabel } from '@/lib/address/types';
 import {
@@ -119,6 +120,13 @@ export default function HomeScreen() {
   const isDetectingLocation = useDeliveryLocationStore((s) => s.isDetecting);
   const setDeliveryLocation = useDeliveryLocationStore((s) => s.setLocation);
   const coords = useDeliveryCoords();
+  const qc = useQueryClient();
+
+  // When delivery location changes, wipe stale restaurant caches immediately
+  // so the user never sees restaurants from the previous city/coords.
+  useEffect(() => {
+    qc.removeQueries({ queryKey: ['restaurant'] });
+  }, [coords?.lat, coords?.lng, qc]);
 
   const city = useMemo(() => {
     const raw =
@@ -194,16 +202,17 @@ export default function HomeScreen() {
   );
   const nearby = useNearbyRestaurants(nearbyParams);
   const liveCuisines = useRestaurantCuisines();
+  const nearbyRestaurantIds = useMemo(
+    () => new Set((nearby.data?.restaurants ?? []).map((restaurant) => restaurant.id)),
+    [nearby.data?.restaurants]
+  );
 
   const baseRestaurants = useMemo(() => {
     const nearbyRows = nearby.data?.restaurants ?? [];
 
-    // ── Primary: geo-based nearby results ─────────────────────────────────────
-    // When we have real coordinates and the nearby API returned results, those
-    // are already radius-filtered by the backend ($geoNear) so we trust them
-    // completely. Do NOT mix in city-string results that may come from another
-    // location.
-    if (nearbyParams && nearbyRows.length > 0) {
+    // Coordinates are authoritative. An empty nearby response means there are no
+    // deliverable restaurants; never fall back to a city-wide/global listing.
+    if (nearbyParams) {
       return nearbyRows;
     }
 
@@ -634,8 +643,10 @@ export default function HomeScreen() {
 
           {(() => {
             type HRC = import('@/lib/home/types').HomeRestaurantCard;
-            const newlyAdded = home.data?.newlyAdded as unknown as HRC[] | undefined;
-            const trending = home.data?.trending as unknown as HRC[] | undefined;
+            const newlyAdded = (home.data?.newlyAdded as unknown as HRC[] | undefined)
+              ?.filter((restaurant) => nearbyRestaurantIds.has(restaurant.id));
+            const trending = (home.data?.trending as unknown as HRC[] | undefined)
+              ?.filter((restaurant) => nearbyRestaurantIds.has(restaurant.id));
             const useNewlyAdded = (newlyAdded?.length ?? 0) > 0;
             const useTrending = !useNewlyAdded && (trending?.length ?? 0) > 0;
             const railData = useNewlyAdded ? newlyAdded! : useTrending ? trending! : null;
@@ -672,9 +683,12 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          <OrderAgainSection />
+          <OrderAgainSection allowedRestaurantIds={nearbyRestaurantIds} />
 
-          <CustomerRecommendations fallbackRestaurants={restaurants} />
+          <CustomerRecommendations
+            fallbackRestaurants={restaurants}
+            allowedRestaurantIds={nearbyRestaurantIds}
+          />
 
           {topRestaurants.length > 0 || (feed.isLoading && !!city) ? (
             <PopularRestaurantsSection
