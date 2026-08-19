@@ -17,16 +17,17 @@ type Props = {
   onPress?: () => void;
   onAdd?: () => void;
   highlighted?: boolean;
+  unavailable?: boolean;
 };
 
-export function MenuItemRow({ item, onPress, onAdd }: Props) {
+export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailable }: Props) {
   const quantity = useCartStore(
     (s) =>
       s.items.find((i) => i.id === item.id || i.menuItemId === item.id)
         ?.quantity || 0
   );
 
-  const available = item.isAvailable !== false;
+  const available = item.isAvailable !== false && !forceUnavailable;
 
   const handleAdd = (e: any) => {
     e.stopPropagation?.();

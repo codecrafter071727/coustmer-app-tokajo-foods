@@ -61,8 +61,10 @@ import {
   useRestaurantHygiene,
   useRestaurantItems,
   useRestaurantOffers,
+  useRestaurantRatings,
   useRestaurantSpecialHours,
   useRestaurantTimings,
+  useUnavailableItemIds,
 } from '@/lib/restaurant/hooks';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { useRestaurantReviewStats } from '@/lib/review/hooks';
@@ -157,6 +159,9 @@ export function RestaurantDetailScreen() {
   const holidays = useRestaurantHolidays(id);
   const specialHours = useRestaurantSpecialHours(id);
   const hygiene = useRestaurantHygiene(id);
+  const ratingsHistogram = useRestaurantRatings(id);
+  const { data: unavailableIds } = useUnavailableItemIds(id);
+  const unavailableSet = new Set(unavailableIds ?? []);
   const alerts = useKitchenAlerts({ enabled: Boolean(token && id) });
   const notifyOpen = useNotifyOpen(id);
   const needle = query.trim().toLowerCase();
@@ -667,6 +672,7 @@ export function RestaurantDetailScreen() {
                       item={item}
                       onPress={() => setSelectedItem(item)}
                       onAdd={() => addItem(item)}
+                      unavailable={unavailableSet.has(item.id)}
                     />
                   ))
                 )}
@@ -790,6 +796,7 @@ export function RestaurantDetailScreen() {
                           item={item}
                           onPress={() => setSelectedItem(item)}
                           onAdd={() => addItem(item)}
+                          unavailable={unavailableSet.has(item.id)}
                         />
                       ))}
                     </Animated.View>
@@ -838,7 +845,54 @@ export function RestaurantDetailScreen() {
         ) : null}
 
         {tab === 'Reviews' ? (
-          <RestaurantReviewsPanel restaurantId={id} />
+          <View>
+            {ratingsHistogram.data && (ratingsHistogram.data.totalRatings ?? 0) > 0 && (
+              <View style={styles.histogramWrap}>
+                <Text style={styles.histogramTitle}>Ratings breakdown</Text>
+                <View style={styles.histogramScoreRow}>
+                  <Text style={styles.histogramScore}>
+                    {typeof ratingsHistogram.data.avgRating === 'number'
+                      ? ratingsHistogram.data.avgRating.toFixed(1)
+                      : '—'}
+                  </Text>
+                  <View>
+                    <View style={styles.histogramStarRow}>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star
+                          key={s}
+                          size={14}
+                          color="#F59E0B"
+                          fill={
+                            s <= Math.round(ratingsHistogram.data?.avgRating ?? 0)
+                              ? '#F59E0B'
+                              : 'transparent'
+                          }
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.histogramTotal}>
+                      {ratingsHistogram.data.totalRatings} ratings
+                    </Text>
+                  </View>
+                </View>
+                {([5, 4, 3, 2, 1] as const).map((star) => {
+                  const count = ratingsHistogram.data?.breakdown?.[star] ?? 0;
+                  const total = ratingsHistogram.data?.totalRatings ?? 0;
+                  const pct = total > 0 ? (count / total) * 100 : 0;
+                  return (
+                    <View key={star} style={styles.histogramRow}>
+                      <Text style={styles.histogramStar}>{star}★</Text>
+                      <View style={styles.histogramBarBg}>
+                        <View style={[styles.histogramBar, { width: `${pct}%` as `${number}%` }]} />
+                      </View>
+                      <Text style={styles.histogramCount}>{count}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+            <RestaurantReviewsPanel restaurantId={id} />
+          </View>
         ) : null}
 
         {tab === 'Info' ? (
@@ -1747,5 +1801,75 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E2E8F0',
     paddingBottom: 6,
     zIndex: 20,
+  },
+  histogramWrap: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  histogramTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 16,
+    color: INK,
+    marginBottom: 14,
+  },
+  histogramScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 14,
+  },
+  histogramScore: {
+    fontFamily: fonts.displayBold,
+    fontSize: 40,
+    color: INK,
+    lineHeight: 44,
+  },
+  histogramStarRow: {
+    flexDirection: 'row',
+    gap: 2,
+    marginBottom: 4,
+  },
+  histogramTotal: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: MUTED,
+  },
+  histogramRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  histogramStar: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 12,
+    color: MUTED,
+    width: 24,
+  },
+  histogramBarBg: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  histogramBar: {
+    height: '100%',
+    backgroundColor: '#F59E0B',
+    borderRadius: 3,
+  },
+  histogramCount: {
+    fontFamily: fonts.uiMedium,
+    fontSize: 11,
+    color: MUTED,
+    width: 28,
+    textAlign: 'right',
   },
 });
