@@ -128,6 +128,25 @@ export function useEtaSocket(orderId: string): { etaMinutes?: number; etaText?: 
   return eta;
 }
 
+/**
+ * Subscribe to `delivery:status` for an order (rider trip machine).
+ * Order ticket may stay `out_for_delivery` while trip moves to `arrived_at_customer`.
+ */
+export function useDeliveryStatusSocket(
+  orderId: string,
+  onStatusChange?: (status: string) => void
+) {
+  const [status, setStatus] = useState<string | null>(null);
+
+  useSocketEvent('delivery:status', (data) => {
+    if (data.orderId !== orderId) return;
+    setStatus(data.status);
+    onStatusChange?.(data.status);
+  });
+
+  return { status };
+}
+
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
 /**

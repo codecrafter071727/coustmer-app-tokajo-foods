@@ -18,6 +18,7 @@ export const deliveryKeys = {
   partner: (orderId: string) => [...deliveryKeys.all, 'partner', orderId] as const,
   dropOtp: (orderId: string) => [...deliveryKeys.all, 'drop-otp', orderId] as const,
   chat: (orderId: string) => [...deliveryKeys.all, 'chat', orderId] as const,
+  publicShare: (token: string) => [...deliveryKeys.all, 'public-share', token] as const,
   cities: () => [...deliveryKeys.all, 'cities'] as const,
   zones: () => [...deliveryKeys.all, 'zones'] as const,
   zone: (zoneId: string) => [...deliveryKeys.all, 'zone', zoneId] as const,
@@ -131,17 +132,44 @@ export function useDropOtp(orderId: string, active = true) {
     queryKey: deliveryKeys.dropOtp(orderId),
     queryFn: () => deliveryApi.getDropOtp(orderId),
     enabled: Boolean(orderId) && active,
-    staleTime: 30_000,
-    retry: 0,
+    // OTP is often unavailable until a rider is assigned; keep polling so a
+    // cached null from early 404/409 does not stick through arrival.
+    staleTime: 0,
+    refetchInterval: (query) => {
+      if (!active) return false;
+      // Once we have digits, poll slower; otherwise keep trying every few seconds.
+      return query.state.data?.otp ? 20_000 : 6_000;
+    },
+    retry: 1,
   });
 }
 
-export function useChatHistory(orderId: string) {
+export function useChatHistory(orderId: string, options?: { enabled?: boolean; refetchInterval?: number | false }) {
   return useQuery({
     queryKey: deliveryKeys.chat(orderId),
     queryFn: () => deliveryApi.getChatHistory(orderId),
-    enabled: Boolean(orderId),
+    enabled: Boolean(orderId) && (options?.enabled ?? true),
     staleTime: 0,
+    refetchInterval: options?.refetchInterval ?? false,
+  });
+}
+
+/** GET /tracking/share/:shareToken — guest family track (no login). */
+export function usePublicShareTracking(
+  shareToken: string,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
+  return useQuery({
+    queryKey: deliveryKeys.publicShare(shareToken),
+    queryFn: () => deliveryApi.getPublicShare(shareToken),
+    enabled: Boolean(shareToken) && (options?.enabled ?? true),
+    staleTime: 3_000,
+    refetchInterval: options?.refetchInterval ?? 6_000,
+    retry: (count, err) => {
+      const status = (err as Error & { status?: number }).status;
+      if (status === 404) return false;
+      return count < 1;
+    },
   });
 }
 

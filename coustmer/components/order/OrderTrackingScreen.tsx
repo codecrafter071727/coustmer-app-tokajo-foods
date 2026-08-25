@@ -16,6 +16,7 @@ import {
   Store,
 } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
   Alert,
@@ -45,6 +46,7 @@ import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
 import { deliveryApi } from '@/lib/delivery/api';
 import {
+  deliveryKeys,
   useChatHistory,
   useChangeAddress,
   useContactPartner,
@@ -74,6 +76,7 @@ import {
   normalizeOrderStatus,
 } from '@/lib/order/types';
 import {
+  useDeliveryStatusSocket,
   useEtaSocket,
   useOrderStatusSocket,
   usePartnerLocationSocket,
@@ -106,6 +109,9 @@ function statusLabel(status?: string) {
   const s = normalizeOrderStatus(status ?? 'placed');
   if (isTerminalCancelled(s)) return 'Cancelled';
   if (isOrderCompleted(s)) return 'Completed';
+  if (s === 'arrived_at_customer' || s.includes('arrived_at_customer')) {
+    return 'Partner at your door';
+  }
   if (s.includes('out') || s.includes('way') || s.includes('pick')) {
     return 'Out for delivery';
   }
@@ -121,6 +127,9 @@ function statusHint(status?: string, active?: boolean) {
     if (isTerminalCancelled(s)) return 'This order was cancelled';
     if (isOrderCompleted(s)) return 'Your order was delivered successfully';
     return 'Order update';
+  }
+  if (s === 'arrived_at_customer' || s.includes('arrived_at_customer')) {
+    return 'Share the delivery OTP below to complete your order';
   }
   if (s.includes('out') || s.includes('way') || s.includes('pick')) {
     return 'Your partner is on the way';
@@ -138,7 +147,13 @@ function currentStep(status?: string): StepKey {
   const s = normalizeOrderStatus(status);
   if (isOrderCompleted(s)) return 'delivered';
   if (isTerminalCancelled(s)) return 'preparing';
-  if (s.includes('out') || s.includes('way') || s.includes('pick')) {
+  if (
+    s === 'arrived_at_customer' ||
+    s.includes('arrived_at_customer') ||
+    s.includes('out') ||
+    s.includes('way') ||
+    s.includes('pick')
+  ) {
     return 'on_the_way';
   }
   if (s.includes('prepar') || s.includes('ready')) return 'preparing';
@@ -147,6 +162,87 @@ function currentStep(status?: string): StepKey {
 
 function stepIndex(key: StepKey) {
   return ['placed', 'preparing', 'on_the_way', 'delivered'].indexOf(key);
+}
+
+function etaFromSeconds(seconds?: number): string | null {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  return `${Math.max(1, Math.round(seconds / 60))} mins`;
+}
+
+function etaFromIso(iso?: string): string | null {
+  if (!iso) return null;
+  const at = new Date(iso).getTime();
+  if (!Number.isFinite(at)) return null;
+  const mins = Math.ceil((at - Date.now()) / 60000);
+  return mins > 0 ? `${mins} mins` : 'Arriving soon';
+}
+
+function statusEtaFallback(
+  status?: string,
+  order?: {
+    createdAt?: string;
+    acceptedAt?: string;
+    preparingAt?: string;
+    readyAt?: string;
+    outForDeliveryAt?: string;
+    raw?: Record<string, unknown>;
+  }
+): string | null {
+  const s = normalizeOrderStatus(status);
+  if (!s || s === 'delivered' || s === 'completed' || s === 'cancelled' || s === 'canceled') return null;
+
+  const pickIso = (...vals: Array<string | undefined>): string | undefined =>
+    vals.find((v) => typeof v === 'string' && Number.isFinite(new Date(v).getTime()));
+  const raw = order?.raw ?? {};
+
+  const phaseStartedAt = (() => {
+    if (s.includes('out') || s.includes('way') || s.includes('pick')) {
+      return pickIso(
+        order?.outForDeliveryAt,
+        String(raw['outForDeliveryAt'] ?? ''),
+        String(raw['pickedUpAt'] ?? ''),
+        order?.readyAt
+      );
+    }
+    if (s === 'preparing' || s === 'ready') {
+      return pickIso(
+        order?.preparingAt,
+        String(raw['preparingAt'] ?? ''),
+        order?.acceptedAt,
+        String(raw['acceptedAt'] ?? '')
+      );
+    }
+    return pickIso(
+      order?.acceptedAt,
+      String(raw['acceptedAt'] ?? ''),
+      order?.createdAt,
+      String(raw['createdAt'] ?? '')
+    );
+  })();
+
+  const elapsedMinutes = (() => {
+    if (!phaseStartedAt) return 0;
+    const started = new Date(phaseStartedAt).getTime();
+    if (!Number.isFinite(started)) return 0;
+    return Math.max(0, Math.floor((Date.now() - started) / 60000));
+  })();
+
+  const baseMinutes =
+    s.includes('out') || s.includes('way') || s.includes('pick')
+      ? 10
+      : s === 'preparing' || s === 'ready'
+        ? 18
+        : 25;
+
+  // Before SLA breach: show normal countdown.
+  if (elapsedMinutes < baseMinutes) {
+    return `${Math.max(1, baseMinutes - elapsedMinutes)} mins`;
+  }
+
+  // After breach: extend ETA as delay grows (dynamic overrun handling).
+  const overrun = elapsedMinutes - baseMinutes;
+  const extended = Math.min(45, 6 + Math.ceil(overrun * 0.6));
+  return `${Math.max(3, extended)} mins`;
 }
 
 function generateMapHtml(opts: {
@@ -333,6 +429,7 @@ export function OrderTrackingScreen() {
   }>();
   const id = String(orderId ?? '');
   const clearCart = useCartStore((s) => s.clearCart);
+  const queryClient = useQueryClient();
 
   const order = useOrder(id, {
     refetchInterval: (query) =>
@@ -356,13 +453,23 @@ export function OrderTrackingScreen() {
     () => { void order.refetch(); void tracking.refetch(); },
     () => { void order.refetch(); }
   );
+  // delivery:status — trip machine (arrived_at_customer may not change order ticket)
+  const { status: deliverySocketStatus } = useDeliveryStatusSocket(id, (status) => {
+    void tracking.refetch();
+    void queryClient.invalidateQueries({ queryKey: deliveryKeys.dropOtp(id) });
+    if (status === 'delivered' || status === 'returned' || status === 'cancelled') {
+      void order.refetch();
+    }
+  });
   // partner:location / tracking:location — live GPS overlay
   const socketLocation = usePartnerLocationSocket(id);
   // tracking:eta — live ETA chip
   const socketEta = useEtaSocket(id);
   // ──────────────────────────────────────────────────────────────────────────
 
-  const combinedStatusEarly = socketStatus ?? o?.status ?? t?.status;
+  // Prefer rider trip status so "arrived at door" shows even while order is OFD
+  const combinedStatusEarly =
+    deliverySocketStatus ?? t?.status ?? socketStatus ?? o?.status;
   const trackingActive =
     !combinedStatusEarly || isActiveOrderStatus(combinedStatusEarly);
 
@@ -408,7 +515,8 @@ export function OrderTrackingScreen() {
     return () => clearTimeout(clearTimer);
   }, [newOrder, clearCart]);
 
-  const combinedStatus = socketStatus ?? o?.status ?? t?.status;
+  const combinedStatus =
+    deliverySocketStatus ?? t?.status ?? socketStatus ?? o?.status;
   // Assume live until status is known (avoids a flash of "completed")
   const active = !combinedStatus || isActiveOrderStatus(combinedStatus);
   const completed = isOrderCompleted(combinedStatus);
@@ -560,7 +668,10 @@ export function OrderTrackingScreen() {
 
   const routeQuery = useTrackingRoute(id);
   const otpQuery = useDropOtp(id, trackingActive);
-  const chatQuery = useChatHistory(id);
+  const chatQuery = useChatHistory(id, {
+    enabled: Boolean(id),
+    refetchInterval: trackingActive ? 8_000 : false,
+  });
   const sendChat = useSendChat(id);
   const createShare = useCreateShareLink(id);
   const revokeShare = useRevokeShareLink(id);
@@ -568,7 +679,7 @@ export function OrderTrackingScreen() {
   const contactPartner = useContactPartner(id);
   const contactSupport = useContactSupport(id);
   const setDeliveryInstructions = useSetDeliveryInstructions(id);
-  const setContactless = useSetContactless(id);
+  const setContactlessMutation = useSetContactless(id);
   const changeAddress = useChangeAddress(id);
   const addTip = useAddTip(id);
   const ratePartner = useRatePartner(id);
@@ -603,9 +714,12 @@ export function OrderTrackingScreen() {
       }
       // Validate public endpoint before sharing.
       await deliveryApi.getPublicShare(link.shareToken);
+      const shareUrl =
+        link.url?.trim() ||
+        `tokajo://track/share/${link.shareToken}`;
       await Share.share({
-        message: `Track my order live: ${link.url}`,
-        url: link.url,
+        message: `Track my order live: ${shareUrl}`,
+        url: shareUrl,
       });
     } catch (e) {
       Alert.alert('Share failed', e instanceof Error ? e.message : 'Please try again');
@@ -661,7 +775,7 @@ export function OrderTrackingScreen() {
   const handleContactlessToggle = async () => {
     try {
       const next = !contactless;
-      await setContactless.mutateAsync({
+      await setContactlessMutation.mutateAsync({
         enabled: next,
         instructions: next ? instructionText.trim() || 'Leave at door' : undefined,
       });
@@ -808,19 +922,31 @@ export function OrderTrackingScreen() {
   const etaRaw =
     socketEta?.etaText ||
     (typeof socketEta?.etaMinutes === 'number' ? `${socketEta.etaMinutes} mins` : null) ||
+    etaFromSeconds(socketEta?.etaSeconds) ||
     etaQuery.data?.etaText ||
     (typeof etaQuery.data?.etaMinutes === 'number' ? `${etaQuery.data.etaMinutes} mins` : null) ||
+    etaFromSeconds(etaQuery.data?.etaSeconds) ||
     t?.etaText ||
     (typeof t?.etaMinutes === 'number'
       ? `${t.etaMinutes} mins`
+      : etaFromSeconds(t?.etaSeconds)) ||
+    (t?.etaAt ? new Date(t.etaAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null) ||
+    (etaQuery.data?.etaAt
+      ? new Date(etaQuery.data.etaAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : distanceInfo?.time) ||
+    etaFromIso(o?.estimatedDeliveryAt) ||
+    etaFromIso((o?.raw?.estimatedArrival as string) || undefined) ||
+    statusEtaFallback(combinedStatus, o) ||
     '—';
   const etaNumber = String(etaRaw).replace(/\s*mins?/i, '').trim();
   const showMins =
     /min/i.test(String(etaRaw)) ||
     typeof t?.etaMinutes === 'number' ||
+    typeof t?.etaSeconds === 'number' ||
     typeof socketEta?.etaMinutes === 'number' ||
-    typeof etaQuery.data?.etaMinutes === 'number';
+    typeof socketEta?.etaSeconds === 'number' ||
+    typeof etaQuery.data?.etaMinutes === 'number' ||
+    typeof etaQuery.data?.etaSeconds === 'number';
 
   const goBack = () => {
     if (newOrder === 'true') {
@@ -1118,61 +1244,65 @@ export function OrderTrackingScreen() {
                   </View>
                 </View>
 
-                <View style={styles.partnerActions}>
-                  <Pressable
-                    style={[
-                      styles.callBtn,
-                      !partnerPhone && styles.btnDisabled,
-                    ]}
-                    disabled={!partnerPhone}
-                    onPress={callPartner}
-                  >
-                    <Phone color={WHITE} size={16} strokeWidth={2.5} />
-                    <Text style={styles.callBtnText}>Call partner</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.helpBtn}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/orders/[orderId]/issues',
-                        params: { orderId: id },
-                      })
-                    }
-                  >
-                    <Headset color={INK} size={16} strokeWidth={2.4} />
-                    <Text style={styles.helpBtnText}>Help</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.partnerActions}>
-                  <Pressable style={styles.softBtn} onPress={handleNudge}>
-                    <Text style={styles.softBtnText}>
-                      {nudgePartner.isPending ? 'Sending…' : 'Where are you?'}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={styles.softBtn} onPress={handleShareTracking}>
-                    <Text style={styles.softBtnText}>
-                      {createShare.isPending ? 'Creating…' : 'Share track'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.softBtn, styles.softBtnDanger]}
-                    onPress={async () => {
-                      try {
-                        await revokeShare.mutateAsync();
-                        Alert.alert('Revoked', 'Public tracking link has been disabled.');
-                      } catch (e) {
-                        Alert.alert(
-                          'Could not revoke',
-                          e instanceof Error ? e.message : 'Please try again'
-                        );
-                      }
-                    }}
-                  >
-                    <Text style={styles.softBtnDangerText}>
-                      {revokeShare.isPending ? 'Revoking…' : 'Revoke'}
-                    </Text>
-                  </Pressable>
-                </View>
+                {partnerAssigned ? (
+                  <>
+                    <View style={styles.partnerActions}>
+                      <Pressable
+                        style={[
+                          styles.callBtn,
+                          !partnerPhone && styles.btnDisabled,
+                        ]}
+                        disabled={!partnerPhone}
+                        onPress={callPartner}
+                      >
+                        <Phone color={WHITE} size={16} strokeWidth={2.5} />
+                        <Text style={styles.callBtnText}>Call partner</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.helpBtn}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/orders/[orderId]/issues',
+                            params: { orderId: id },
+                          })
+                        }
+                      >
+                        <Headset color={INK} size={16} strokeWidth={2.4} />
+                        <Text style={styles.helpBtnText}>Help</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.partnerActions}>
+                      <Pressable style={styles.softBtn} onPress={handleNudge}>
+                        <Text style={styles.softBtnText}>
+                          {nudgePartner.isPending ? 'Sending…' : 'Where are you?'}
+                        </Text>
+                      </Pressable>
+                      <Pressable style={styles.softBtn} onPress={handleShareTracking}>
+                        <Text style={styles.softBtnText}>
+                          {createShare.isPending ? 'Creating…' : 'Share track'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.softBtn, styles.softBtnDanger]}
+                        onPress={async () => {
+                          try {
+                            await revokeShare.mutateAsync();
+                            Alert.alert('Revoked', 'Public tracking link has been disabled.');
+                          } catch (e) {
+                            Alert.alert(
+                              'Could not revoke',
+                              e instanceof Error ? e.message : 'Please try again'
+                            );
+                          }
+                        }}
+                      >
+                        <Text style={styles.softBtnDangerText}>
+                          {revokeShare.isPending ? 'Revoking…' : 'Revoke'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : null}
               </LinearGradient>
             </Animated.View>
           ) : (
@@ -1231,9 +1361,23 @@ export function OrderTrackingScreen() {
 
           {active && otpQuery.data?.otp ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Delivery OTP</Text>
-              <View style={styles.otpCard}>
-                <Text style={styles.otpLabel}>Share this with partner on arrival</Text>
+              <Text style={styles.sectionTitle}>
+                {normalizeOrderStatus(combinedStatus) === 'arrived_at_customer'
+                  ? 'Confirm delivery'
+                  : 'Delivery OTP'}
+              </Text>
+              <View
+                style={[
+                  styles.otpCard,
+                  normalizeOrderStatus(combinedStatus) === 'arrived_at_customer' &&
+                    styles.otpCardUrgent,
+                ]}
+              >
+                <Text style={styles.otpLabel}>
+                  {normalizeOrderStatus(combinedStatus) === 'arrived_at_customer'
+                    ? 'Share this OTP with your delivery partner to complete the order'
+                    : 'Share this with your partner when they arrive'}
+                </Text>
                 <Text style={styles.otpValue}>{otpQuery.data.otp}</Text>
                 {otpQuery.data.expiresAt ? (
                   <Text style={styles.otpExpiry}>
@@ -1244,67 +1388,70 @@ export function OrderTrackingScreen() {
             </View>
           ) : null}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Chat with partner</Text>
-            <View style={styles.chatCard}>
-              {chatQuery.data?.length ? (
-                chatQuery.data.slice(-4).map((m) => (
-                  <View
-                    key={m.id}
-                    style={[
-                      styles.chatBubble,
-                      m.from === 'customer' ? styles.chatBubbleMine : styles.chatBubbleTheirs,
-                    ]}
-                  >
-                    <Text
+          {partnerAssigned ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Chat with partner</Text>
+              <View style={styles.chatCard}>
+                {chatQuery.data?.length ? (
+                  chatQuery.data.slice(-4).map((m) => (
+                    <View
+                      key={m.id}
                       style={[
-                        styles.chatText,
-                        m.from === 'customer' && { color: WHITE },
+                        styles.chatBubble,
+                        m.from === 'customer' ? styles.chatBubbleMine : styles.chatBubbleTheirs,
                       ]}
                     >
-                      {m.text}
+                      <Text
+                        style={[
+                          styles.chatText,
+                          m.from === 'customer' && { color: WHITE },
+                        ]}
+                      >
+                        {m.text}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.chatEmpty}>No messages yet</Text>
+                )}
+                <View style={styles.chatInputRow}>
+                  <TextInput
+                    value={chatText}
+                    onChangeText={setChatText}
+                    placeholder="Type a message..."
+                    placeholderTextColor="#9CA3AF"
+                    style={styles.chatInput}
+                  />
+                  <Pressable
+                    style={styles.chatSendBtn}
+                    onPress={handleSendChat}
+                    disabled={sendChat.isPending}
+                  >
+                    <Text style={styles.chatSendText}>
+                      {sendChat.isPending ? '...' : 'Send'}
                     </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.chatEmpty}>No messages yet</Text>
-              )}
-              <View style={styles.chatInputRow}>
-                <TextInput
-                  value={chatText}
-                  onChangeText={setChatText}
-                  placeholder="Type a message..."
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.chatInput}
-                />
-                <Pressable
-                  style={styles.chatSendBtn}
-                  onPress={handleSendChat}
-                  disabled={sendChat.isPending}
-                >
-                  <Text style={styles.chatSendText}>
-                    {sendChat.isPending ? '...' : 'Send'}
-                  </Text>
-                </Pressable>
+                  </Pressable>
+                </View>
               </View>
             </View>
-          </View>
+          ) : null}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Delivery controls</Text>
-            <View style={styles.chatCard}>
-              <View style={styles.partnerActions}>
-                <Pressable style={styles.softBtn} onPress={handleMaskedCall}>
-                  <Text style={styles.softBtnText}>
-                    {contactPartner.isPending ? 'Connecting…' : 'Masked call'}
-                  </Text>
-                </Pressable>
-                <Pressable style={styles.softBtn} onPress={handleSupport}>
-                  <Text style={styles.softBtnText}>
-                    {contactSupport.isPending ? 'Sending…' : 'Contact support'}
-                  </Text>
-                </Pressable>
-              </View>
+          {partnerAssigned ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Delivery controls</Text>
+              <View style={styles.chatCard}>
+                <View style={styles.partnerActions}>
+                  <Pressable style={styles.softBtn} onPress={handleMaskedCall}>
+                    <Text style={styles.softBtnText}>
+                      {contactPartner.isPending ? 'Connecting…' : 'Masked call'}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.softBtn} onPress={handleSupport}>
+                    <Text style={styles.softBtnText}>
+                      {contactSupport.isPending ? 'Sending…' : 'Contact support'}
+                    </Text>
+                  </Pressable>
+                </View>
 
               <TextInput
                 value={instructionText}
@@ -1321,7 +1468,7 @@ export function OrderTrackingScreen() {
                 </Pressable>
                 <Pressable style={styles.softBtn} onPress={handleContactlessToggle}>
                   <Text style={styles.softBtnText}>
-                    {setContactless.isPending
+                    {setContactlessMutation.isPending
                       ? 'Updating…'
                       : contactless
                         ? 'Contactless ON'
@@ -1370,8 +1517,9 @@ export function OrderTrackingScreen() {
                   </Pressable>
                 </View>
               ) : null}
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* Summary */}
           <Animated.View
@@ -2172,6 +2320,11 @@ const styles = StyleSheet.create({
     borderColor: '#FDE68A',
     backgroundColor: '#FFFBEB',
     padding: 12,
+  },
+  otpCardUrgent: {
+    borderColor: ORANGE,
+    backgroundColor: ORANGE_SOFT,
+    borderWidth: 2,
   },
   otpLabel: {
     fontFamily: fonts.uiMedium,

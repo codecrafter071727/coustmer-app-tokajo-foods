@@ -15,6 +15,14 @@ export type ServerToClientEvents = {
   'tracking:location': (data: { orderId: string; lat: number; lng: number; heading?: number; accuracy?: number; updatedAt?: string }) => void;
   /** ETA update chip */
   'tracking:eta': (data: { orderId: string; etaMinutes?: number; etaText?: string }) => void;
+  /** Rider trip status (assigned → arrived_at_customer → delivered / RTO) */
+  'delivery:status': (data: {
+    orderId: string;
+    status: string;
+    deliveryId?: string;
+    otpVerified?: boolean;
+    updatedAt?: string;
+  }) => void;
   /** New notification badge */
   'notification:new': (data: { id?: string; title?: string; body?: string; type?: string }) => void;
   /** Group cart member changed items */
