@@ -1,5 +1,6 @@
 import { restaurantApi } from '@/lib/restaurant/api';
 import { queryClient } from '@/lib/query-client';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import {
   menuCategoryMatchesCuisine,
   menuItemMatchesCategory,
@@ -116,7 +117,7 @@ export function useNearbyRestaurants(params: NearbyParams | null) {
       restaurantApi.getNearby({
         ...params!,
         limit: params?.limit ?? 50,
-        radius: params?.radius ?? 20,
+        radius: params?.radius ?? CUSTOMER_DISCOVERY_RADIUS_KM,
       }),
     enabled: Boolean(params?.lat && params?.lng),
     retry: 2,

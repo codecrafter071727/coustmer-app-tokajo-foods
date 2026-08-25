@@ -16,14 +16,18 @@ import type {
 } from '@/lib/customer/types';
 import { useDeliveryCoords } from '@/store/delivery-location-store';
 import { useAuthStore } from '@/store/auth-store';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 
 export const customerKeys = {
   all: ['customer'] as const,
   config: () => [...customerKeys.all, 'config'] as const,
   health: () => [...customerKeys.all, 'health'] as const,
-  home: (lat?: number, lng?: number) => [...customerKeys.all, 'home', lat, lng] as const,
-  deals: () => [...customerKeys.all, 'deals'] as const,
-  offers: () => [...customerKeys.all, 'offers'] as const,
+  home: (lat?: number, lng?: number, radius?: number) =>
+    [...customerKeys.all, 'home', lat, lng, radius] as const,
+  deals: (lat?: number, lng?: number, radius?: number) =>
+    [...customerKeys.all, 'deals', lat, lng, radius] as const,
+  offers: (lat?: number, lng?: number, radius?: number) =>
+    [...customerKeys.all, 'offers', lat, lng, radius] as const,
   recommended: () => [...customerKeys.all, 'recommended'] as const,
   profile: () => [...customerKeys.all, 'profile'] as const,
   favorites: () => [...customerKeys.all, 'favorites'] as const,
@@ -68,12 +72,19 @@ export function useCustomerServiceHealth() {
   });
 }
 
+const HOME_RADIUS_KM = CUSTOMER_DISCOVERY_RADIUS_KM;
+
 export function useHomeFeed() {
   const coords = useDeliveryCoords();
   const hasCoords = Boolean(coords?.lat && coords?.lng);
   return useQuery({
-    queryKey: customerKeys.home(coords?.lat, coords?.lng),
-    queryFn: () => customerApi.getHome(coords ?? undefined),
+    queryKey: customerKeys.home(coords?.lat, coords?.lng, HOME_RADIUS_KM),
+    queryFn: () =>
+      customerApi.getHome({
+        lat: coords!.lat,
+        lng: coords!.lng,
+        radius: HOME_RADIUS_KM,
+      }),
     enabled: hasCoords,
     staleTime: 60_000,
     retry: 1,
@@ -101,21 +112,35 @@ export function useCollectionRestaurants(slug: string, page = 1) {
 }
 
 export function useDeals() {
+  const coords = useDeliveryCoords();
+  const hasCoords = Boolean(coords?.lat && coords?.lng);
   return useQuery({
-    queryKey: customerKeys.deals(),
-    queryFn: customerApi.getDeals,
+    queryKey: customerKeys.deals(coords?.lat, coords?.lng, HOME_RADIUS_KM),
+    queryFn: () =>
+      customerApi.getDeals({
+        lat: coords!.lat,
+        lng: coords!.lng,
+        radius: HOME_RADIUS_KM,
+      }),
+    enabled: hasCoords,
     staleTime: 60_000,
     retry: 1,
   });
 }
 
-/** Home offer ticker — merges banners + deals from multiple customer APIs */
+/** Home offer ticker — geo deals near delivery pin */
 export function useOffersFeed() {
-  const authed = useIsAuthed();
+  const coords = useDeliveryCoords();
+  const hasCoords = Boolean(coords?.lat && coords?.lng);
   return useQuery({
-    queryKey: customerKeys.offers(),
-    queryFn: customerApi.getOffersFeed,
-    enabled: authed,
+    queryKey: customerKeys.offers(coords?.lat, coords?.lng, HOME_RADIUS_KM),
+    queryFn: () =>
+      customerApi.getOffersFeed({
+        lat: coords!.lat,
+        lng: coords!.lng,
+        radius: HOME_RADIUS_KM,
+      }),
+    enabled: hasCoords,
     staleTime: 60_000,
   });
 }

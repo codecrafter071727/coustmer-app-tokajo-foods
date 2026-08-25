@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 import { api } from '@/lib/api';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import { normalizeRestaurantSort } from '@/lib/restaurant/nearby-params';
 import {
   mapCategory,
@@ -124,6 +125,8 @@ export const restaurantApi = {
         lng: params.lng,
         veg: params.veg === undefined ? undefined : params.veg ? 'true' : 'false',
         minRating: params.minRating,
+        hygiene: params.hygiene ? '1' : undefined,
+        offers: params.offers ? '1' : undefined,
       })}`
     );
     return {
@@ -180,7 +183,7 @@ export const restaurantApi = {
       `${RESTAURANT_BASE}/nearby${buildQuery({
         lat: params.lat,
         lng: params.lng,
-        radius: params.radius ?? 20,
+        radius: params.radius ?? CUSTOMER_DISCOVERY_RADIUS_KM,
         page: params.page,
         limit: params.limit ?? 50,
         veg: params.veg === undefined ? undefined : params.veg ? 'true' : 'false',
@@ -329,7 +332,8 @@ export const restaurantApi = {
     const list = Array.isArray(payload)
       ? payload
       : payload && typeof payload === 'object'
-        ? ((payload as Record<string, unknown>).groups ??
+        ? ((payload as Record<string, unknown>).modifierGroups ??
+            (payload as Record<string, unknown>).groups ??
             (payload as Record<string, unknown>).customizations ??
             (payload as Record<string, unknown>).items ??
             [])

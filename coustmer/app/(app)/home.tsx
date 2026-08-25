@@ -20,11 +20,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { SaveAddressLabelModal } from '@/components/address/SaveAddressLabelModal';
 import { CategoriesSection } from '@/components/home/CategoriesSection';
-import { CollectionRail } from '@/components/home/CollectionRail';
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
-import { NewlyAddedRail } from '@/components/home/NewlyAddedRail';
+import { HomeRestaurantRail } from '@/components/home/HomeRestaurantRail';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
-import { OrderAgainSection } from '@/components/home/OrderAgainSection';
+import { TrendingDishesRail } from '@/components/home/TrendingDishesRail';
 
 import { AutoScrollingDeals } from '@/components/home/AutoScrollingDeals';
 import { BannerCarousel } from '@/components/home/BannerCarousel';
@@ -32,7 +31,6 @@ import { SwiggyHomeChrome } from '@/components/home/SwiggyHomeChrome';
 import { VegModeModal } from '@/components/home/VegModeModal';
 import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
 import { InitialLocationSheet } from '@/components/location/InitialLocationSheet';
-import { CustomerRecommendations } from '@/components/customer/CustomerRecommendations';
 import { APP_BOTTOM_NAV_INSET } from '@/components/navigation/AppBottomNav';
 import { CartFloatingBar } from '@/components/order/CartFloatingBar';
 import { authTheme } from '@/constants/auth-theme';
@@ -40,15 +38,16 @@ import { fonts } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
 import { addressApi } from '@/lib/address/api';
 import { formatAddressLabel } from '@/lib/address/types';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import {
   useAppConfig,
-  useCollections,
   useCustomerProfile,
   useDeals,
   useHomeFeed,
   useOffersFeed,
 } from '@/lib/customer/hooks';
 import { useFavoriteToggle } from '@/lib/customer/useFavoriteToggle';
+import { useActiveZoneSurge } from '@/lib/delivery/use-active-zone-surge';
 import {
   applyHomeFilters,
   countActiveHomeFilters,
@@ -82,6 +81,18 @@ import {
   type VegMode,
   useVegPreferenceStore,
 } from '@/store/veg-preference-store';
+import type { Restaurant } from '@/lib/restaurant/types';
+
+function dedupeRestaurants(rows: Restaurant[]): Restaurant[] {
+  const seen = new Set<string>();
+  const out: Restaurant[] = [];
+  for (const row of rows) {
+    if (!row.id || seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  return out;
+}
 
 const HOME_BG = '#FFFFFF';
 const ORANGE = '#F97316';
@@ -122,10 +133,13 @@ export default function HomeScreen() {
   const coords = useDeliveryCoords();
   const qc = useQueryClient();
 
-  // When delivery location changes, wipe stale restaurant caches immediately
-  // so the user never sees restaurants from the previous city/coords.
+  // When delivery location changes, wipe stale discovery caches immediately
+  // so the user never sees restaurants from the previous pin.
   useEffect(() => {
     qc.removeQueries({ queryKey: ['restaurant'] });
+    qc.removeQueries({ queryKey: ['customer', 'home'] });
+    qc.removeQueries({ queryKey: ['customer', 'deals'] });
+    qc.removeQueries({ queryKey: ['customer', 'offers'] });
   }, [coords?.lat, coords?.lng, qc]);
 
   const city = useMemo(() => {
@@ -171,7 +185,6 @@ export default function HomeScreen() {
   const home = useHomeFeed();
   const deals = useDeals();
   const offers = useOffersFeed();
-  const collections = useCollections();
   const profile = useCustomerProfile();
   const { favoriteIds, toggleFavorite } = useFavoriteToggle();
 
@@ -185,6 +198,9 @@ export default function HomeScreen() {
       limit: 12,
       lat: coords?.lat,
       lng: coords?.lng,
+      hygiene: homeFilters.hygieneRatedOnly || undefined,
+      offers: homeFilters.offersOnly || undefined,
+      veg: homeFilters.pureVeg || undefined,
     },
     { enabled: Boolean(city) }
   );
@@ -195,17 +211,16 @@ export default function HomeScreen() {
         ? homeFiltersToNearbyParams(
             { lat: coords.lat, lng: coords.lng },
             homeFilters,
-            { radius: 15, limit: 40 }
+            { radius: CUSTOMER_DISCOVERY_RADIUS_KM, limit: 40 }
           )
         : null,
     [coords?.lat, coords?.lng, homeFilters]
   );
   const nearby = useNearbyRestaurants(nearbyParams);
   const liveCuisines = useRestaurantCuisines();
-  const nearbyRestaurantIds = useMemo(
-    () => new Set((nearby.data?.restaurants ?? []).map((restaurant) => restaurant.id)),
-    [nearby.data?.restaurants]
-  );
+  const { chipLabel: surgeChipLabel } = useActiveZoneSurge();
+
+  const feedRails = home.data;
 
   const baseRestaurants = useMemo(() => {
     const nearbyRows = nearby.data?.restaurants ?? [];
@@ -213,7 +228,7 @@ export default function HomeScreen() {
     // Coordinates are authoritative. An empty nearby response means there are no
     // deliverable restaurants; never fall back to a city-wide/global listing.
     if (nearbyParams) {
-      return nearbyRows;
+      return dedupeRestaurants(nearbyRows);
     }
 
     // ── Fallback: city-string feed (no GPS / nearby still loading) ────────────
@@ -267,7 +282,6 @@ export default function HomeScreen() {
     home.isRefetching ||
     deals.isRefetching ||
     offers.isRefetching ||
-    collections.isRefetching ||
     liveCuisines.isRefetching;
 
   const onRefresh = () => {
@@ -277,7 +291,6 @@ export default function HomeScreen() {
     deals.refetch();
     offers.refetch();
     profile.refetch();
-    collections.refetch();
     liveCuisines.refetch();
   };
 
@@ -612,6 +625,7 @@ export default function HomeScreen() {
                 restaurants={restaurants}
                 totalCount={restaurants.length}
                 favoriteIds={favoriteIds}
+                surgeChipLabel={surgeChipLabel}
                 onToggleFavorite={(id) => {
                   const r = restaurants.find((x) => x.id === id);
                   toggleFavorite(id, r ? { restaurant: r } : undefined);
@@ -637,35 +651,96 @@ export default function HomeScreen() {
             />
           </View>
 
-          {(collections.data?.length ?? 0) > 0 && (
-            <CollectionRail collections={collections.data!} />
-          )}
+          <HomeRestaurantRail
+            variant="trending"
+            title="Trending near you"
+            subtitle="Most ordered in your area"
+            restaurants={feedRails?.trending ?? []}
+            loading={home.isLoading && !feedRails}
+            onPressRestaurant={openRestaurant}
+          />
 
-          {(() => {
-            type HRC = import('@/lib/home/types').HomeRestaurantCard;
-            const newlyAdded = (home.data?.newlyAdded as unknown as HRC[] | undefined)
-              ?.filter((restaurant) => nearbyRestaurantIds.has(restaurant.id));
-            const trending = (home.data?.trending as unknown as HRC[] | undefined)
-              ?.filter((restaurant) => nearbyRestaurantIds.has(restaurant.id));
-            const useNewlyAdded = (newlyAdded?.length ?? 0) > 0;
-            const useTrending = !useNewlyAdded && (trending?.length ?? 0) > 0;
-            const railData = useNewlyAdded ? newlyAdded! : useTrending ? trending! : null;
-            if (!railData) return null;
-            return (
-              <NewlyAddedRail
-                restaurants={railData}
-                onPressRestaurant={openRestaurant}
-                loading={false}
-                title={useNewlyAdded ? 'Newly added' : 'Trending near you'}
-                subtitle={useNewlyAdded ? 'Fresh partners joining near you' : 'Most popular restaurants right now'}
-              />
-            );
-          })()}
+          <TrendingDishesRail
+            dishes={feedRails?.dishesToTry ?? []}
+            loading={home.isLoading && !feedRails}
+            title="Dishes to try"
+            subtitle={user ? 'From your orders, favourites and nearby hits' : 'Popular picks near you'}
+            onPressDish={(dish) =>
+              router.push({
+                pathname: '/restaurants/[restaurantId]',
+                params: { restaurantId: dish.restaurantId },
+              })
+            }
+          />
 
-          {!city && !isDetectingLocation ? (
+          <TrendingDishesRail
+            dishes={feedRails?.trendingDishes ?? []}
+            loading={home.isLoading && !feedRails}
+            title="Trending food"
+            subtitle="Most ordered dishes in your area"
+            onPressDish={(dish) =>
+              router.push({
+                pathname: '/restaurants/[restaurantId]',
+                params: { restaurantId: dish.restaurantId },
+              })
+            }
+          />
+
+          {user ? (
+            <HomeRestaurantRail
+              variant="order-again"
+              title="Order again"
+              subtitle="From your recent favourites"
+              restaurants={feedRails?.orderAgain ?? []}
+              loading={home.isLoading && !feedRails}
+              onPressRestaurant={openRestaurant}
+            />
+          ) : null}
+
+          <HomeRestaurantRail
+            variant="new"
+            title="Newly added"
+            subtitle="Fresh partners joining near you"
+            restaurants={feedRails?.newlyAdded ?? []}
+            loading={home.isLoading && !feedRails}
+            onPressRestaurant={openRestaurant}
+          />
+
+          <HomeRestaurantRail
+            variant="top-rated"
+            title="Top rated"
+            subtitle="Highest rated restaurants around you"
+            restaurants={feedRails?.topRated ?? []}
+            loading={home.isLoading && !feedRails}
+            onPressRestaurant={openRestaurant}
+          />
+
+          {!homeFilters.pureVeg ? (
+            <HomeRestaurantRail
+              variant="pure-veg"
+              title="Pure veg"
+              subtitle="100% vegetarian kitchens near you"
+              restaurants={feedRails?.pureVeg ?? []}
+              loading={home.isLoading && !feedRails}
+              onPressRestaurant={openRestaurant}
+            />
+          ) : null}
+
+          {user ? (
+            <HomeRestaurantRail
+              variant="for-you"
+              title="For you"
+              subtitle="Picked from your taste and nearby gems"
+              restaurants={feedRails?.forYou ?? []}
+              loading={home.isLoading && !feedRails}
+              onPressRestaurant={openRestaurant}
+            />
+          ) : null}
+
+          {!coords && !isDetectingLocation ? (
             <View style={[styles.paddedBlock, styles.hintCard]}>
               <Text style={styles.hintText}>
-                Set your delivery location above to see restaurants in your city.
+                Set your delivery location above to see restaurants in your area.
               </Text>
             </View>
           ) : null}
@@ -683,27 +758,37 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          <OrderAgainSection allowedRestaurantIds={nearbyRestaurantIds} />
-
-          <CustomerRecommendations
-            fallbackRestaurants={restaurants}
-            allowedRestaurantIds={nearbyRestaurantIds}
-          />
-
-          {topRestaurants.length > 0 || (feed.isLoading && !!city) ? (
+          {topRestaurants.length > 0 ||
+          (nearbyParams
+            ? nearby.isLoading && topRestaurants.length === 0
+            : feed.isLoading && !!city) ? (
             <PopularRestaurantsSection
+              title={
+                feedRails?.radiusKm
+                  ? `All restaurants within ${feedRails.radiusKm} km`
+                  : `All restaurants within ${CUSTOMER_DISCOVERY_RADIUS_KM} km`
+              }
               restaurants={topRestaurants}
               totalCount={
-                feed.data?.pages?.[0]?.meta?.total ?? topRestaurants.length
+                nearbyParams
+                  ? topRestaurants.length
+                  : (feed.data?.pages?.[0]?.meta?.total ?? topRestaurants.length)
               }
               favoriteIds={favoriteIds}
+              surgeChipLabel={surgeChipLabel}
               onToggleFavorite={(id) => {
                 const r = restaurants.find((x) => x.id === id);
                 toggleFavorite(id, r ? { restaurant: r } : undefined);
               }}
               onPressRestaurant={openRestaurant}
-              loadingMore={feed.isFetchingNextPage}
-              loading={feed.isLoading && topRestaurants.length === 0}
+              loadingMore={
+                nearbyParams ? false : feed.isFetchingNextPage
+              }
+              loading={
+                nearbyParams
+                  ? nearby.isLoading && topRestaurants.length === 0
+                  : feed.isLoading && topRestaurants.length === 0
+              }
             />
           ) : null}
         </>
@@ -711,7 +796,13 @@ export default function HomeScreen() {
     </View>
   );
 
-  if (feed.isLoading && restaurants.length === 0 && city) {
+  const discoveryLoading =
+    restaurants.length === 0 &&
+    (nearbyParams
+      ? nearby.isLoading || nearby.isFetching || home.isLoading
+      : Boolean(city) && feed.isLoading);
+
+  if (discoveryLoading) {
     return (
       <View style={styles.root}>
         <StatusBar style="dark" />
@@ -741,6 +832,7 @@ export default function HomeScreen() {
         scrollEventThrottle={16}
         onScroll={onScroll}
         onEndReached={() => {
+          if (nearbyParams) return;
           if (feed.hasNextPage && !feed.isFetchingNextPage) {
             feed.fetchNextPage();
           }
@@ -753,17 +845,29 @@ export default function HomeScreen() {
         ListHeaderComponent={listHeader}
         ListEmptyComponent={
           !filtersActive &&
-          !feed.isLoading &&
           restaurants.length === 0 &&
-          !!city ? (
+          (nearbyParams
+            ? !nearby.isLoading && !nearby.isFetching
+            : !feed.isLoading && !!city) ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>
-                {`No restaurants in ${city} yet`}
+                {nearbyParams
+                  ? 'We’re not servicing this area yet'
+                  : `No restaurants in ${city} yet`}
               </Text>
               <Text style={styles.emptyText}>
-                Partners in your city will appear here once they register. Pull
-                to refresh.
+                {nearbyParams
+                  ? `No restaurants within ${CUSTOMER_DISCOVERY_RADIUS_KM} km of your delivery location. Try a different address.`
+                  : 'Partners in your city will appear here once they register. Pull to refresh.'}
               </Text>
+              {nearbyParams ? (
+                <Text
+                  style={styles.emptyCta}
+                  onPress={() => setPickerOpen(true)}
+                >
+                  Change delivery address
+                </Text>
+              ) : null}
             </View>
           ) : null
         }
@@ -882,6 +986,13 @@ const styles = StyleSheet.create({
     color: authTheme.textMuted,
     textAlign: 'center',
     lineHeight: 19,
+  },
+  emptyCta: {
+    marginTop: 14,
+    fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: ORANGE,
+    textAlign: 'center',
   },
   sectionHead: {
     fontFamily: fonts.displayBold,

@@ -1,4 +1,5 @@
 import type { HomeFilterState } from '@/lib/home/filters';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import type { NearbyParams, NearbySort } from '@/lib/restaurant/types';
 
 /** Backend list/nearby sort enum — never send Mongo-style `-createdAt`. */
@@ -65,7 +66,7 @@ export function homeFiltersToNearbyParams(
   return {
     lat: coords.lat,
     lng: coords.lng,
-    radius: extras?.radius ?? 15,
+    radius: extras?.radius ?? CUSTOMER_DISCOVERY_RADIUS_KM,
     limit: extras?.limit ?? 40,
     page: extras?.page,
     veg: filters.pureVeg || undefined,
@@ -73,7 +74,6 @@ export function homeFiltersToNearbyParams(
     priceRange: price.priceRange,
     sort: nearbySortFromHome(filters.sort),
     offers: filters.offersOnly || undefined,
-    // Do NOT default hygiene=true — that requires hygieneScore ≥ 4 and
-    // hides almost every newly onboarded restaurant (default score is 0).
+    hygiene: filters.hygieneRatedOnly || undefined,
   };
 }

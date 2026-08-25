@@ -24,6 +24,7 @@ import {
   extractCityFromAddress,
   normalizeCityName,
 } from '@/lib/location/format';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import {
   findCategoryBySlug,
   FOOD_CATEGORIES,
@@ -34,6 +35,7 @@ import {
   useRestaurantsOfferingCategory,
 } from '@/lib/restaurant/hooks';
 import { homeFiltersToNearbyParams } from '@/lib/restaurant/nearby-params';
+import { useActiveZoneSurge } from '@/lib/delivery/use-active-zone-surge';
 import { DEFAULT_HOME_FILTERS } from '@/lib/home/filters';
 import type { Restaurant } from '@/lib/restaurant/types';
 import {
@@ -73,6 +75,8 @@ export function RestaurantBrowseScreen() {
         : null);
     return normalizeCityName(raw);
   }, [deliveryLocation]);
+
+  const { chipLabel: surgeChipLabel } = useActiveZoneSurge();
 
   const activeCategory = useMemo(() => {
     if (!selectedCuisine || selectedCuisine === 'all') return undefined;
@@ -127,7 +131,7 @@ export function RestaurantBrowseScreen() {
   const nearbyQuery = useNearbyRestaurants(
     useNearby && coords
       ? homeFiltersToNearbyParams(coords, DEFAULT_HOME_FILTERS, {
-          radius: 20,
+          radius: CUSTOMER_DISCOVERY_RADIUS_KM,
           limit: 50,
         })
       : null
@@ -166,7 +170,8 @@ export function RestaurantBrowseScreen() {
         lng: r.lng,
       }));
     }
-    if (useNearby && (nearbyQuery.data?.restaurants?.length ?? 0) > 0) {
+    // Pin is authoritative — never fall back to city-wide when nearby returns [].
+    if (useNearby && coords) {
       return nearbyQuery.data?.restaurants ?? [];
     }
     return allQuery.data?.restaurants ?? [];
@@ -174,6 +179,7 @@ export function RestaurantBrowseScreen() {
     isCategoryMode,
     isTextSearch,
     useNearby,
+    coords,
     categoryQuery.data?.restaurants,
     searchQuery.data?.restaurants,
     nearbyQuery.data?.restaurants,
@@ -197,7 +203,7 @@ export function RestaurantBrowseScreen() {
     ? categoryQuery
     : isTextSearch
       ? searchQuery
-      : useNearby && (nearbyQuery.data?.restaurants?.length ?? 0) > 0
+      : useNearby && coords
         ? nearbyQuery
         : allQuery;
 
@@ -452,12 +458,16 @@ export function RestaurantBrowseScreen() {
               title={
                 activeCategory
                   ? `No ${activeCategory.label} restaurants yet`
-                  : 'No restaurants yet'
+                  : useNearby && coords
+                    ? 'We’re not servicing this area yet'
+                    : 'No restaurants yet'
               }
               subtitle={
                 activeCategory
                   ? `We're adding ${activeCategory.label.toLowerCase()} partners soon. Try another category or check back later.`
-                  : 'Restaurants will appear here once partners join the platform.'
+                  : useNearby && coords
+                    ? `No restaurants within ${CUSTOMER_DISCOVERY_RADIUS_KM} km of your delivery location. Try a different address.`
+                    : 'Restaurants will appear here once partners join the platform.'
               }
             />
           </View>
@@ -478,6 +488,7 @@ export function RestaurantBrowseScreen() {
             renderItem={({ item }) => (
               <RestaurantListCard
                 restaurant={item}
+                surgeChipLabel={surgeChipLabel}
                 onPress={() => openRestaurant(item.id)}
               />
             )}
