@@ -95,6 +95,8 @@ export type Order = {
   status: OrderStatus;
   items: OrderItem[];
   subtotal?: number;
+  packagingCharge?: number;
+  platformFee?: number;
   deliveryFee?: number;
   tax?: number;
   discount?: number;
@@ -150,6 +152,7 @@ export type CreateOrderPayload = {
   deliveryTip?: number;
   tipAmount?: number;
   scheduledFor?: string;
+  isScheduled?: boolean;
   deliveryType?: string;
   fulfillmentType?: string;
   /** Alternate shapes some backends accept */

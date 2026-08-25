@@ -861,6 +861,8 @@ export function OrderTrackingScreen() {
       ? o.subtotal
       : items.reduce((s, i) => s + i.price * i.quantity, 0);
   const deliveryFee = Number(o?.deliveryFee ?? 0);
+  const packagingCharge = Number(o?.packagingCharge ?? 0);
+  const platformFee = Number(o?.platformFee ?? 0);
   const tip = Number(o?.tip ?? 0);
   const discount = Number(o?.discount ?? 0);
   const couponCode =
@@ -878,7 +880,8 @@ export function OrderTrackingScreen() {
     if (fromApi > 0.009) return Math.round(fromApi * 100) / 100;
 
     if (typeof o?.total === 'number' && o.total > 0) {
-      const withoutTax = subtotal + deliveryFee + tip - discount;
+      const withoutTax =
+        subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
       const implied = Math.round((o.total - withoutTax) * 100) / 100;
       if (implied > 0.009) return implied;
     }
@@ -891,7 +894,8 @@ export function OrderTrackingScreen() {
 
   const total = (() => {
     if (typeof o?.total === 'number' && o.total > 0) {
-      const withoutTax = subtotal + deliveryFee + tip - discount;
+      const withoutTax =
+        subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
       // API total omitted tax — include the 5% we display
       if (tax > 0 && Math.abs(o.total - withoutTax) < 0.02) {
         return Math.round((withoutTax + tax) * 100) / 100;
@@ -900,7 +904,10 @@ export function OrderTrackingScreen() {
     }
     return Math.max(
       0,
-      Math.round((subtotal + deliveryFee + tax + tip - discount) * 100) / 100
+      Math.round(
+        (subtotal + packagingCharge + platformFee + deliveryFee + tax + tip - discount) *
+          100,
+      ) / 100,
     );
   })();
   const taxIsFivePercent =
@@ -1574,6 +1581,12 @@ export function OrderTrackingScreen() {
                 label={`Item total (${itemCount})`}
                 value={subtotal}
               />
+              {packagingCharge > 0 ? (
+                <BillLine label="Packaging" value={packagingCharge} />
+              ) : null}
+              {platformFee > 0 ? (
+                <BillLine label="Platform fee" value={platformFee} />
+              ) : null}
               <BillLine
                 label="Delivery fee"
                 value={deliveryFee}

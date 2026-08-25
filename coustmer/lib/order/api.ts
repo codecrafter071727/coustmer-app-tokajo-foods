@@ -209,9 +209,14 @@ export function mapOrder(data: Record<string, unknown>): Order {
   const pricing =
     data.pricing && typeof data.pricing === 'object'
       ? asRecord(data.pricing)
-      : data.bill && typeof data.bill === 'object'
-        ? asRecord(data.bill)
-        : undefined;
+      : undefined;
+
+  const billRoot =
+    data.bill && typeof data.bill === 'object' ? asRecord(data.bill) : undefined;
+  const customerBill =
+    billRoot?.customer && typeof billRoot.customer === 'object'
+      ? asRecord(billRoot.customer)
+      : undefined;
 
   const pickNum = (...vals: unknown[]) => {
     for (const v of vals) {
@@ -223,6 +228,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
 
   const subtotal =
     pickNum(
+      customerBill?.itemTotal,
       data.subtotal,
       data.itemTotal,
       data.itemsTotal,
@@ -231,8 +237,24 @@ export function mapOrder(data: Record<string, unknown>): Order {
     ) ??
     items.reduce((s, i) => s + i.price * i.quantity, 0);
 
+  const packagingCharge =
+    pickNum(
+      customerBill?.packagingCharge,
+      data.packagingCharge,
+      data.packagingFee,
+      pricing?.packagingCharge
+    ) ?? 0;
+
+  const platformFee =
+    pickNum(
+      customerBill?.platformFee,
+      data.platformFee,
+      pricing?.platformFee
+    ) ?? 0;
+
   const deliveryFee =
     pickNum(
+      customerBill?.deliveryFee,
       data.deliveryFee,
       data.deliveryCharge,
       data.shippingFee,
@@ -242,6 +264,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
 
   const discount =
     pickNum(
+      customerBill?.discount,
       data.discount,
       data.discountAmount,
       data.couponDiscount,
@@ -252,6 +275,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
 
   const tip =
     pickNum(
+      customerBill?.tipAmount,
       data.tip,
       data.deliveryTip,
       data.tipAmount,
@@ -261,6 +285,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
 
   let tax =
     pickNum(
+      customerBill?.taxAmount,
       data.tax,
       data.taxes,
       data.taxAmount,
@@ -294,6 +319,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
 
   let total =
     pickNum(
+      customerBill?.grandTotal,
       data.total,
       data.grandTotal,
       data.totalAmount,
@@ -303,19 +329,22 @@ export function mapOrder(data: Record<string, unknown>): Order {
       pricing?.total,
       pricing?.grandTotal,
       pricing?.payableAmount
-    ) ?? subtotal + deliveryFee + tax + tip - discount;
+    ) ??
+    subtotal + packagingCharge + platformFee + deliveryFee + tax + tip - discount;
 
   // Derive tax from grand total when API omits an explicit tax line
-  if (tax <= 0 && Number.isFinite(total) && total > 0) {
-    const withoutTax = subtotal + deliveryFee + tip - discount;
+  if (!customerBill && tax <= 0 && Number.isFinite(total) && total > 0) {
+    const withoutTax =
+      subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
     const implied = Math.round((total - withoutTax) * 100) / 100;
     if (implied > 0.009) tax = implied;
   }
 
   // Tokajo default: 5% tax on item total when still missing
-  if (tax <= 0 && subtotal > 0) {
+  if (!customerBill && tax <= 0 && subtotal > 0) {
     tax = Math.round(subtotal * 0.05 * 100) / 100;
-    const withoutTax = subtotal + deliveryFee + tip - discount;
+    const withoutTax =
+      subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
     if (Math.abs(total - withoutTax) < 0.02) {
       total = Math.round((withoutTax + tax) * 100) / 100;
     }
@@ -335,6 +364,8 @@ export function mapOrder(data: Record<string, unknown>): Order {
     status: String(data.status ?? data.orderStatus ?? 'pending'),
     items,
     subtotal: Number.isFinite(subtotal) ? subtotal : undefined,
+    packagingCharge: Number.isFinite(packagingCharge) ? packagingCharge : undefined,
+    platformFee: Number.isFinite(platformFee) ? platformFee : undefined,
     deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : undefined,
     tax: Number.isFinite(tax) ? tax : undefined,
     discount: Number.isFinite(discount) ? discount : undefined,
@@ -495,6 +526,7 @@ export const orderApi = {
       deliveryTip: payload.tip ?? 0,
       tipAmount: payload.tip ?? 0,
       scheduledFor: payload.scheduledFor,
+      isScheduled: payload.isScheduled ?? Boolean(payload.scheduledFor),
       deliveryType:
         payload.deliveryType === 'takeaway' ? 'pickup' : payload.deliveryType,
       fulfillmentType: payload.deliveryType,
