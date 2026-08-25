@@ -112,7 +112,7 @@ async function autocompleteNew(
     input: query,
     languageCode: 'en',
     regionCode: 'IN',
-    includedRegionCodes: ['in'],
+    includedRegionCodes: ['IN'],
     includeQueryPredictions: true,
   };
 
@@ -120,56 +120,76 @@ async function autocompleteNew(
     body.locationBias = {
       circle: {
         center: { latitude: bias.lat, longitude: bias.lng },
-        radius: bias.radiusMeters ?? 35000.0,
+        radius: Math.min(bias.radiusMeters ?? 50000, 50000),
       },
     };
   }
 
-  const { data } = await axios.post<PlacesNewAutocompleteResponse>(
-    `${PLACES_NEW}/places:autocomplete`,
-    body,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      },
-      timeout: 6000,
-    }
-  );
+  try {
+    const { data } = await axios.post<PlacesNewAutocompleteResponse>(
+      `${PLACES_NEW}/places:autocomplete`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        },
+        timeout: 8000,
+      }
+    );
 
-  if (!data.suggestions?.length) return [];
+    if (!data.suggestions?.length) return [];
 
-  const out: AddressSuggestion[] = [];
-  for (const suggestion of data.suggestions) {
-    const place = suggestion.placePrediction;
-    if (place) {
-      const main = place.structuredFormat?.mainText?.text ?? '';
-      const secondary = place.structuredFormat?.secondaryText?.text ?? '';
-      const description =
-        place.text?.text ||
-        (main && secondary ? `${main}, ${secondary}` : main || secondary);
-      if (!description) continue;
-      out.push({
-        description,
-        placeId: place.placeId,
-        mainText: main || description.split(',')[0],
-        secondaryText: secondary || description.split(',').slice(1).join(',').trim(),
-        source: 'google-new',
-      });
-      continue;
-    }
+    const out: AddressSuggestion[] = [];
+    for (const suggestion of data.suggestions) {
+      const place = suggestion.placePrediction;
+      if (place) {
+        const main = place.structuredFormat?.mainText?.text ?? '';
+        const secondary = place.structuredFormat?.secondaryText?.text ?? '';
+        const description =
+          place.text?.text ||
+          (main && secondary ? `${main}, ${secondary}` : main || secondary);
+        if (!description) continue;
+        out.push({
+          description,
+          placeId: place.placeId,
+          mainText: main || description.split(',')[0],
+          secondaryText:
+            secondary || description.split(',').slice(1).join(',').trim(),
+          source: 'google',
+        });
+        continue;
+      }
 
-    const queryPred = suggestion.queryPrediction?.text?.text;
-    if (queryPred) {
-      out.push({
-        description: queryPred,
-        mainText: queryPred.split(',')[0],
-        secondaryText: queryPred.split(',').slice(1).join(',').trim(),
-        source: 'google-query',
-      });
+      const queryPred = suggestion.queryPrediction?.text?.text;
+      if (queryPred) {
+        out.push({
+          description: queryPred,
+          mainText: queryPred.split(',')[0],
+          secondaryText: queryPred.split(',').slice(1).join(',').trim(),
+          source: 'google',
+        });
+      }
     }
+    return out;
+  } catch (err) {
+    throw googleAxiosError(err, 'Places API (New) autocomplete failed');
   }
-  return out;
+}
+
+function googleAxiosError(err: unknown, fallback: string): Error {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as
+      | { error?: { message?: string; status?: string }; error_message?: string; status?: string }
+      | undefined;
+    const msg =
+      data?.error?.message ||
+      data?.error_message ||
+      (typeof data?.status === 'string' ? data.status : undefined) ||
+      err.message;
+    return new Error(msg || fallback);
+  }
+  return err instanceof Error ? err : new Error(fallback);
 }
 
 async function placeDetailsNew(placeId: string): Promise<GeocodeResult> {
@@ -210,24 +230,37 @@ export const googlePlacesApi = {
     query: string,
     bias?: PlacesSearchBias
   ): Promise<AddressSuggestion[]> => {
-    if (!GOOGLE_MAPS_API_KEY) return [];
+    if (!GOOGLE_MAPS_API_KEY) {
+      throw new Error(
+        'Google Maps API key is missing. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env and restart Expo with npx expo start -c.'
+      );
+    }
 
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
-    // Prefer Places API (New) — confirmed working for India road queries
+    let lastError: Error | null = null;
+
+    // Places API (New) — primary for India address search
     try {
       const neu = await autocompleteNew(trimmed, bias);
       if (neu.length) return neu;
-    } catch {
-      // fall through to legacy
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
     }
 
+    // Legacy Places Autocomplete
     try {
-      return await autocompleteLegacy(trimmed, bias);
-    } catch {
-      return [];
+      const legacy = await autocompleteLegacy(trimmed, bias);
+      if (legacy.length) return legacy;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
     }
+
+    // Empty but no hard failure (ZERO_RESULTS)
+    if (!lastError) return [];
+
+    throw lastError;
   },
 
   placeDetails: async (placeId: string): Promise<GeocodeResult> => {

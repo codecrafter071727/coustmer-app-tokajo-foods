@@ -321,7 +321,8 @@ function dedupeSuggestions(list: AddressSuggestion[]): AddressSuggestion[] {
 }
 
 /**
- * Place search — Google Places first (Swiggy/Zomato), then backend / OSM / device.
+ * Place search — Google Places only when a Maps key is configured (Swiggy/Zomato).
+ * Does not fall back to Expo/OSM suggestions so the UI never shows device geocoder noise.
  */
 export async function searchAddresses(
   query: string,
@@ -339,30 +340,23 @@ export async function searchAddresses(
     list
       .map((item) => ({ item, score: scoreSuggestion(trimmed, item) }))
       .sort((a, b) => b.score - a.score)
-      .filter((row) => row.score > 0 || list.length <= 3)
-      .slice(0, 10)
+      .slice(0, 12)
       .map((row) => row.item);
 
-  // 1) Google Places (production primary when key is configured)
+  // Production path: Google Places only
   if (googlePlacesApi.isConfigured()) {
-    const google = await withTimeout(
-      (async () => {
-        const first = await googlePlacesApi.autocomplete(primary, bias);
-        if (first.length) return first;
-        if (secondaryVariant) {
-          return googlePlacesApi.autocomplete(secondaryVariant, bias);
-        }
-        return [] as AddressSuggestion[];
-      })().catch(() => [] as AddressSuggestion[]),
-      6500,
-      [] as AddressSuggestion[]
-    );
-    if (google.length > 0) {
-      return rank(dedupeSuggestions(google));
+    const first = await googlePlacesApi.autocomplete(primary, bias);
+    if (first.length) return rank(dedupeSuggestions(first));
+
+    if (secondaryVariant) {
+      const second = await googlePlacesApi.autocomplete(secondaryVariant, bias);
+      if (second.length) return rank(dedupeSuggestions(second));
     }
+
+    return [];
   }
 
-  // 2) Backend address-service
+  // Dev fallback only when no Google key is set
   const backend = await withTimeout(
     addressApi.autocomplete(primary).catch(() => [] as AddressSuggestion[]),
     5000,
@@ -372,14 +366,12 @@ export async function searchAddresses(
     return rank(dedupeSuggestions(backend));
   }
 
-  // 3) OSM / Photon
   const [nominatim, photon] = await Promise.all([
     withTimeout(searchWithNominatim(primary, bias), 7000, [] as AddressSuggestion[]),
     withTimeout(searchWithPhoton(primary, bias), 7000, [] as AddressSuggestion[]),
   ]);
   let merged = dedupeSuggestions([...nominatim, ...photon]);
 
-  // 4) Device geocoder
   if (merged.length === 0) {
     merged = dedupeSuggestions(await searchWithExpo(primary));
   }
