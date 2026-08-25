@@ -77,14 +77,16 @@ export type ReportReviewPayload = {
 
 export type SubmitOrderReviewPayload = {
   restaurantId?: string;
+  /** Restaurant food rating 1–5 (sent as restaurantRating). */
   rating: number;
   comment?: string;
   title?: string;
   photos?: string[];
   packagingRating?: number;
-  deliveryRating?: number;
+  /** Optional per-dish ratings (1–5). Thumbs UI maps 👍→5, 👎→1. */
+  dishes?: { itemId: string; rating: number }[];
 };
 
 export type SubmitDishReviewsPayload = {
-  dishes: { itemId: string; rating: 1 | -1 }[];
+  dishes: { itemId: string; rating: number }[];
 };

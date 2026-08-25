@@ -25,9 +25,7 @@ import {
   useDeleteRestaurantReview,
   useOrderReview,
   useReportRestaurantReview,
-  useSubmitDishReviews,
   useSubmitOrderReview,
-  useSubmitRestaurantReview,
   useUpdateRestaurantReview,
 } from '@/lib/review/hooks';
 
@@ -48,13 +46,11 @@ export function SubmitReviewScreen() {
     enabled: Boolean(id) && canRateOrder(order.data?.status),
   });
   const restaurantId = String(order.data?.restaurantId ?? '');
-  const submit = useSubmitRestaurantReview(restaurantId);
   const submitOrderReview = useSubmitOrderReview(id);
   const reviewId = String(existing.data?.id ?? '');
   const updateReview = useUpdateRestaurantReview(restaurantId, reviewId);
   const deleteReview = useDeleteRestaurantReview(restaurantId, reviewId);
   const reportReview = useReportRestaurantReview(restaurantId, reviewId);
-  const submitDishReviews = useSubmitDishReviews(id);
 
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
@@ -90,27 +86,21 @@ export function SubmitReviewScreen() {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     try {
+      const dishes = Object.entries(dishThumbs)
+        .map(([itemId, thumb]) => ({
+          itemId,
+          // API expects 1–5 stars; thumbs map to 5 / 1
+          rating: thumb === 1 ? 5 : 1,
+        }))
+        .filter((d) => Boolean(d.itemId) && !d.itemId.startsWith('undefined'));
+
       await submitOrderReview.mutateAsync({
         restaurantId,
         rating,
         comment: comment.trim() || undefined,
         photos: parsedPhotos.length ? parsedPhotos : undefined,
         packagingRating: rating,
-        deliveryRating: rating,
-      });
-      if (Object.keys(dishThumbs).length) {
-        await submitDishReviews.mutateAsync({
-          dishes: Object.entries(dishThumbs).map(([itemId, score]) => ({
-            itemId,
-            rating: score,
-          })),
-        });
-      }
-      await submit.mutateAsync({
-        rating,
-        comment: comment.trim() || undefined,
-        orderId: id,
-        photos: parsedPhotos.length ? parsedPhotos : undefined,
+        dishes: dishes.length ? dishes : undefined,
       });
       Alert.alert('Thanks!', 'Your review was submitted.', [
         { text: 'OK', onPress: () => goBackSafe(router) },
@@ -321,8 +311,11 @@ export function SubmitReviewScreen() {
                 <View style={styles.card}>
                   <Text style={styles.label}>Rate dishes (quick thumbs)</Text>
                   {(order.data.items ?? []).slice(0, 8).map((item, idx) => {
-                    const key = String(item.menuItemId ?? item.id ?? `${idx}`);
+                    const key = String(item.menuItemId || item.id || '').trim() || `idx-${idx}`;
                     const current = dishThumbs[key];
+                    // Prefer menuItemId — review-service validates against order line menu ids
+                    const rateKey = String(item.menuItemId || item.id || '').trim();
+                    if (!rateKey) return null;
                     return (
                       <View key={key} style={styles.dishRow}>
                         <Text style={styles.dishName} numberOfLines={1}>
@@ -331,13 +324,17 @@ export function SubmitReviewScreen() {
                         <View style={styles.dishActions}>
                           <Pressable
                             style={[styles.dishBtn, current === 1 && styles.dishBtnUp]}
-                            onPress={() => setDishThumbs((prev) => ({ ...prev, [key]: 1 }))}
+                            onPress={() =>
+                              setDishThumbs((prev) => ({ ...prev, [rateKey]: 1 }))
+                            }
                           >
                             <Text style={styles.dishBtnText}>👍</Text>
                           </Pressable>
                           <Pressable
                             style={[styles.dishBtn, current === -1 && styles.dishBtnDown]}
-                            onPress={() => setDishThumbs((prev) => ({ ...prev, [key]: -1 }))}
+                            onPress={() =>
+                              setDishThumbs((prev) => ({ ...prev, [rateKey]: -1 }))
+                            }
                           >
                             <Text style={styles.dishBtnText}>👎</Text>
                           </Pressable>
@@ -349,15 +346,10 @@ export function SubmitReviewScreen() {
 
                 <Pressable
                   style={[styles.submit, !canSubmit && styles.submitDisabled]}
-                  disabled={
-                    !canSubmit ||
-                    submit.isPending ||
-                    submitOrderReview.isPending ||
-                    submitDishReviews.isPending
-                  }
+                  disabled={!canSubmit || submitOrderReview.isPending}
                   onPress={handleSubmit}
                 >
-                  {submit.isPending || submitOrderReview.isPending || submitDishReviews.isPending ? (
+                  {submitOrderReview.isPending ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.submitText}>Submit review</Text>

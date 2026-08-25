@@ -163,7 +163,28 @@ function extractMeta(
 function clampRating(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
-  return Math.min(5, Math.max(0, n));
+  return Math.min(5, Math.max(0, Math.round(n)));
+}
+
+/** Ensure a 1–5 int for review-service Zod (coerce of undefined → NaN). */
+function requireStarRating(value: unknown, label = 'rating'): number {
+  const n = clampRating(value);
+  if (n < 1 || n > 5) {
+    throw new Error(`Please select a ${label} from 1 to 5 stars.`);
+  }
+  return n;
+}
+
+function mapDishRatings(
+  dishes: Array<{ itemId: string; rating: number }> | undefined
+): Array<{ itemId: string; rating: number }> | undefined {
+  if (!dishes?.length) return undefined;
+  return dishes
+    .map((d) => ({
+      itemId: String(d.itemId ?? '').trim(),
+      rating: requireStarRating(d.rating, 'dish rating'),
+    }))
+    .filter((d) => d.itemId.length > 0);
 }
 
 function mapReply(raw: Record<string, unknown>): ReviewOwnerReply | undefined {
@@ -539,33 +560,46 @@ export const reviewApi = {
     payload: SubmitOrderReviewPayload
   ): Promise<RestaurantReview> => {
     if (!orderId) throw new Error('Order ID is missing.');
-    const body = {
-      restaurantId: payload.restaurantId,
-      rating: clampRating(payload.rating),
+    const restaurantRating = requireStarRating(payload.rating, 'food rating');
+    const packagingRaw =
+      payload.packagingRating === undefined || payload.packagingRating === null
+        ? undefined
+        : requireStarRating(payload.packagingRating, 'packaging rating');
+    const imageUrls = (payload.photos ?? []).filter(Boolean);
+    const dishes = mapDishRatings(payload.dishes);
+
+    const body: Record<string, unknown> = {
+      restaurantRating,
       comment: payload.comment?.trim() || undefined,
-      review: payload.comment?.trim() || undefined,
-      title: payload.title?.trim() || undefined,
-      photos: payload.photos?.filter(Boolean),
-      images: payload.photos?.filter(Boolean),
-      packagingRating: payload.packagingRating,
-      deliveryRating: payload.deliveryRating,
+      customerName: undefined,
+      imageUrls: imageUrls.length ? imageUrls : undefined,
     };
+    if (packagingRaw !== undefined) body.packagingRating = packagingRaw;
+    if (dishes?.length) body.dishes = dishes;
+
     const res = await request<Record<string, unknown>>(
       `${REVIEW_SERVICE}/orders/${orderId}/reviews`,
       { method: 'POST', body }
     );
-    return mapReview(asRecord(res.data ?? {}));
+    const data = asRecord(res.data ?? {});
+    const reviewRaw =
+      data.review && typeof data.review === 'object'
+        ? asRecord(data.review)
+        : data;
+    return mapReview(reviewRaw);
   },
 
-  /** POST /orders/:orderId/reviews/dishes — per-item thumbs */
+  /** POST /orders/:orderId/reviews/dishes — per-item ratings (1–5) */
   submitDishReviews: async (
     orderId: string,
     payload: SubmitDishReviewsPayload
   ): Promise<void> => {
     if (!orderId) throw new Error('Order ID is missing.');
+    const dishes = mapDishRatings(payload.dishes);
+    if (!dishes?.length) throw new Error('Add at least one dish rating.');
     await request<unknown>(`${REVIEW_SERVICE}/orders/${orderId}/reviews/dishes`, {
       method: 'POST',
-      body: { dishes: payload.dishes },
+      body: { dishes },
     });
   },
 };
