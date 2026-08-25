@@ -321,7 +321,7 @@ function dedupeSuggestions(list: AddressSuggestion[]): AddressSuggestion[] {
 }
 
 /**
- * Place search — backend address-service first, then Google / OSM / device.
+ * Place search — Google Places first (Swiggy/Zomato), then backend / OSM / device.
  */
 export async function searchAddresses(
   query: string,
@@ -343,7 +343,26 @@ export async function searchAddresses(
       .slice(0, 10)
       .map((row) => row.item);
 
-  // 1) Backend primary
+  // 1) Google Places (production primary when key is configured)
+  if (googlePlacesApi.isConfigured()) {
+    const google = await withTimeout(
+      (async () => {
+        const first = await googlePlacesApi.autocomplete(primary, bias);
+        if (first.length) return first;
+        if (secondaryVariant) {
+          return googlePlacesApi.autocomplete(secondaryVariant, bias);
+        }
+        return [] as AddressSuggestion[];
+      })().catch(() => [] as AddressSuggestion[]),
+      6500,
+      [] as AddressSuggestion[]
+    );
+    if (google.length > 0) {
+      return rank(dedupeSuggestions(google));
+    }
+  }
+
+  // 2) Backend address-service
   const backend = await withTimeout(
     addressApi.autocomplete(primary).catch(() => [] as AddressSuggestion[]),
     5000,
@@ -351,25 +370,6 @@ export async function searchAddresses(
   );
   if (backend.length > 0) {
     return rank(dedupeSuggestions(backend));
-  }
-
-  // 2) Google Places
-  const google = googlePlacesApi.isConfigured()
-    ? await withTimeout(
-        (async () => {
-          const first = await googlePlacesApi.autocomplete(primary, bias);
-          if (first.length) return first;
-          if (secondaryVariant) {
-            return googlePlacesApi.autocomplete(secondaryVariant, bias);
-          }
-          return [] as AddressSuggestion[];
-        })().catch(() => [] as AddressSuggestion[]),
-        6500,
-        [] as AddressSuggestion[]
-      )
-    : [];
-  if (google.length > 0) {
-    return rank(dedupeSuggestions(google));
   }
 
   // 3) OSM / Photon
@@ -406,6 +406,7 @@ export async function geocodeAddress(input: {
     };
   }
 
+  // Resolve place → lat/lng (Google first when key is set)
   if (
     input.placeId &&
     (input.placeId.startsWith('nominatim:') || input.placeId.startsWith('photon:')) &&
@@ -422,11 +423,26 @@ export async function geocodeAddress(input: {
     }
   }
 
-  // 1) Backend primary
+  // 1) Google Places / Geocoding (production primary)
+  if (
+    googlePlacesApi.isConfigured() &&
+    ((input.placeId &&
+      !input.placeId.startsWith('nominatim:') &&
+      !input.placeId.startsWith('photon:')) ||
+      input.address)
+  ) {
+    try {
+      return await googlePlacesApi.geocode(input);
+    } catch {
+      // fall through
+    }
+  }
+
+  // 2) Backend address-service
   try {
     return await addressApi.geocode(input);
   } catch (backendError) {
-    // 2) Google Places (placeId or address text)
+    // 3) Retry Google once more if backend failed but we skipped earlier
     if (
       googlePlacesApi.isConfigured() &&
       input.placeId &&
@@ -484,15 +500,7 @@ export async function reverseGeocodeAddress(input: {
   lat: number;
   lng: number;
 }): Promise<string | null> {
-  // 1) Backend primary
-  try {
-    const backend = await addressApi.reverseGeocode(input);
-    if (backend) return backend;
-  } catch {
-    // fall through
-  }
-
-  // 2) Google
+  // 1) Google (production primary when key is set)
   if (googlePlacesApi.isConfigured()) {
     try {
       const google = await googlePlacesApi.reverseGeocode(input);
@@ -500,6 +508,14 @@ export async function reverseGeocodeAddress(input: {
     } catch {
       // fall through
     }
+  }
+
+  // 2) Backend
+  try {
+    const backend = await addressApi.reverseGeocode(input);
+    if (backend) return backend;
+  } catch {
+    // fall through
   }
 
   // 3) OSM Nominatim

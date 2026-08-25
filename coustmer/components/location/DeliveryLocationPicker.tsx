@@ -34,6 +34,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import { SmoothPressable } from '@/components/common/SmoothPressable';
+import { ExpoPinMap } from '@/components/location/ExpoPinMap';
+import { buildGoogleMapHtml } from '@/components/location/google-map-html';
 import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
 import type { AddressSuggestion } from '@/lib/address/api';
@@ -173,165 +175,6 @@ type DeliveryLocationPickerProps = {
   onConfirm: (result: DeliveryLocationResult) => void;
 };
 
-function buildGoogleMapHtml(
-  lat: number,
-  lng: number,
-  apiKey: string,
-  pinColor: string = MAP_PIN_COLOR
-): string {
-  const key = apiKey.replace(/'/g, "\\'");
-  const pin = pinColor.replace(/'/g, "\\'");
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<style>
-  html, body, #map { height: 100%; margin: 0; padding: 0; background: #e8eaed; }
-  .center-pin {
-    position: absolute; left: 50%; top: 50%;
-    transform: translate(-50%, -100%);
-    z-index: 1000; pointer-events: none;
-  }
-  .center-pin svg { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35)); }
-  .center-pin path { fill: ${pin} !important; stroke: ${pin} !important; }
-</style>
-</head>
-<body>
-<div id="map"></div>
-<div class="center-pin">
-  <svg width="44" height="44" viewBox="0 0 24 24" fill="${pin}" stroke="${pin}" stroke-width="1.5">
-    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
-    <circle cx="12" cy="10" r="3" fill="#fff" stroke="#fff"></circle>
-  </svg>
-</div>
-<script>
-  var map;
-  var autocompleteService;
-  var placesService;
-  var geocoder;
-  var suppressIdleUntil = 0;
-  function post(payload) {
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify(payload));
-    }
-  }
-  function emitCenter() {
-    if (!map) return;
-    if (Date.now() < suppressIdleUntil) return;
-    var c = map.getCenter();
-    var lng = c.lng();
-    while (lng > 180) lng -= 360;
-    while (lng < -180) lng += 360;
-    post({ type: 'move', lat: c.lat(), lng: lng });
-  }
-  function setMapView(lat, lng, zoom) {
-    if (!map) return;
-    suppressIdleUntil = Date.now() + 800;
-    map.setCenter({ lat: lat, lng: lng });
-    if (zoom) map.setZoom(zoom);
-    else map.setZoom(17);
-  }
-  function initMap() {
-    map = new google.maps.Map(document.getElementById('map'), {
-      center: { lat: ${lat}, lng: ${lng} },
-      zoom: 16,
-      disableDefaultUI: false,
-      zoomControl: true,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-      gestureHandling: 'greedy',
-    });
-    autocompleteService = new google.maps.places.AutocompleteService();
-    placesService = new google.maps.places.PlacesService(map);
-    geocoder = new google.maps.Geocoder();
-    map.addListener('idle', emitCenter);
-    document.addEventListener('message', handleRN);
-    window.addEventListener('message', handleRN);
-    post({ type: 'ready' });
-    emitCenter();
-  }
-  function handleRN(e) {
-    try {
-      var msg = JSON.parse(e.data);
-      if (msg.type === 'setView' && map) {
-        setMapView(msg.lat, msg.lng, msg.zoom);
-      }
-      if (msg.type === 'autocomplete' && autocompleteService) {
-        var req = { input: msg.query || '', componentRestrictions: { country: 'in' } };
-        if (typeof msg.lat === 'number' && typeof msg.lng === 'number') {
-          req.location = new google.maps.LatLng(msg.lat, msg.lng);
-          req.radius = msg.radius || 40000;
-        }
-        autocompleteService.getPlacePredictions(req, function(predictions, status) {
-          post({
-            type: 'autocompleteResults',
-            requestId: msg.requestId,
-            status: status,
-            predictions: (predictions || []).map(function(p) {
-              return {
-                description: p.description,
-                placeId: p.place_id,
-                mainText: (p.structured_formatting && p.structured_formatting.main_text) || '',
-                secondaryText: (p.structured_formatting && p.structured_formatting.secondary_text) || ''
-              };
-            })
-          });
-        });
-      }
-      if (msg.type === 'placeDetails' && placesService) {
-        placesService.getDetails({
-          placeId: msg.placeId,
-          fields: ['geometry', 'formatted_address', 'name']
-        }, function(place, status) {
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !place || !place.geometry || !place.geometry.location) {
-            post({ type: 'placeDetailsResult', requestId: msg.requestId, ok: false });
-            return;
-          }
-          var plat = place.geometry.location.lat();
-          var plng = place.geometry.location.lng();
-          setMapView(plat, plng, 17);
-          post({
-            type: 'placeDetailsResult',
-            requestId: msg.requestId,
-            ok: true,
-            lat: plat,
-            lng: plng,
-            formattedAddress: place.formatted_address || place.name || ''
-          });
-        });
-      }
-      if (msg.type === 'geocodeText' && geocoder) {
-        geocoder.geocode({ address: msg.query, componentRestrictions: { country: 'IN' } }, function(results, status) {
-          if (status !== 'OK' || !results || !results[0]) {
-            post({ type: 'geocodeTextResult', requestId: msg.requestId, ok: false });
-            return;
-          }
-          var r = results[0];
-          var glat = r.geometry.location.lat();
-          var glng = r.geometry.location.lng();
-          setMapView(glat, glng, 17);
-          post({
-            type: 'geocodeTextResult',
-            requestId: msg.requestId,
-            ok: true,
-            lat: glat,
-            lng: glng,
-            formattedAddress: r.formatted_address || msg.query
-          });
-        });
-      }
-    } catch (err) {}
-  }
-</script>
-<script async defer
-  src="https://maps.googleapis.com/maps/api/js?key=${key}&callback=initMap&libraries=places&v=weekly">
-</script>
-</body>
-</html>`;
-}
-
 export function DeliveryLocationPicker({
   visible,
   initial,
@@ -378,6 +221,8 @@ export function DeliveryLocationPicker({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
+  /** When Google Maps JS fails (bad key / billing), use Expo native map. */
+  const [googleMapFailed, setGoogleMapFailed] = useState(false);
 
   const savedAddresses = useSavedAddresses({ enabled: visible });
   const activeSavedId = useDeliveryLocationStore(
@@ -581,6 +426,8 @@ export function DeliveryLocationPicker({
     setPin(startPoint);
     setDetectedAddress(undefined);
     setGpsReady(false);
+    setGoogleMapFailed(false);
+    setMapReady(false);
     setViewMode(pinOnly ? 'map' : 'browse');
     setCurrentPreview(null);
     sourceRef.current = 'search';
@@ -668,7 +515,11 @@ export function DeliveryLocationPicker({
       if (requestId !== requestIdRef.current) return;
       setSuggestions(res);
       if (res.length === 0) {
-        setSearchError('No places found. Try a landmark, area, or full address.');
+        setSearchError(
+          GOOGLE_MAPS_API_KEY
+            ? 'No places found. Try a landmark, area, or full address.'
+            : 'Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env for Google place search, then restart Expo.'
+        );
       }
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
@@ -706,6 +557,7 @@ export function DeliveryLocationPicker({
     `);
   }, [mapReady, pin.lat, pin.lng]);
 
+  // Google Places REST is the production search path (Swiggy-style).
   const onSearchChange = (text: string) => {
     setSearch(text);
     setSearchError(null);
@@ -723,10 +575,7 @@ export function DeliveryLocationPicker({
       const id = ++requestIdRef.current;
       setSearching(true);
       setSuggestions([]);
-      // Always search from RN (Photon + OSM + Google + backend)
       void runRestAutocomplete(query, id);
-      // Also try in-map Places when available
-      askWebViewAutocomplete(query, id);
     }, 280);
   };
 
@@ -735,6 +584,16 @@ export function DeliveryLocationPicker({
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'ready') {
         setMapReady(true);
+        setGoogleMapFailed(false);
+        return;
+      }
+
+      if (msg.type === 'error') {
+        setGoogleMapFailed(true);
+        setMapReady(false);
+        setSearchError(
+          'Google Maps could not load — using offline map. Search still works via Google Places when available.'
+        );
         return;
       }
 
@@ -866,7 +725,7 @@ export function DeliveryLocationPicker({
   const pickSuggestion = async (item: AddressSuggestion) => {
     Keyboard.dismiss();
     setSuggestions([]);
-    setSearch(item.description);
+    setSearch(item.mainText || item.description);
     setSearching(true);
     setSearchError(null);
     setError(null);
@@ -884,10 +743,11 @@ export function DeliveryLocationPicker({
         Number.isFinite(lng)
       ) {
         await applyCoords(lat, lng, 'search', item.description);
+        setViewMode('map');
         return;
       }
 
-      // Resolve Google placeId / address via Places API (New) — do not wait on WebView
+      // Resolve Google placeId via Places Details / Geocoding — pin map + confirm
       const geo = await geocodeAddress({
         placeId: item.placeId,
         address: item.description,
@@ -898,6 +758,8 @@ export function DeliveryLocationPicker({
         'search',
         geo.formattedAddress ?? item.description
       );
+      if (geo.formattedAddress) setSearch(geo.formattedAddress);
+      setViewMode('map');
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to open this place on the map'));
     } finally {
@@ -1010,9 +872,10 @@ export function DeliveryLocationPicker({
   };
 
   // Rebuild map HTML only when the sheet opens — remounting on GPS/pin updates caused Confirm flicker.
+  const useGoogleMap = Boolean(GOOGLE_MAPS_API_KEY) && !googleMapFailed;
   const mapHtml = useMemo(
     () =>
-      !visible || !GOOGLE_MAPS_API_KEY
+      !visible || !useGoogleMap
         ? ''
         : buildGoogleMapHtml(
             startPoint.lat,
@@ -1021,10 +884,10 @@ export function DeliveryLocationPicker({
             MAP_PIN_COLOR
           ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot startPoint when visible flips
-    [visible]
+    [visible, useGoogleMap]
   );
 
-  const mapWebViewKey = `${MAP_THEME_VERSION}-${visible ? '1' : '0'}`;
+  const mapWebViewKey = `${MAP_THEME_VERSION}-${visible ? '1' : '0'}-${googleMapFailed ? 'expo' : 'gmaps'}`;
 
   const showSuggestions = search.trim().length >= 2;
 
@@ -1323,7 +1186,7 @@ export function DeliveryLocationPicker({
       ) : (
         <Animated.View entering={FadeIn.duration(240)} exiting={FadeOut.duration(160)} style={styles.root}>
           <View style={styles.mapPane}>
-            {visible && GOOGLE_MAPS_API_KEY ? (
+            {visible && useGoogleMap ? (
               <WebView
                 key={mapWebViewKey}
                 ref={webRef}
@@ -1335,21 +1198,31 @@ export function DeliveryLocationPicker({
                 domStorageEnabled
                 geolocationEnabled
                 startInLoadingState
+                onHttpError={() => setGoogleMapFailed(true)}
                 renderLoading={() => (
                   <View style={styles.mapLoading}>
                     <ActivityIndicator color={authTheme.brand} size="large" />
-                    <Text style={styles.mapLoadingText}>Loading map…</Text>
+                    <Text style={styles.mapLoadingText}>Loading Google Maps…</Text>
                   </View>
                 )}
+              />
+            ) : visible ? (
+              <ExpoPinMap
+                lat={pin.lat}
+                lng={pin.lng}
+                onMoveEnd={(lat, lng) => {
+                  const safeLat = normalizeLat(lat);
+                  const safeLng = normalizeLng(lng);
+                  setPin({ lat: safeLat, lng: safeLng });
+                  setGpsReady(false);
+                  sourceRef.current = 'search';
+                  reverseLookup(safeLat, safeLng);
+                }}
               />
             ) : (
               <View style={styles.mapFallback}>
                 <MapPin color={authTheme.brand} size={40} />
-                <Text style={styles.mapFallbackTitle}>
-                  {GOOGLE_MAPS_API_KEY
-                    ? 'Preparing map…'
-                    : 'Map key missing — search still works'}
-                </Text>
+                <Text style={styles.mapFallbackTitle}>Preparing map…</Text>
                 <Text style={styles.mapFallbackText}>
                   Use current location or search for an address below.
                 </Text>

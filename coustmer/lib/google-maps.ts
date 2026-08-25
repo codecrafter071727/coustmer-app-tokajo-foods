@@ -2,10 +2,14 @@
 export const GOOGLE_MAPS_API_KEY =
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? '';
 
+export function isGoogleMapsConfigured(): boolean {
+  return Boolean(GOOGLE_MAPS_API_KEY);
+}
+
 export function assertGoogleMapsApiKey(): void {
   if (!GOOGLE_MAPS_API_KEY) {
     throw new Error(
-      'Google Maps API key is missing. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env and restart Expo.'
+      'Google Maps API key is missing. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env and restart Expo with npx expo start -c.'
     );
   }
 }

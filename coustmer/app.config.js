@@ -1,6 +1,4 @@
-const mapsKey =
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
-  'AIzaSyDtqlNuzkFM6Ix8GKcQcV06Dz6j1_FVRjo';
+const mapsKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() || '';
 const apiUrl =
   process.env.EXPO_PUBLIC_API_URL?.trim() || 'http://api.viharfood.in';
 

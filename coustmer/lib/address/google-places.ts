@@ -91,6 +91,9 @@ async function autocompleteLegacy(
   );
 
   if (data.status === 'ZERO_RESULTS') return [];
+  if (data.status === 'REQUEST_DENIED' || data.status === 'INVALID_REQUEST') {
+    throw new Error(data.error_message || `Places autocomplete failed (${data.status})`);
+  }
   if (data.status !== 'OK') return [];
   return (data.predictions ?? []).map(mapGooglePrediction);
 }
