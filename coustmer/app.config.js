@@ -87,7 +87,7 @@ const config = {
   extra: {
     router: {},
     eas: {
-      projectId: 'f038ad07-bccd-415e-9f7a-2869c43d2964',
+      projectId: 'f7fa7a0f-c673-4c5c-9180-d80fd28e41c0',
     },
     apiUrl,
     googleMapsApiKey: mapsKey,
