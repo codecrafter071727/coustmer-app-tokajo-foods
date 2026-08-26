@@ -5,9 +5,15 @@ import { Star, Tag } from 'lucide-react-native';
 import { Platform,  StyleSheet, Text, View } from 'react-native';
 
 import { FavoriteHeartButton } from '@/components/common/FavoriteHeartButton';
+import {
+  RestaurantClosedOverlay,
+  RestaurantSurgeBadge,
+} from '@/components/restaurant/RestaurantCardOverlays';
 import { authTheme } from '@/constants/auth-theme';
 import {
+  restaurantClosedLabel,
   restaurantEtaLabel,
+  restaurantIsClosed,
   restaurantOfferBadges,
   restaurantRatingCount,
   restaurantStars,
@@ -20,6 +26,8 @@ type Props = {
   favoriteLoading?: boolean;
   onToggleFavorite?: (id: string) => void;
   onPress?: () => void;
+  /** Zone surge chip from GET /zones/:id/surge-status */
+  surgeChipLabel?: string | null;
 };
 
 function priceLevel(price?: number) {
@@ -40,14 +48,13 @@ export function RestaurantFeedCard({
   favoriteLoading,
   onToggleFavorite,
   onPress,
+  surgeChipLabel,
 }: Props) {
   const cover = restaurant.coverUrl || restaurant.imageUrl || restaurant.logoUrl;
   const price = restaurant.priceForTwo ?? restaurant.costForTwo;
   const rating = restaurantStars(restaurant);
-  const isClosed =
-    restaurant.isOpen === false ||
-    restaurant.isOpenNow === false ||
-    restaurant.isOnline === false;
+  const isClosed = restaurantIsClosed(restaurant);
+  const closedCopy = restaurantClosedLabel(restaurant);
   const topCuisine = restaurant.cuisines?.[0] ?? 'Restaurant';
   const offerText = restaurantOfferBadges(restaurant)[0] || null;
   const reviews = formatReviews(restaurantRatingCount(restaurant));
@@ -79,6 +86,10 @@ export function RestaurantFeedCard({
               />
             )}
 
+            {surgeChipLabel ? (
+              <RestaurantSurgeBadge label={surgeChipLabel} />
+            ) : null}
+
             {offerText ? (
               <View style={styles.offerBadge} pointerEvents="none">
                 <Tag color="#FFFFFF" size={12} strokeWidth={2.4} />
@@ -100,13 +111,7 @@ export function RestaurantFeedCard({
               />
             ) : null}
 
-            {isClosed ? (
-              <View style={styles.closedScrim} pointerEvents="none">
-                <View style={styles.closedPill}>
-                  <Text style={styles.closedLabel}>Currently closed</Text>
-                </View>
-              </View>
-            ) : null}
+            {isClosed ? <RestaurantClosedOverlay restaurant={restaurant} /> : null}
           </View>
 
           <Pressable
@@ -132,7 +137,7 @@ export function RestaurantFeedCard({
               {priceLevel(price)} • {topCuisine}
               {eta ? ` • ${eta}` : ''}
               {restaurant.isPureVeg ? ' • Pure Veg' : ''}
-              {isClosed ? ' • Closed' : ''}
+              {isClosed && closedCopy ? ` • ${closedCopy}` : ''}
             </Text>
           </Pressable>
         </View>
@@ -206,23 +211,6 @@ const styles = StyleSheet.create({
     right: 14,
     width: 36,
     height: 36,
-  },
-  closedScrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.42)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closedPill: {
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 22,
-  },
-  closedLabel: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 13,
   },
   body: {
     paddingHorizontal: 14,

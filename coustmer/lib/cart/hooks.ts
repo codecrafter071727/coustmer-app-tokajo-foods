@@ -20,15 +20,17 @@ import { applyServerCartToStore } from '@/lib/cart/sync';
 
 export const cartKeys = {
   all: ['cart'] as const,
-  health: () => [...cartKeys.all, 'health'] as const,
   current: () => [...cartKeys.all, 'current'] as const,
   saved: () => [...cartKeys.all, 'saved'] as const,
   bill: (lat?: number, lng?: number) => [...cartKeys.all, 'bill', lat, lng] as const,
   summary: () => [...cartKeys.all, 'summary'] as const,
-  slots: (date?: string) => [...cartKeys.all, 'slots', date] as const,
+  shared: (shareToken: string) => [...cartKeys.all, 'shared', shareToken] as const,
+  slots: (date?: string, days?: number) => [...cartKeys.all, 'slots', date, days] as const,
   group: () => [...cartKeys.all, 'group'] as const,
-  coupons: () => [...cartKeys.all, 'coupons'] as const,
-  couponPreview: (code: string) => [...cartKeys.all, 'couponPreview', code] as const,
+  coupons: (restaurantId?: string, lat?: number, lng?: number) =>
+    [...cartKeys.all, 'coupons', restaurantId, lat, lng] as const,
+  couponPreview: (code: string, restaurantId?: string, subtotal?: number) =>
+    [...cartKeys.all, 'couponPreview', code, restaurantId, subtotal] as const,
 };
 
 function syncAndInvalidate(
@@ -37,17 +39,6 @@ function syncAndInvalidate(
 ) {
   applyServerCartToStore(cart);
   queryClient.invalidateQueries({ queryKey: cartKeys.all });
-}
-
-/** GET /cart/health */
-export function useCartHealth(enabled = true) {
-  return useQuery({
-    queryKey: cartKeys.health(),
-    queryFn: cartApi.health,
-    enabled,
-    staleTime: 60_000,
-    retry: 1,
-  });
 }
 
 /** GET /cart */
@@ -156,9 +147,9 @@ export function useUpdateCartTip() {
   return useMutation({
     mutationFn: (payload: UpdateTipPayload) => cartApi.updateTip(payload),
     onSuccess: (cart) => {
-      // Only hydrate what the server actually returned (tip must be on cart)
       applyServerCartToStore(cart);
       queryClient.setQueryData(cartKeys.current(), cart);
+      queryClient.invalidateQueries({ queryKey: [...cartKeys.all, 'bill'] });
     },
   });
 }
@@ -224,12 +215,34 @@ export function useDeleteSavedCart() {
 }
 
 /** GET /cart/bill */
-export function useCartBill(dropLat?: number, dropLng?: number, enabled = true) {
+export function useCartBill(
+  dropLat?: number,
+  dropLng?: number,
+  enabled = true,
+  deliveryType: 'delivery' | 'takeaway' = 'delivery',
+  /** Logged-in cart may have deliveryAddress coords on server even without client pin */
+  canUseServerAddress = false
+) {
+  const hasPin =
+    dropLat != null &&
+    dropLng != null &&
+    Number.isFinite(dropLat) &&
+    Number.isFinite(dropLng);
+  const canFetch =
+    enabled &&
+    (deliveryType === 'takeaway' || hasPin || canUseServerAddress);
+
   return useQuery({
     queryKey: cartKeys.bill(dropLat, dropLng),
-    queryFn: () => cartApi.getBill(dropLat, dropLng),
-    enabled,
+    queryFn: () =>
+      cartApi.getBill(
+        hasPin ? dropLat : undefined,
+        hasPin ? dropLng : undefined
+      ),
+    enabled: canFetch,
     staleTime: 15_000,
+    retry: 1,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -254,10 +267,11 @@ export function useUpdateCartInstructions() {
 }
 
 /** GET /cart/slots */
-export function useCartSlots(date?: string, enabled = true) {
+export function useCartSlots(opts?: { date?: string; days?: number; enabled?: boolean }) {
+  const enabled = opts?.enabled ?? true;
   return useQuery({
-    queryKey: cartKeys.slots(date),
-    queryFn: () => cartApi.getSlots(date),
+    queryKey: cartKeys.slots(opts?.date, opts?.days),
+    queryFn: () => cartApi.getSlots({ date: opts?.date, days: opts?.days ?? 7 }),
     enabled,
     staleTime: 60_000,
   });
@@ -324,6 +338,16 @@ export function useJoinGroupCart() {
   });
 }
 
+/** GET /cart/share/:token */
+export function useSharedCart(shareToken: string, enabled = true) {
+  return useQuery({
+    queryKey: cartKeys.shared(shareToken),
+    queryFn: () => cartApi.getSharedCart(shareToken),
+    enabled: enabled && shareToken.trim().length > 0,
+    staleTime: 10_000,
+  });
+}
+
 /** GET /cart/group */
 export function useCartGroup(enabled = true) {
   return useQuery({
@@ -379,21 +403,31 @@ export function useRepeatOrder() {
   });
 }
 
-/** GET /coupons */
-export function useDiscoverCoupons(enabled = true) {
+/** GET /coupons — scoped to cart restaurant + delivery pin when provided */
+export function useDiscoverCoupons(
+  enabled = true,
+  opts?: { restaurantId?: string; lat?: number; lng?: number }
+) {
+  const restaurantId = opts?.restaurantId;
+  const lat = opts?.lat;
+  const lng = opts?.lng;
   return useQuery({
-    queryKey: cartKeys.coupons(),
-    queryFn: cartApi.discoverCoupons,
+    queryKey: cartKeys.coupons(restaurantId, lat, lng),
+    queryFn: () => cartApi.discoverCoupons({ restaurantId, lat, lng }),
     enabled,
     staleTime: 60_000,
   });
 }
 
 /** GET /coupons/:code/preview */
-export function useCouponPreview(code: string, enabled = true) {
+export function useCouponPreview(
+  code: string,
+  enabled = true,
+  opts?: { restaurantId?: string; subtotal?: number }
+) {
   return useQuery({
-    queryKey: cartKeys.couponPreview(code),
-    queryFn: () => cartApi.previewCoupon(code),
+    queryKey: cartKeys.couponPreview(code, opts?.restaurantId, opts?.subtotal),
+    queryFn: () => cartApi.previewCoupon(code, opts),
     enabled: enabled && code.length >= 2,
     staleTime: 30_000,
   });

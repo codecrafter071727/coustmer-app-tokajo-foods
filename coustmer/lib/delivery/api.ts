@@ -22,6 +22,7 @@ import type {
   SendChatPayload,
   ShareLink,
   SurgeStatus,
+  PublicShareTracking,
   TrackingEta,
   TrackingRoute,
   TrackingTipPayload,
@@ -174,13 +175,33 @@ function mapTracker(raw: unknown, orderId: string): OrderTracker {
 
   const restCoords = Array.isArray(restLoc.coordinates) ? (restLoc.coordinates as number[]) : undefined;
   const custCoords = Array.isArray(custLoc.coordinates) ? (custLoc.coordinates as number[]) : undefined;
+  const etaSeconds =
+    typeof r.etaSeconds === 'number'
+      ? r.etaSeconds
+      : typeof r.etaSec === 'number'
+        ? r.etaSec
+        : Number(r.eta_seconds) || undefined;
+  const etaAt =
+    (r.etaAt as string) ||
+    (r.eta_at as string) ||
+    (r.arrivalAt as string) ||
+    (r.expectedAt as string) ||
+    undefined;
+  const etaMinutesFromSeconds =
+    typeof etaSeconds === 'number' && etaSeconds > 0
+      ? Math.max(1, Math.round(etaSeconds / 60))
+      : undefined;
 
   return {
     orderId: String(r.orderId ?? orderId),
     deliveryId: (r.deliveryId as string) || (r._id as string) || undefined,
     status: (r.status as string) || undefined,
     orderStatus: (r.orderStatus as string) || undefined,
-    etaMinutes: typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined,
+    etaMinutes:
+      (typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined)
+      ?? etaMinutesFromSeconds,
+    etaSeconds,
+    etaAt,
     etaText: (r.etaText as string) || (r.estimatedArrival as string) || undefined,
     partner: partnerMapped ?? undefined,
     restaurantLat:
@@ -214,6 +235,52 @@ function mapChat(raw: unknown, orderId: string): ChatMessage {
   };
 }
 
+function mapPublicShare(raw: unknown): PublicShareTracking {
+  const r = asRecord(raw);
+  const drop = asRecord(r.drop);
+  const rider = asRecord(r.riderLocation);
+  const partnerRaw = r.partner ? mapDeliveryPartner(r.partner) : null;
+  const riderLat =
+    typeof rider.latitude === 'number'
+      ? rider.latitude
+      : typeof rider.lat === 'number'
+        ? rider.lat
+        : partnerRaw?.currentLocation?.lat;
+  const riderLng =
+    typeof rider.longitude === 'number'
+      ? rider.longitude
+      : typeof rider.lng === 'number'
+        ? rider.lng
+        : partnerRaw?.currentLocation?.lng;
+
+  return {
+    orderId: String(r.orderId ?? ''),
+    deliveryId: String(r.deliveryId ?? r._id ?? ''),
+    status: String(r.status ?? ''),
+    dutyHint: String(r.dutyHint ?? r.status ?? 'Tracking'),
+    etaSeconds: typeof r.etaSeconds === 'number' ? r.etaSeconds : undefined,
+    etaAt: typeof r.etaAt === 'string' ? r.etaAt : undefined,
+    polyline: typeof r.polyline === 'string' ? r.polyline : undefined,
+    dropLat:
+      typeof drop.latitude === 'number'
+        ? drop.latitude
+        : typeof drop.lat === 'number'
+          ? drop.lat
+          : undefined,
+    dropLng:
+      typeof drop.longitude === 'number'
+        ? drop.longitude
+        : typeof drop.lng === 'number'
+          ? drop.lng
+          : undefined,
+    dropAddress: typeof drop.address === 'string' ? drop.address : undefined,
+    riderLat,
+    riderLng,
+    partner: partnerRaw ?? undefined,
+    expiresAt: typeof r.expiresAt === 'string' ? r.expiresAt : undefined,
+  };
+}
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 export const deliveryApi = {
@@ -225,13 +292,36 @@ export const deliveryApi = {
     const list = Array.isArray(raw) ? raw : Array.isArray(asRecord(raw).cities) ? asRecord(raw).cities as unknown[] : [];
     return (list as unknown[]).map((c) => {
       const r = asRecord(c);
+      const hoursRaw = asRecord(r.hours);
+      const zonesRaw = Array.isArray(r.zones) ? r.zones : [];
       return {
-        id: String(r._id ?? r.id ?? ''),
+        id: String(r.id ?? r._id ?? r.name ?? ''),
         name: String(r.name ?? r.city ?? ''),
         slug: (r.slug as string) || undefined,
         lat: typeof r.lat === 'number' ? r.lat : undefined,
         lng: typeof r.lng === 'number' ? r.lng : undefined,
-        isActive: r.isActive !== undefined ? Boolean(r.isActive) : true,
+        polygon: Array.isArray(r.polygon) ? (r.polygon as number[][][]) : null,
+        hours:
+          typeof hoursRaw.open === 'string' && typeof hoursRaw.close === 'string'
+            ? {
+                open: hoursRaw.open,
+                close: hoursRaw.close,
+                tz: typeof hoursRaw.tz === 'string' ? hoursRaw.tz : undefined,
+              }
+            : undefined,
+        zones: zonesRaw.map((z) => {
+          const row = asRecord(z);
+          return {
+            zoneId: String(row.zoneId ?? row.id ?? row._id ?? ''),
+            name: String(row.name ?? ''),
+            isActive: row.isActive !== false,
+            surgeMultiplier:
+              typeof row.surgeMultiplier === 'number' ? row.surgeMultiplier : undefined,
+            polygon: Array.isArray(row.polygon) ? (row.polygon as number[][][]) : undefined,
+          };
+        }),
+        isActive: r.isLive !== false && r.isActive !== false,
+        isLive: r.isLive !== false,
       };
     });
   },
@@ -331,9 +421,32 @@ export const deliveryApi = {
       raw = await get<unknown>(`${DS}/tracking/eta/${orderId}`);
     }
     const r = asRecord(raw);
+    const etaSeconds =
+      typeof r.etaSeconds === 'number'
+        ? r.etaSeconds
+        : typeof r.etaSec === 'number'
+          ? r.etaSec
+          : Number(r.eta_seconds) || undefined;
+    const etaAt =
+      (r.etaAt as string) ||
+      (r.eta_at as string) ||
+      (r.arrivalAt as string) ||
+      (r.expectedAt as string) ||
+      undefined;
+    const etaMinutesFromSeconds =
+      typeof etaSeconds === 'number' && etaSeconds > 0
+        ? Math.max(1, Math.round(etaSeconds / 60))
+        : undefined;
     return {
-      etaMinutes: typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined,
-      etaText: (r.etaText as string) || undefined,
+      etaMinutes:
+        (typeof r.etaMinutes === 'number' ? r.etaMinutes : Number(r.etaMins ?? r.eta) || undefined)
+        ?? etaMinutesFromSeconds,
+      etaSeconds,
+      etaAt,
+      etaText:
+        (r.etaText as string) ||
+        (r.estimatedArrival as string) ||
+        (typeof etaMinutesFromSeconds === 'number' ? `${etaMinutesFromSeconds} mins` : undefined),
       distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : undefined,
     };
   },
@@ -420,9 +533,9 @@ export const deliveryApi = {
   },
 
   /** GET /tracking/share/:shareToken — public live track (no auth) */
-  getPublicShare: async (shareToken: string): Promise<OrderTracker> => {
-    const raw = await get<unknown>(`${DS}/tracking/share/${shareToken}`);
-    return mapTracker(raw, '');
+  getPublicShare: async (shareToken: string): Promise<PublicShareTracking> => {
+    const raw = await get<unknown>(`${DS}/tracking/share/${encodeURIComponent(shareToken)}`);
+    return mapPublicShare(raw);
   },
 
   /** POST /tracking/order/:orderId/nudge-partner */

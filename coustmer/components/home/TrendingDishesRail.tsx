@@ -16,6 +16,8 @@ type Props = {
   dishes: HomeTrendingDish[];
   onPressDish: (dish: HomeTrendingDish) => void;
   loading?: boolean;
+  title?: string;
+  subtitle?: string;
 };
 
 function SkeletonCard() {
@@ -29,7 +31,13 @@ function SkeletonCard() {
   );
 }
 
-export function TrendingDishesRail({ dishes, onPressDish, loading }: Props) {
+export function TrendingDishesRail({
+  dishes,
+  onPressDish,
+  loading,
+  title = 'Dishes to try',
+  subtitle = 'Recommended picks near you',
+}: Props) {
   if (!loading && !dishes.length) return null;
 
   return (
@@ -39,8 +47,8 @@ export function TrendingDishesRail({ dishes, onPressDish, loading }: Props) {
           <Flame color="#FFF" size={15} fill="#FFF" />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Trending food items</Text>
-          <Text style={styles.subtitle}>What people near you are ordering</Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
       </View>
 
@@ -118,7 +126,9 @@ export function TrendingDishesRail({ dishes, onPressDish, loading }: Props) {
               <Text style={styles.dishName} numberOfLines={2}>
                 {item.name}
               </Text>
-              <Text style={styles.price}>₹{Math.round(item.price)}</Text>
+              <Text style={styles.price}>
+                {item.price > 0 ? `₹${Math.round(item.price)}` : ' '}
+              </Text>
               <Text style={styles.restaurant} numberOfLines={1}>
                 {item.restaurantName}
               </Text>

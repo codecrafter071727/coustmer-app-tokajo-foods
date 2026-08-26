@@ -21,6 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { Lock, Share2, UserMinus, Users, X } from 'lucide-react-native';
 import { useEffect } from 'react';
 
@@ -111,9 +112,13 @@ export function GroupOrderSheet({ visible, onClose }: Props) {
       }
     }
 
-    const shareText = url || token;
+    const appLink = token ? Linking.createURL(`/cart/share/${token}`) : '';
+    const shareText = appLink || url || token;
     try {
-      await Share.share({ message: `Join my group order! ${shareText}`, url: shareText });
+      await Share.share({
+        message: `Join my group order! ${shareText}${url ? `\nBackup link: ${url}` : ''}`,
+        url: shareText,
+      });
     } catch {
       Alert.alert('Group order link', shareText || 'Could not create link');
     }

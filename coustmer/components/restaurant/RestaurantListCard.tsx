@@ -5,7 +5,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { authTheme } from '@/constants/auth-theme';
 import {
+  RestaurantClosedOverlay,
+  RestaurantSurgeBadge,
+} from '@/components/restaurant/RestaurantCardOverlays';
+import {
+  restaurantClosedLabel,
   restaurantEtaLabel,
+  restaurantIsClosed,
   restaurantOfferBadges,
   restaurantRatingCount,
   restaurantStars,
@@ -16,9 +22,14 @@ import { prefetchRestaurantMenu } from '@/lib/restaurant/hooks';
 type Props = {
   restaurant: Restaurant;
   onPress?: () => void;
+  surgeChipLabel?: string | null;
 };
 
-export function RestaurantListCard({ restaurant, onPress }: Props) {
+export function RestaurantListCard({
+  restaurant,
+  onPress,
+  surgeChipLabel,
+}: Props) {
   const cuisines = restaurant.cuisines?.slice(0, 3).join(' • ');
   const cost =
     restaurant.costForTwo ?? restaurant.priceForTwo;
@@ -26,10 +37,8 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
   const ratingCount = restaurantRatingCount(restaurant);
   const eta = restaurantEtaLabel(restaurant);
   const badges = restaurantOfferBadges(restaurant);
-  const closed =
-    restaurant.isOpen === false ||
-    restaurant.isOpenNow === false ||
-    restaurant.isOnline === false;
+  const closed = restaurantIsClosed(restaurant);
+  const closedCopy = restaurantClosedLabel(restaurant);
 
   return (
     <Pressable
@@ -50,6 +59,12 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
             <UtensilsCrossed color="#C4520A" size={32} />
           </LinearGradient>
         )}
+        {surgeChipLabel ? (
+          <RestaurantSurgeBadge
+            label={surgeChipLabel}
+            style={styles.surgeInline}
+          />
+        ) : null}
         {stars ? (
           <View style={styles.ratingBadge}>
             <Star color="#FFFFFF" fill="#FFFFFF" size={11} />
@@ -65,9 +80,7 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
         )}
         {closed ? (
           <View style={styles.closedOverlay}>
-            <View style={styles.closedBadge}>
-              <Text style={styles.closedText}>Closed</Text>
-            </View>
+            <RestaurantClosedOverlay restaurant={restaurant} />
           </View>
         ) : null}
         {restaurant.isPromoted ? (
@@ -91,6 +104,11 @@ export function RestaurantListCard({ restaurant, onPress }: Props) {
         {cuisines ? (
           <Text style={styles.cuisines} numberOfLines={1}>
             {cuisines}
+            {closed && closedCopy ? ` • ${closedCopy}` : ''}
+          </Text>
+        ) : closed && closedCopy ? (
+          <Text style={styles.cuisines} numberOfLines={1}>
+            {closedCopy}
           </Text>
         ) : null}
         <View style={styles.metaRow}>
@@ -152,6 +170,8 @@ const styles = StyleSheet.create({
     backgroundColor: authTheme.input,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
@@ -185,28 +205,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   closedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 4,
+  },
+  surgeInline: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.48)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closedBadge: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-  },
-  closedText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.3,
+    top: 6,
+    left: 6,
+    zIndex: 5,
+    maxWidth: 96,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
   promotedBadge: {
     position: 'absolute',

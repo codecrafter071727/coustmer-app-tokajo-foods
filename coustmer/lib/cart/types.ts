@@ -13,17 +13,29 @@ export type PaginationMeta = {
 
 export type DeliveryType = 'delivery' | 'takeaway' | string;
 
+export type CartModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  price: number;
+};
+
 export type CartLineItem = {
   /** Cart line / item row id (for PUT/DELETE) */
   id: string;
   menuItemId: string;
   name: string;
+  /** Unit price including selected modifiers (for display). */
   price: number;
+  /** Base menu price before modifiers (when known). */
+  basePrice?: number;
   quantity: number;
   isVeg?: boolean;
   imageUrl?: string;
   specialInstructions?: string;
   restaurantId?: string;
+  modifiers?: CartModifier[];
   [key: string]: unknown;
 };
 
@@ -116,6 +128,8 @@ export type AddCartItemPayload = {
   isVeg?: boolean;
   imageUrl?: string;
   specialInstructions?: string;
+  /** Structured add-ons / size options (Half/Full, cheese, …). */
+  modifiers?: CartModifier[];
 };
 
 export type UpdateCartItemPayload = {
@@ -142,9 +156,4 @@ export type UpdateDeliveryTypePayload = {
 
 export type SaveCartPayload = {
   name?: string;
-};
-
-export type CartHealth = {
-  status: string;
-  message?: string;
 };

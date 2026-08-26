@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Alert,
   StyleSheet,
   Switch,
   Text,
@@ -12,10 +11,6 @@ import { Heart, MessageSquare, UtensilsCrossed } from 'lucide-react-native';
 
 import { fonts } from '@/constants/typography';
 import {
-  useApplyCartLoyalty,
-  useApplyCartWallet,
-  useRemoveCartLoyalty,
-  useRemoveCartWallet,
   useUpdateCartInstructions,
 } from '@/lib/cart/hooks';
 import { useAuthStore } from '@/store/auth-store';
@@ -38,46 +33,20 @@ export function DeliveryPreferences({ tip, setTip }: Props) {
   const isLoggedIn = Boolean(useAuthStore((s) => s.token));
 
   const updateInstructions = useUpdateCartInstructions();
-  const applyWallet = useApplyCartWallet();
-  const removeWallet = useRemoveCartWallet();
-  const applyLoyalty = useApplyCartLoyalty();
-  const removeLoyalty = useRemoveCartLoyalty();
 
   const [cooking, setCooking] = useState('');
   const [cutlery, setCutlery] = useState(false);
   const [leaveAtDoor, setLeaveAtDoor] = useState(false);
-  const [walletOn, setWalletOn] = useState(false);
-  const [loyaltyOn, setLoyaltyOn] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
 
   const syncInstructions = (updates: { cooking?: string; cutlery?: boolean; leaveAtDoor?: boolean }) => {
     if (!isLoggedIn) return;
-    updateInstructions.mutate(updates);
-  };
-
-  const toggleWallet = () => {
-    if (!isLoggedIn) return;
-    if (walletOn) {
-      removeWallet.mutate();
-      setWalletOn(false);
-    } else {
-      applyWallet.mutate(undefined, {
-        onError: (e) => Alert.alert('Wallet', e instanceof Error ? e.message : 'Could not apply wallet'),
-      });
-      setWalletOn(true);
-    }
-  };
-
-  const toggleLoyalty = () => {
-    if (!isLoggedIn) return;
-    if (loyaltyOn) {
-      removeLoyalty.mutate();
-      setLoyaltyOn(false);
-    } else {
-      applyLoyalty.mutate(undefined, {
-        onError: (e) => Alert.alert('Loyalty', e instanceof Error ? e.message : 'Could not apply points'),
-      });
-      setLoyaltyOn(true);
-    }
+    updateInstructions.mutate(updates, {
+      onSuccess: () => {
+        setSavedTick(true);
+        setTimeout(() => setSavedTick(false), 1200);
+      },
+    });
   };
 
   return (
@@ -102,6 +71,13 @@ export function DeliveryPreferences({ tip, setTip }: Props) {
       {/* Instructions */}
       <View style={styles.divider} />
       <Text style={styles.cardTitle}>Delivery instructions</Text>
+      <Text style={styles.liveHint}>
+        {updateInstructions.isPending
+          ? 'Saving instructions...'
+          : savedTick
+            ? 'Saved to cart'
+            : 'These notes are sent to the kitchen live'}
+      </Text>
 
       <View style={styles.instructionRow}>
         <UtensilsCrossed color={TEXT_SEC} size={16} strokeWidth={2} />
@@ -140,34 +116,10 @@ export function DeliveryPreferences({ tip, setTip }: Props) {
           value={cooking}
           onChangeText={setCooking}
           onBlur={() => syncInstructions({ cutlery, leaveAtDoor, cooking })}
+          onSubmitEditing={() => syncInstructions({ cutlery, leaveAtDoor, cooking })}
           returnKeyType="done"
         />
       </View>
-
-      {/* Wallet / Loyalty */}
-      {isLoggedIn && (
-        <>
-          <View style={styles.divider} />
-          <View style={styles.instructionRow}>
-            <Text style={styles.instructionLabel}>Use Wallet balance</Text>
-            <Switch
-              value={walletOn}
-              onValueChange={toggleWallet}
-              trackColor={{ true: ORANGE, false: '#E2E8F0' }}
-              thumbColor={WHITE}
-            />
-          </View>
-          <View style={styles.instructionRow}>
-            <Text style={styles.instructionLabel}>Redeem loyalty points</Text>
-            <Switch
-              value={loyaltyOn}
-              onValueChange={toggleLoyalty}
-              trackColor={{ true: ORANGE, false: '#E2E8F0' }}
-              thumbColor={WHITE}
-            />
-          </View>
-        </>
-      )}
     </View>
   );
 }
@@ -186,6 +138,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TEXT,
     marginBottom: 10,
+  },
+  liveHint: {
+    marginTop: -4,
+    marginBottom: 10,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: TEXT_SEC,
   },
   tipRow: {
     flexDirection: 'row',

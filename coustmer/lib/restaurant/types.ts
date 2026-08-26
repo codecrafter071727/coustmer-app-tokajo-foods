@@ -38,11 +38,16 @@ export type Restaurant = {
   totalRatings?: number;
   offerBadges?: string[];
   deliveryTimeLabel?: string;
+  /** False when listing ETA is kitchen prep only (no pin distance). */
+  travelIncluded?: boolean;
   promiseMinutes?: number;
   hygieneScore?: number;
   isOnline?: boolean;
   isOpenNow?: boolean;
   nextOpenAt?: string;
+  closedReason?: string;
+  hoursToday?: string;
+  zoneId?: string;
   minOrderValue?: number;
   freeDeliveryThreshold?: number;
   maxDeliveryRadius?: number;
@@ -66,6 +71,25 @@ export type MenuCategory = {
   itemCount?: number;
 };
 
+export type CustomizationOption = {
+  id: string;
+  name: string;
+  price: number;
+  isVeg?: boolean;
+  isAvailable?: boolean;
+  isDefault?: boolean;
+};
+
+export type CustomizationGroup = {
+  id: string;
+  name: string;
+  type?: string;
+  required?: boolean;
+  min?: number;
+  max?: number;
+  options: CustomizationOption[];
+};
+
 export type MenuItem = {
   id: string;
   name: string;
@@ -87,6 +111,10 @@ export type MenuItem = {
   sortOrder?: number;
   allergens?: string[];
   totalOrdered?: number;
+  /** Snapshot from menu/customizations APIs (Size, cheese, etc.). */
+  modifierGroups?: CustomizationGroup[];
+  /** True when restaurant attached at least one modifier group. */
+  hasCustomizations?: boolean;
   [key: string]: unknown;
 };
 
@@ -134,22 +162,13 @@ export type RestaurantHygiene = {
   raw?: Record<string, unknown>;
 };
 
-export type CustomizationOption = {
-  id: string;
-  name: string;
+/** Selected modifier for cart / order lines (matches cart-service schema). */
+export type CartModifierSelection = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
   price: number;
-  isVeg?: boolean;
-  isAvailable?: boolean;
-};
-
-export type CustomizationGroup = {
-  id: string;
-  name: string;
-  type?: string;
-  required?: boolean;
-  min?: number;
-  max?: number;
-  options: CustomizationOption[];
 };
 
 export type RestaurantRatings = {
@@ -198,6 +217,8 @@ export type RestaurantListParams = {
   lng?: number;
   veg?: boolean;
   minRating?: number;
+  hygiene?: boolean;
+  offers?: boolean;
   /** When true, fetches every page until hasNext is false. */
   fetchAll?: boolean;
 };

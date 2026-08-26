@@ -500,17 +500,50 @@ export function DeliveryLocationPicker({
     };
   }, []);
 
+  const runRestAutocomplete = useCallback(async (query: string, requestId: number) => {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await searchAddresses(query, {
+        bias: {
+          lat: pin.lat,
+          lng: pin.lng,
+          radiusMeters: 40000,
+        },
+      });
+      // Ignore stale responses when user kept typing
+      if (requestId !== requestIdRef.current) return;
+      setSuggestions(res);
+      if (res.length === 0) {
+        setSearchError(
+          GOOGLE_MAPS_API_KEY
+            ? 'No places found. Try a landmark, area, or full address.'
+            : 'Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env for Google place search, then restart Expo.'
+        );
+      }
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      setSuggestions([]);
+      setSearchError(
+        getApiErrorMessage(err, 'Could not load address suggestions')
+      );
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setSearching(false);
+      }
+    }
+  }, [pin.lat, pin.lng]);
+
   const askWebViewAutocomplete = useCallback((query: string, requestId: number) => {
     if (!GOOGLE_MAPS_API_KEY || !mapReady || !webRef.current) return;
     pendingRequest.current = { id: requestId, kind: 'autocomplete' };
-    setSearching(true);
     const payload = JSON.stringify({
       type: 'autocomplete',
       query,
       requestId,
       lat: pin.lat,
       lng: pin.lng,
-      radius: 50000,
+      radius: 40000,
     });
     webRef.current.injectJavaScript(`
       (function() {
@@ -523,55 +556,6 @@ export function DeliveryLocationPicker({
       true;
     `);
   }, [mapReady, pin.lat, pin.lng]);
-
-  const runRestAutocomplete = useCallback(async (query: string, requestId: number) => {
-    setSearching(true);
-    setSearchError(null);
-    try {
-      const res = await searchAddresses(query, {
-        bias: {
-          lat: pin.lat,
-          lng: pin.lng,
-          radiusMeters: 50000,
-        },
-      });
-      // Ignore stale responses when user kept typing
-      if (requestId !== requestIdRef.current) return;
-      setSuggestions(res);
-      if (res.length === 0) {
-        // Second Google path: Places inside Maps JS WebView (still Google, not Expo)
-        if (GOOGLE_MAPS_API_KEY && mapReady && !googleMapFailed && webRef.current) {
-          askWebViewAutocomplete(query, requestId);
-          return;
-        }
-        setSearchError(
-          GOOGLE_MAPS_API_KEY
-            ? 'No Google places found. Try a landmark, area, or full address.'
-            : 'Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to .env for Google place search, then restart Expo.'
-        );
-        setSearching(false);
-        return;
-      }
-      setSearching(false);
-    } catch (err) {
-      if (requestId !== requestIdRef.current) return;
-      // Google REST failed — try in-map Google Places before showing error
-      if (GOOGLE_MAPS_API_KEY && mapReady && !googleMapFailed && webRef.current) {
-        askWebViewAutocomplete(query, requestId);
-        return;
-      }
-      setSuggestions([]);
-      const raw = getApiErrorMessage(err, 'Could not load Google place suggestions');
-      const denied =
-        /denied|PERMISSION|API key|not authorized|billing|Places API/i.test(raw);
-      setSearchError(
-        denied
-          ? `${raw}. Enable Places API + Places API (New) + billing on this key, then restart Expo.`
-          : raw
-      );
-      setSearching(false);
-    }
-  }, [pin.lat, pin.lng, mapReady, googleMapFailed, askWebViewAutocomplete]);
 
   // Google Places REST is the production search path (Swiggy-style).
   const onSearchChange = (text: string) => {
@@ -629,47 +613,45 @@ export function DeliveryLocationPicker({
       }
 
       if (msg.type === 'autocompleteResults') {
-        if (
-          pendingRequest.current?.id !== msg.requestId &&
-          msg.requestId !== requestIdRef.current
-        ) {
-          return;
-        }
-        pendingRequest.current = null;
-        setSearching(false);
-
+        // WebView Places is optional — merge with REST results if available
         if (
           msg.status === 'OK' &&
           Array.isArray(msg.predictions) &&
           msg.predictions.length
         ) {
-          const mapped: AddressSuggestion[] = msg.predictions.map(
-            (p: {
-              description: string;
-              placeId: string;
-              mainText?: string;
-              secondaryText?: string;
-            }) => ({
-              description: p.description,
-              placeId: p.placeId,
-              mainText: p.mainText,
-              secondaryText: p.secondaryText,
-              source: 'google',
-            })
-          );
-          setSuggestions(mapped.slice(0, 12));
-          setSearchError(null);
-          return;
+          if (
+            pendingRequest.current?.id === msg.requestId ||
+            msg.requestId === requestIdRef.current
+          ) {
+            pendingRequest.current = null;
+            const mapped: AddressSuggestion[] = msg.predictions.map(
+              (p: {
+                description: string;
+                placeId: string;
+                mainText?: string;
+                secondaryText?: string;
+              }) => ({
+                description: p.description,
+                placeId: p.placeId,
+                mainText: p.mainText,
+                secondaryText: p.secondaryText,
+                source: 'google-webview',
+              })
+            );
+            setSuggestions((prev) => {
+              const seen = new Set(
+                prev.map((s) => s.description.toLowerCase())
+              );
+              const extra = mapped.filter(
+                (s) => !seen.has(s.description.toLowerCase())
+              );
+              // Keep REST/backend results first; WebView Google only fills gaps.
+              return [...prev, ...extra].slice(0, 10);
+            });
+            setSearching(false);
+            setSearchError(null);
+          }
         }
-
-        setSuggestions([]);
-        setSearchError(
-          msg.status && msg.status !== 'ZERO_RESULTS' && msg.status !== 'OK'
-            ? `Google Places: ${msg.status}. Enable Places API on your Maps key.`
-            : 'No Google places found. Try a landmark, area, or full address.'
-        );
-        return;
-      }
         return;
       }
 

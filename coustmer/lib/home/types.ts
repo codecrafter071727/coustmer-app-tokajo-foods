@@ -1,64 +1,44 @@
-/**
- * Home discovery contract — match this shape when you build the backend.
- *
- * Suggested endpoints (any one is enough):
- *   GET /api/v1/customer-service/discovery/home?city=Gwalior
- *   GET /api/v1/customer-service/customers/home/discovery?city=Gwalior
- *
- * Response envelope:
- * {
- *   success: true,
- *   data: {
- *     newlyAdded: HomeRestaurantCard[],
- *     trendingDishes: HomeTrendingDish[],
- *     categories: HomeCategory[]
- *   }
- * }
- */
-
+/** Restaurant card for horizontal home rails (from customer-service home feed). */
 export type HomeRestaurantCard = {
   id: string;
   name: string;
-  imageUrl?: string;
-  coverUrl?: string;
-  logoUrl?: string;
+  image?: string | null;
   rating?: number;
-  reviewCount?: number;
+  deliveryTime?: string | null;
   cuisines?: string[];
-  deliveryTime?: string;
-  priceForTwo?: number;
-  city?: string;
-  address?: string;
-  isNew?: boolean;
-  badge?: string;
+  isPureVeg?: boolean;
+  isOpenNow?: boolean;
+  availabilityLabel?: string | null;
+  hoursToday?: string | null;
+  reviewCount?: number;
+  distanceKm?: number;
+  slug?: string | null;
+  hasOffers?: boolean;
 };
 
+/** Order-again rail card — recent restaurants in delivery radius. */
+export type HomeOrderAgainCard = HomeRestaurantCard & {
+  lastOrderedAt?: string | null;
+  itemsSummary?: string | null;
+};
+
+/** Dish card for "Dishes to try" rail. */
 export type HomeTrendingDish = {
   id: string;
   name: string;
   price: number;
-  imageUrl?: string;
+  imageUrl?: string | null;
   isVeg?: boolean;
   rating?: number;
   restaurantId: string;
   restaurantName: string;
-  restaurantImageUrl?: string;
-  badge?: string;
+  badge?: string | null;
 };
 
-export type HomeCategory = {
-  id: string;
-  label: string;
-  slug: string;
-  imageUrl: string;
-  color?: string;
-  sortOrder?: number;
-};
-
-export type HomeDiscovery = {
-  newlyAdded: HomeRestaurantCard[];
-  trendingDishes: HomeTrendingDish[];
-  categories: HomeCategory[];
-  /** true when dummy placeholders are shown because the discovery API is not ready */
-  isDummy: boolean;
-};
+export type HomeRailVariant =
+  | 'trending'
+  | 'new'
+  | 'top-rated'
+  | 'pure-veg'
+  | 'order-again'
+  | 'for-you';

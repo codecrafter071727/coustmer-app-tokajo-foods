@@ -1,6 +1,6 @@
 import { Pressable } from '@/components/common/Pressable';
 import * as Location from 'expo-location';
-import { Crosshair, Home, Search } from 'lucide-react-native';
+import { Crosshair, Home, MapPin, Search } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +24,7 @@ import {
   useZone,
   useZones,
 } from '@/lib/delivery/hooks';
+import type { City } from '@/lib/delivery/types';
 import {
   extractCityFromAddress,
   normalizeCityName,
@@ -43,6 +44,31 @@ type LocStatus = {
   permission: Location.PermissionStatus | 'unknown';
   servicesOn: boolean;
 };
+
+function cityCenter(city: City): { lat: number; lng: number } | null {
+  if (typeof city.lat === 'number' && typeof city.lng === 'number') {
+    return { lat: city.lat, lng: city.lng };
+  }
+  const ring = city.polygon?.[0];
+  if (!ring?.length) {
+    const zonePoly = city.zones?.find((z) => z.polygon?.[0])?.polygon?.[0];
+    if (!zonePoly?.length) return null;
+    let lat = 0;
+    let lng = 0;
+    for (const pair of zonePoly) {
+      lng += Number(pair[0] ?? 0);
+      lat += Number(pair[1] ?? 0);
+    }
+    return { lat: lat / zonePoly.length, lng: lng / zonePoly.length };
+  }
+  let lat = 0;
+  let lng = 0;
+  for (const pair of ring) {
+    lng += Number(pair[0] ?? 0);
+    lat += Number(pair[1] ?? 0);
+  }
+  return { lat: lat / ring.length, lng: lng / ring.length };
+}
 
 export function InitialLocationSheet({
   visible,
@@ -122,6 +148,28 @@ export function InitialLocationSheet({
       label: formatAddressLabel(saved.label) || 'Home',
       source: 'saved',
       savedAddressId: saved.id,
+      updatedAt: Date.now(),
+    });
+    onClose();
+  };
+
+  const applyLaunchCity = (city: City) => {
+    const center = cityCenter(city);
+    if (!center) {
+      Alert.alert('City unavailable', 'Could not resolve map center for this city.');
+      return;
+    }
+    const hours =
+      city.hours?.open && city.hours?.close
+        ? `${city.hours.open} – ${city.hours.close}`
+        : undefined;
+    setLocation({
+      lat: center.lat,
+      lng: center.lng,
+      formattedAddress: `${city.name}${hours ? ` · ${hours}` : ''}`,
+      city: normalizeCityName(city.name),
+      label: city.name,
+      source: 'search',
       updatedAt: Date.now(),
     });
     onClose();
@@ -292,26 +340,43 @@ export function InitialLocationSheet({
             )}
 
             <View style={styles.publicMetaCard}>
-              <Text style={styles.publicMetaTitle}>Delivery coverage</Text>
-              <Text style={styles.publicMetaLine}>
-                Cities live: {cities.data?.length ?? 0}
-              </Text>
-              <Text style={styles.publicMetaLine}>
-                Zones available: {zones.data?.length ?? 0}
-              </Text>
+              <Text style={styles.publicMetaTitle}>Launch cities</Text>
+              {cities.isLoading ? (
+                <ActivityIndicator color="#AC0F45" style={{ marginVertical: 8 }} />
+              ) : (cities.data ?? []).filter((c) => c.isLive !== false).length ? (
+                (cities.data ?? [])
+                  .filter((c) => c.isLive !== false)
+                  .map((city) => (
+                    <Pressable
+                      key={city.id}
+                      style={styles.cityRow}
+                      onPress={() => applyLaunchCity(city)}
+                    >
+                      <MapPin color="#AC0F45" size={18} />
+                      <View style={styles.cityTextCol}>
+                        <Text style={styles.cityName}>{city.name}</Text>
+                        {city.hours ? (
+                          <Text style={styles.cityHours}>
+                            {city.hours.open} – {city.hours.close} IST
+                          </Text>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  ))
+              ) : (
+                <Text style={styles.publicMetaLine}>No launch cities listed yet.</Text>
+              )}
               {zoneDetail.data ? (
                 <Text style={styles.publicMetaLine}>
-                  Active zone: {zoneDetail.data.name}
+                  Nearest zone: {zoneDetail.data.name}
                 </Text>
               ) : null}
-              {surge.data ? (
+              {surge.data?.isSurge ? (
                 <Text style={styles.publicMetaLine}>
-                  Surge:{' '}
-                  {surge.data.isSurge
-                    ? surge.data.multiplier
-                      ? `${surge.data.multiplier.toFixed(1)}x`
-                      : 'ON'
-                    : 'OFF'}
+                  Surge active
+                  {surge.data.multiplier
+                    ? ` · ${surge.data.multiplier.toFixed(1)}×`
+                    : ''}
                 </Text>
               ) : null}
             </View>
@@ -445,6 +510,26 @@ const styles = StyleSheet.create({
     fontFamily: fonts.ui,
     fontSize: 12,
     color: '#7C2D12',
+  },
+  cityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#FED7AA',
+  },
+  cityTextCol: { flex: 1 },
+  cityName: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 14,
+    color: '#431407',
+  },
+  cityHours: {
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    color: '#9A3412',
+    marginTop: 2,
   },
   manualWrapper: {
     paddingHorizontal: 16,

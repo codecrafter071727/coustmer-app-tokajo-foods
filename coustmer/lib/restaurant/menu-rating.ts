@@ -11,45 +11,45 @@ function parsePositiveNumber(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function tagValue(tags: unknown[], prefix: string): number | null {
-  const match = tags.find((t) =>
-    new RegExp(`^${prefix}:`, 'i').test(String(t))
-  );
-  if (!match) return null;
-  const value = Number(String(match).split(':')[1]);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-/** Menu dish rating: direct fields, then seed-rating:4.5 in tags. */
+/** Menu dish rating from API fields only — never invent seed tags. */
 export function getMenuItemRating(item: MenuItemRatingSource): number | null {
   if (!item) return null;
-
-  const direct = parsePositiveNumber(item.rating ?? item.avgRating);
-  if (direct != null) return direct;
-
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-  return tagValue(tags, 'seed-rating');
+  return parsePositiveNumber(item.rating ?? item.avgRating);
 }
 
-/** Review count from seed-reviews:120 in tags (optional display). */
+/** Review count from API fields only. */
 export function getMenuItemReviewCount(item: MenuItemRatingSource): number | null {
   if (!item) return null;
-
-  const direct = parsePositiveNumber(
+  return parsePositiveNumber(
     (item as Record<string, unknown>).reviewCount ??
       (item as Record<string, unknown>).totalRatings
   );
-  if (direct != null) return direct;
-
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-  return tagValue(tags, 'seed-reviews');
 }
 
-/** Restaurant rating: avgRating first, then rating. */
+function ratingFromBreakdown(source: Record<string, unknown>): number | null {
+  const breakdown = source.ratingBreakdown;
+  if (!breakdown || typeof breakdown !== 'object' || Array.isArray(breakdown)) return null;
+  const b = breakdown as Record<string, unknown>;
+  const counts = [1, 2, 3, 4, 5].map((star) => Number(b[String(star)] ?? 0));
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  if (total <= 0) return null;
+  return counts.reduce((sum, n, i) => sum + n * (i + 1), 0) / total;
+}
+
+/** Restaurant rating: avgRating, rating, nested ratings, then star histogram. */
 export function getRestaurantRating(source: MenuItemRatingSource): number | null {
   if (!source) return null;
+  const rec = source as Record<string, unknown>;
+  const nested =
+    rec.ratings && typeof rec.ratings === 'object' && !Array.isArray(rec.ratings)
+      ? (rec.ratings as Record<string, unknown>)
+      : null;
   return (
     parsePositiveNumber(source.avgRating) ??
-    parsePositiveNumber(source.rating)
+    parsePositiveNumber(source.rating) ??
+    parsePositiveNumber(nested?.average) ??
+    parsePositiveNumber(nested?.avgRating) ??
+    parsePositiveNumber(nested?.avg) ??
+    ratingFromBreakdown(rec)
   );
 }

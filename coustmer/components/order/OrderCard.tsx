@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/typography';
+import { useRepeatOrder } from '@/lib/cart/hooks';
 import { useReorder } from '@/lib/order/hooks';
 import { ORDER_STATUS_LABELS, type Order } from '@/lib/order/types';
 
@@ -41,6 +42,7 @@ const FALLBACK_IMAGE =
 export function OrderCard({ order }: Props) {
   const router = useRouter();
   const reorder = useReorder(order.id);
+  const repeatOrder = useRepeatOrder();
   const [expanded, setExpanded] = useState(false);
 
   const headline =
@@ -93,6 +95,19 @@ export function OrderCard({ order }: Props) {
       {
         text: 'Order again',
         onPress: async () => {
+          try {
+            await repeatOrder.mutateAsync(order.id);
+            Alert.alert('Added to cart', 'Your previous order items were added again.', [
+              {
+                text: 'Go to cart',
+                onPress: () => router.push('/cart' as import('expo-router').Href),
+              },
+            ]);
+            return;
+          } catch {
+            // Fallback to order-service reorder for older backend variants.
+          }
+
           try {
             const next = await reorder.mutateAsync();
             if (next.mode === 'order' && next.order?.id) {

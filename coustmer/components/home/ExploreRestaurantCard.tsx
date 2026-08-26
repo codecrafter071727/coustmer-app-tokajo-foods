@@ -6,12 +6,19 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { FavoriteHeartButton } from '@/components/common/FavoriteHeartButton';
 import { VegMarkIcon } from '@/components/home/VegMarkIcon';
+import {
+  RestaurantClosedOverlay,
+  RestaurantSurgeBadge,
+} from '@/components/restaurant/RestaurantCardOverlays';
 import { fonts } from '@/constants/typography';
 import {
+  restaurantClosedLabel,
   restaurantEtaLabel,
+  restaurantIsClosed,
   restaurantOfferBadges,
   restaurantRatingCount,
   restaurantStars,
+  formatDistanceKm,
 } from '@/lib/restaurant/card-display';
 import type { Restaurant } from '@/lib/restaurant/types';
 
@@ -21,6 +28,7 @@ type Props = {
   favoriteLoading?: boolean;
   onToggleFavorite?: (id: string) => void;
   onPress?: () => void;
+  surgeChipLabel?: string | null;
 };
 
 function offerOverlay(restaurant: Restaurant) {
@@ -51,25 +59,25 @@ export function ExploreRestaurantCard({
   favoriteLoading,
   onToggleFavorite,
   onPress,
+  surgeChipLabel,
 }: Props) {
   const cover = restaurant.coverUrl || restaurant.imageUrl || restaurant.logoUrl;
   const rating = restaurantStars(restaurant);
   const reviews = formatReviews(restaurantRatingCount(restaurant));
+  const isClosed = restaurantIsClosed(restaurant);
+  const closedCopy = restaurantClosedLabel(restaurant);
   const cuisines =
     (restaurant.cuisines ?? []).slice(0, 3).join(', ') || 'Restaurant';
   const time = restaurantEtaLabel(restaurant) || undefined;
   const offer = offerOverlay(restaurant);
   const area = areaLabel(restaurant);
-  const distance =
-    typeof restaurant.distance === 'number' && restaurant.distance > 0
-      ? `${restaurant.distance.toFixed(1)} km`
-      : null;
+  const distance = formatDistanceKm(restaurant.distance);
 
   const costText = restaurant.costForTwo
     ? `₹${restaurant.costForTwo} for two`
     : restaurant.priceForTwo
       ? `₹${restaurant.priceForTwo} for two`
-      : '₹200 for two';
+      : null;
 
   return (
     <View style={styles.card}>
@@ -90,6 +98,10 @@ export function ExploreRestaurantCard({
             ) : (
               <View style={[styles.image, styles.imageFallback]} />
             )}
+
+            {surgeChipLabel ? (
+              <RestaurantSurgeBadge label={surgeChipLabel} />
+            ) : null}
 
             {offer ? (
               <LinearGradient
@@ -113,6 +125,8 @@ export function ExploreRestaurantCard({
                 <Text style={styles.timeBadgeText}>{time.toUpperCase()}</Text>
               </View>
             ) : null}
+
+            {isClosed ? <RestaurantClosedOverlay restaurant={restaurant} /> : null}
 
             {/* Icons top right */}
             <View style={styles.topRightIcons}>
@@ -166,7 +180,12 @@ export function ExploreRestaurantCard({
                   </Text>
                   <Text style={styles.dot}>•</Text>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <Text style={styles.noRatings}>No ratings</Text>
+                  {area || distance ? <Text style={styles.dot}>•</Text> : null}
+                </>
+              )}
               {area || distance ? (
                 <Text style={styles.locationInfo} numberOfLines={1}>
                   {[area, distance].filter(Boolean).join(', ')}
@@ -175,8 +194,15 @@ export function ExploreRestaurantCard({
             </View>
 
             <Text style={styles.cuisine} numberOfLines={1}>
-              {cuisines} • {costText}
+              {[cuisines, costText, isClosed && closedCopy ? closedCopy : null]
+                .filter(Boolean)
+                .join(' • ')}
             </Text>
+            {restaurant.hoursToday ? (
+              <Text style={styles.hoursToday} numberOfLines={1}>
+                {restaurant.hoursToday}
+              </Text>
+            ) : null}
           </View>
         </Pressable>
       </View>
@@ -368,6 +394,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4B5563',
   },
+  noRatings: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
   dot: {
     fontSize: 14,
     fontWeight: '700',
@@ -384,6 +415,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  hoursToday: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   skelBlock: {
     backgroundColor: '#E5E7EB',

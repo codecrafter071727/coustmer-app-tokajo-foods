@@ -36,6 +36,8 @@ export type HomeFilterState = {
   pureVeg: boolean;
   noPackagingCharge: boolean;
   lowPlastic: boolean;
+  /** Server-side GET /restaurants/nearby?hygiene=1 (score ≥ 4). Off by default. */
+  hygieneRatedOnly: boolean;
   /** Prefer nearby restaurants (distance). */
   nearOnly: boolean;
 };
@@ -50,6 +52,7 @@ export const DEFAULT_HOME_FILTERS: HomeFilterState = {
   pureVeg: false,
   noPackagingCharge: false,
   lowPlastic: false,
+  hygieneRatedOnly: false,
   nearOnly: false,
 };
 
@@ -269,6 +272,7 @@ export function countActiveHomeFilters(filters: HomeFilterState): number {
   if (filters.pureVeg) n += 1;
   if (filters.noPackagingCharge) n += 1;
   if (filters.lowPlastic) n += 1;
+  if (filters.hygieneRatedOnly) n += 1;
   return n;
 }
 
@@ -308,6 +312,12 @@ export function applyHomeFilters(
 
   if (filters.lowPlastic) {
     list = list.filter((r) => hasLowPlasticPackaging(r));
+  }
+
+  if (filters.hygieneRatedOnly) {
+    list = list.filter(
+      (r) => typeof r.hygieneScore === 'number' && r.hygieneScore >= 4
+    );
   }
 
   if (filters.nearOnly) {

@@ -2,15 +2,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import type { CartModifier } from '@/lib/cart/types';
+import {
+  cartLineLocalId,
+  sameModifiers,
+} from '@/lib/cart/modifiers';
+
 export type CartItem = {
   id: string;
   menuItemId?: string;
   name: string;
+  /** Unit price including selected modifiers. */
   price: number;
+  basePrice?: number;
   quantity: number;
   isVeg?: boolean;
   imageUrl?: string;
   specialInstructions?: string;
+  modifiers?: CartModifier[];
 };
 
 type CartRestaurant = {
@@ -106,9 +115,17 @@ export const useCartStore = create<CartState>()(
         }
 
         const qty = Math.max(1, item.quantity ?? 1);
-        const key = item.menuItemId || item.id;
+        const menuItemId = item.menuItemId || item.id;
+        const lineId =
+          item.id && item.id !== menuItemId
+            ? item.id
+            : cartLineLocalId(menuItemId, item.modifiers);
         const existing = state.items.find(
-          (i) => i.id === item.id || i.menuItemId === key || i.id === key
+          (i) =>
+            (i.id === lineId ||
+              i.id === item.id ||
+              (i.menuItemId || i.id) === menuItemId) &&
+            sameModifiers(i.modifiers, item.modifiers)
         );
 
         set({
@@ -123,14 +140,16 @@ export const useCartStore = create<CartState>()(
             : [
                 ...state.items,
                 {
-                  id: item.id,
-                  menuItemId: item.menuItemId || item.id,
+                  id: lineId,
+                  menuItemId,
                   name: item.name,
                   price: item.price,
+                  basePrice: item.basePrice,
                   quantity: qty,
                   isVeg: item.isVeg,
                   imageUrl: item.imageUrl,
                   specialInstructions: item.specialInstructions,
+                  modifiers: item.modifiers?.length ? item.modifiers : undefined,
                 },
               ],
         });

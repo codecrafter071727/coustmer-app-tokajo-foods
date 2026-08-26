@@ -378,6 +378,30 @@ export function HomeFilterSheet({
                         Low plastic packaging
                       </Text>
                     </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.trustCard,
+                        draft.hygieneRatedOnly && styles.choiceCardOn,
+                      ]}
+                      onPress={() =>
+                        patch({ hygieneRatedOnly: !draft.hygieneRatedOnly })
+                      }
+                    >
+                      <ShieldCheck
+                        color={draft.hygieneRatedOnly ? '#EA580C' : '#64748B'}
+                        size={18}
+                        strokeWidth={2.2}
+                      />
+                      <Text
+                        style={[
+                          styles.trustLabel,
+                          draft.hygieneRatedOnly && styles.choiceLabelOn,
+                        ]}
+                      >
+                        Hygiene rated 4+
+                      </Text>
+                    </Pressable>
                   </View>
                 </View>
               ) : null}
@@ -439,6 +463,29 @@ export function HomeFilterSheet({
                         ]}
                       >
                         Low plastic packaging
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.trustCard,
+                        draft.hygieneRatedOnly && styles.choiceCardOn,
+                      ]}
+                      onPress={() =>
+                        patch({ hygieneRatedOnly: !draft.hygieneRatedOnly })
+                      }
+                    >
+                      <ShieldCheck
+                        color={draft.hygieneRatedOnly ? '#EA580C' : '#64748B'}
+                        size={18}
+                        strokeWidth={2.2}
+                      />
+                      <Text
+                        style={[
+                          styles.trustLabel,
+                          draft.hygieneRatedOnly && styles.choiceLabelOn,
+                        ]}
+                      >
+                        Hygiene rated 4+
                       </Text>
                     </Pressable>
                   </View>

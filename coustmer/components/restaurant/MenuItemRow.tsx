@@ -1,6 +1,6 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
-import { Minus, Plus, Star } from 'lucide-react-native';
+import { Minus, Plus, Star, UtensilsCrossed } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { VegBadge } from '@/components/restaurant/MenuBadges';
@@ -21,18 +21,27 @@ type Props = {
 };
 
 export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailable }: Props) {
-  const quantity = useCartStore(
-    (s) =>
-      s.items.find((i) => i.id === item.id || i.menuItemId === item.id)
-        ?.quantity || 0
+  const quantity = useCartStore((s) =>
+    s.items
+      .filter((i) => i.menuItemId === item.id || i.id === item.id)
+      .reduce((n, i) => n + i.quantity, 0)
   );
 
   const available = item.isAvailable !== false && !forceUnavailable;
+  const photoUri = item.imageUrl?.trim() || '';
+  const hasCustomizations =
+    item.hasCustomizations === true ||
+    (Array.isArray(item.modifierGroups) && item.modifierGroups.length > 0);
 
   const handleAdd = (e: any) => {
     e.stopPropagation?.();
     if (!available) return;
     playHapticFeedback();
+    // Customisable dishes always open the sheet so Half/Full / add-ons are chosen.
+    if (hasCustomizations && onAdd) {
+      onAdd();
+      return;
+    }
     if (quantity === 0 && onAdd) {
       onAdd();
     } else {
@@ -43,6 +52,10 @@ export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailabl
   const handleDecrement = (e: any) => {
     e.stopPropagation?.();
     playHapticFeedback();
+    if (hasCustomizations) {
+      onPress?.();
+      return;
+    }
     void decrementCartItem(item.id);
   };
 
@@ -95,15 +108,23 @@ export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailabl
 
       <View style={styles.rightCol}>
         <View style={styles.imageWrap}>
-          <Image
-            source={{
-              uri:
-                item.imageUrl ||
-                'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=200&auto=format&fit=crop',
-            }}
-            style={[styles.image, !available && styles.imageDim]}
-            contentFit="cover"
-          />
+          {photoUri ? (
+            <Image
+              source={{ uri: photoUri }}
+              style={[styles.image, !available && styles.imageDim]}
+              contentFit="cover"
+            />
+          ) : (
+            <View
+              style={[
+                styles.image,
+                styles.imagePlaceholder,
+                !available && styles.imageDim,
+              ]}
+            >
+              <UtensilsCrossed color="#94A3B8" size={22} strokeWidth={1.8} />
+            </View>
+          )}
           <View style={styles.addBtnWrap}>
             {!available ? (
               <View style={styles.unavailableBtn}>
@@ -129,7 +150,9 @@ export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailabl
               </View>
             ) : (
               <Pressable style={styles.addButton} onPress={handleAdd}>
-                <Text style={styles.addButtonText}>+ ADD</Text>
+                <Text style={styles.addButtonText}>
+                  {hasCustomizations ? 'CUSTOMISE' : '+ ADD'}
+                </Text>
               </Pressable>
             )}
           </View>
@@ -253,6 +276,13 @@ const styles = StyleSheet.create({
   },
   imageDim: {
     opacity: 0.55,
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   addBtnWrap: {
     position: 'absolute',

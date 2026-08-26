@@ -24,9 +24,16 @@ export type RestaurantCard = {
 
 export type HomeFeed = {
   banners: HomeBanner[];
-  trending: RestaurantCard[];
-  forYou: RestaurantCard[];
-  newlyAdded: RestaurantCard[];
+  radiusKm: number;
+  vegOnly: boolean;
+  trending: import('@/lib/home/types').HomeRestaurantCard[];
+  newlyAdded: import('@/lib/home/types').HomeRestaurantCard[];
+  topRated: import('@/lib/home/types').HomeRestaurantCard[];
+  pureVeg: import('@/lib/home/types').HomeRestaurantCard[];
+  forYou: import('@/lib/home/types').HomeRestaurantCard[];
+  orderAgain: import('@/lib/home/types').HomeOrderAgainCard[];
+  dishesToTry: import('@/lib/home/types').HomeTrendingDish[];
+  trendingDishes: import('@/lib/home/types').HomeTrendingDish[];
 };
 
 export type Deal = {

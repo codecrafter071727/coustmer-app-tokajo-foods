@@ -18,6 +18,7 @@ type Props = {
   onPressRestaurant?: (id: string) => void;
   loadingMore?: boolean;
   loading?: boolean;
+  surgeChipLabel?: string | null;
 };
 
 export function PopularRestaurantsSection({
@@ -30,6 +31,7 @@ export function PopularRestaurantsSection({
   onPressRestaurant,
   loadingMore,
   loading,
+  surgeChipLabel,
 }: Props) {
   const count = totalCount ?? restaurants.length;
   const heading =
@@ -60,6 +62,7 @@ export function PopularRestaurantsSection({
             <ExploreRestaurantCard
               key={item.id}
               restaurant={item}
+              surgeChipLabel={surgeChipLabel}
               isFavorite={favoriteIds.includes(item.id)}
               favoriteLoading={favoriteLoadingId === item.id}
               onToggleFavorite={onToggleFavorite}

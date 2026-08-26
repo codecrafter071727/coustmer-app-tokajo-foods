@@ -31,7 +31,8 @@ import type {
   SupportTicket,
   UpdateCustomerPrefsPayload,
 } from '@/lib/customer/types';
-import { mapKitchenAlert, mapRestaurant } from '@/lib/restaurant/mappers';
+import { mapRestaurant } from '@/lib/restaurant/mappers';
+import { mapHomeFeedPayload } from '@/lib/home/feed-mappers';
 import type { KitchenAlert } from '@/lib/restaurant/types';
 const CUSTOMER_BASE = '/api/v1/customer-service/customers';
 
@@ -310,50 +311,50 @@ export const customerApi = {
     }
   },
 
-  /** GET /customers/home?lat=&lng= — home rails with open+closed cards */
-  getHome: async (coords?: { lat: number; lng: number }): Promise<HomeFeed> => {
-    const params = coords?.lat && coords?.lng
-      ? `?lat=${coords.lat}&lng=${coords.lng}`
-      : '';
+  /** GET /customers/home?lat=&lng=&radius= — location-aware home rails */
+  getHome: async (coords?: {
+    lat: number;
+    lng: number;
+    radius?: number;
+  }): Promise<HomeFeed> => {
+    const params = new URLSearchParams();
+    if (coords?.lat != null && coords?.lng != null) {
+      params.set('lat', String(coords.lat));
+      params.set('lng', String(coords.lng));
+      if (coords.radius != null) {
+        params.set('radius', String(coords.radius));
+      }
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await request<HomeFeed & Record<string, unknown>>(
-      `${CUSTOMER_BASE}/home${params}`
+      `${CUSTOMER_BASE}/home${qs}`
     );
     const data = (res.data ?? res ?? {}) as Record<string, unknown>;
     const banners = unwrapList(
       data.banners ?? data.banner ?? data.promos
     ).map(mapBanner);
 
-    return {
-      banners,
-      trending: pickRestaurantList(
-        data,
-        'trending',
-        'popular',
-        'popularRestaurants',
-        'featured'
-      ),
-      forYou: pickRestaurantList(
-        data,
-        'forYou',
-        'recommended',
-        'recommendations',
-        'featuredRestaurants',
-        'personalized'
-      ),
-      newlyAdded: pickRestaurantList(
-        data,
-        'newlyAdded',
-        'new',
-        'recentlyAdded',
-        'newRestaurants'
-      ),
-    };
+    return mapHomeFeedPayload(data, banners);
   },
 
-  /** GET /customers/deals — also tries /customer-service/deals */
-  getDeals: async (): Promise<Deal[]> => {
+  /** GET /customers/deals?lat=&lng=&radius= — deals near delivery pin */
+  getDeals: async (coords?: {
+    lat: number;
+    lng: number;
+    radius?: number;
+  }): Promise<Deal[]> => {
+    const params = new URLSearchParams();
+    if (coords?.lat != null && coords?.lng != null) {
+      params.set('lat', String(coords.lat));
+      params.set('lng', String(coords.lng));
+      if (coords.radius != null) {
+        params.set('radius', String(coords.radius));
+      }
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
     try {
-      const res = await request<unknown>(`${CUSTOMER_BASE}/deals`);
+      const res = await request<unknown>(`${CUSTOMER_BASE}/deals${qs}`);
       const list = unwrapList(res.data ?? res);
       if (list.length) return list.map(mapDeal);
     } catch {
@@ -361,24 +362,30 @@ export const customerApi = {
     }
 
     try {
-      const res = await request<unknown>('/api/v1/customer-service/deals');
+      const res = await request<unknown>(`/api/v1/customer-service/deals${qs}`);
       const list = unwrapList(res.data ?? res);
       if (list.length) return list.map(mapDeal);
     } catch {
       // fall through
     }
 
-    // Fallback: Fetch aggregate offers from all restaurants directly since the customer deals endpoint might throw 401
+    if (!coords?.lat || !coords?.lng) {
+      return [];
+    }
+
+    // Fallback when geo deals endpoint unavailable
     try {
       const { restaurantApi } = await import('@/lib/restaurant/api');
       const { restaurantOffersApi } = await import('@/lib/restaurant/offers-api');
-      
+
       const { restaurants } = await restaurantApi.getAllRestaurants({ limit: 100 });
-      const offersPromises = restaurants.map(r => restaurantOffersApi.getOffers(r.id).catch(() => ({ offers: [] })));
+      const offersPromises = restaurants.map((r) =>
+        restaurantOffersApi.getOffers(r.id).catch(() => ({ offers: [] }))
+      );
       const results = await Promise.all(offersPromises);
-      
+
       const allDeals = results.flatMap((res, i) => {
-        return res.offers.map(offer => {
+        return res.offers.map((offer) => {
           return {
             id: offer.id,
             title: offer.title,
@@ -387,14 +394,14 @@ export const customerApi = {
             imageUrl: offer.imageUrl,
             type: offer.type,
             value: offer.value,
-            restaurantId: offer.restaurantId || restaurants[i].id
+            restaurantId: offer.restaurantId || restaurants[i].id,
           } as Deal;
         });
       });
-      
+
       if (allDeals.length > 0) return allDeals;
     } catch (e) {
-      console.warn("Failed to fetch aggregate deals from restaurants:", e);
+      console.warn('Failed to fetch aggregate deals from restaurants:', e);
     }
 
     return [];
@@ -411,8 +418,12 @@ export const customerApi = {
   },
 
   /** Deals only — banners come from useHomeFeed directly. */
-  getOffersFeed: async (): Promise<{ banners: HomeBanner[]; deals: Deal[] }> => {
-    const deals = await customerApi.getDeals().catch(() => [] as Deal[]);
+  getOffersFeed: async (coords?: {
+    lat: number;
+    lng: number;
+    radius?: number;
+  }): Promise<{ banners: HomeBanner[]; deals: Deal[] }> => {
+    const deals = await customerApi.getDeals(coords).catch(() => [] as Deal[]);
     return { banners: [], deals };
   },
 

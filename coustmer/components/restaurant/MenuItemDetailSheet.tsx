@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -28,6 +29,8 @@ import {
   decrementCartItem,
   incrementCartItem,
 } from '@/lib/order/add-to-cart';
+import { sameModifiers } from '@/lib/cart/modifiers';
+import type { CartModifier } from '@/lib/cart/types';
 import {
   useItemCustomizations,
   useKitchenAlerts,
@@ -54,7 +57,54 @@ function isSingleSelect(group: CustomizationGroup) {
     return false;
   }
   if (typeof group.max === 'number' && group.max > 1) return false;
-  return true;
+  if (typeof group.max === 'number' && group.max === 1) return true;
+  if (group.required && (group.min ?? 1) >= 1 && (group.max == null || group.max === 1)) {
+    return true;
+  }
+  return (group.max ?? 1) <= 1;
+}
+
+function buildSelectedModifiers(
+  groups: CustomizationGroup[],
+  selected: Record<string, string[]>
+): CartModifier[] {
+  const out: CartModifier[] = [];
+  for (const group of groups) {
+    const ids = new Set(selected[group.id] ?? []);
+    for (const opt of group.options) {
+      if (!ids.has(opt.id)) continue;
+      out.push({
+        groupId: group.id,
+        groupName: group.name,
+        optionId: opt.id,
+        optionName: opt.name,
+        price: Math.max(0, Number(opt.price) || 0),
+      });
+    }
+  }
+  return out;
+}
+
+function validateSelections(
+  groups: CustomizationGroup[],
+  selected: Record<string, string[]>
+): string | null {
+  for (const group of groups) {
+    const count = (selected[group.id] ?? []).filter((id) =>
+      group.options.some((o) => o.id === id && o.isAvailable !== false)
+    ).length;
+    const min = group.required
+      ? Math.max(1, group.min ?? 1)
+      : Math.max(0, group.min ?? 0);
+    const max = group.max ?? (isSingleSelect(group) ? 1 : 99);
+    if (count < min) {
+      return `Choose ${min === 1 ? 'an option' : `${min} options`} for ${group.name}`;
+    }
+    if (count > max) {
+      return `You can pick at most ${max} for ${group.name}`;
+    }
+  }
+  return null;
 }
 
 export function MenuItemDetailSheet({
@@ -93,46 +143,41 @@ export function MenuItemDetailSheet({
   }, [item, detailQuery.data]);
 
   const groups = customizations.data ?? [];
+  const selectedModifiers = useMemo(
+    () => buildSelectedModifiers(groups, selected),
+    [groups, selected]
+  );
 
   useEffect(() => {
     setFavorited(false);
     const next: Record<string, string[]> = {};
     for (const group of groups) {
-      const first = group.options.find((o) => o.isAvailable !== false);
-      if (group.required && first) next[group.id] = [first.id];
-      else next[group.id] = [];
+      const availableOpts = group.options.filter((o) => o.isAvailable !== false);
+      const defaults = availableOpts.filter((o) => o.isDefault).map((o) => o.id);
+      if (defaults.length) {
+        next[group.id] = isSingleSelect(group) ? defaults.slice(0, 1) : defaults;
+      } else if (group.required && availableOpts[0]) {
+        next[group.id] = [availableOpts[0].id];
+      } else {
+        next[group.id] = [];
+      }
     }
     setSelected(next);
   }, [itemId, groups]);
 
-  const extraPrice = useMemo(() => {
-    let sum = 0;
-    for (const group of groups) {
-      const ids = new Set(selected[group.id] ?? []);
-      for (const opt of group.options) {
-        if (ids.has(opt.id)) sum += opt.price || 0;
-      }
-    }
-    return sum;
-  }, [groups, selected]);
-
-  const extrasLabel = useMemo(() => {
-    const names: string[] = [];
-    for (const group of groups) {
-      const ids = new Set(selected[group.id] ?? []);
-      for (const opt of group.options) {
-        if (ids.has(opt.id)) names.push(opt.name);
-      }
-    }
-    return names.join(', ');
-  }, [groups, selected]);
-
-  const quantity = useCartStore(
-    (s) =>
-      s.items.find(
-        (i) => i.id === displayItem?.id || i.menuItemId === displayItem?.id
-      )?.quantity || 0
+  const extraPrice = useMemo(
+    () => selectedModifiers.reduce((sum, m) => sum + m.price, 0),
+    [selectedModifiers]
   );
+
+  const quantity = useCartStore((s) => {
+    const line = s.items.find(
+      (i) =>
+        (i.menuItemId === displayItem?.id || i.id === displayItem?.id) &&
+        sameModifiers(i.modifiers, selectedModifiers)
+    );
+    return line?.quantity || 0;
+  });
 
   const available = displayItem?.isAvailable !== false;
   const watchingStock = (alerts.data ?? []).some(
@@ -162,30 +207,50 @@ export function MenuItemDetailSheet({
 
   const handleAdd = () => {
     if (!displayItem || !available) return;
+    const validationError = validateSelections(groups, selected);
+    if (validationError) {
+      Alert.alert('Choose options', validationError);
+      return;
+    }
     playHapticFeedback();
 
+    const basePrice = displayItem.price ?? 0;
     if (quantity === 0) {
       addMenuItemToCart(
-        {
-          ...displayItem,
-          price: (displayItem.price ?? 0) + extraPrice,
-          specialInstructions: extrasLabel || undefined,
-        } as MenuItem,
+        displayItem,
         {
           id: restaurantId,
           name: restaurantName,
           imageUrl: restaurantImageUrl,
+        },
+        {
+          basePrice,
+          modifiers: selectedModifiers,
         }
       );
     } else {
-      void incrementCartItem(displayItem.id);
+      const line = useCartStore
+        .getState()
+        .items.find(
+          (i) =>
+            (i.menuItemId === displayItem.id || i.id === displayItem.id) &&
+            sameModifiers(i.modifiers, selectedModifiers)
+        );
+      void incrementCartItem(line?.id || displayItem.id);
     }
   };
 
   const handleDecrement = () => {
     if (!displayItem) return;
     playHapticFeedback();
-    void decrementCartItem(displayItem.id);
+    const line = useCartStore
+      .getState()
+      .items.find(
+        (i) =>
+          (i.menuItemId === displayItem.id || i.id === displayItem.id) &&
+          sameModifiers(i.modifiers, selectedModifiers)
+      );
+    void decrementCartItem(line?.id || displayItem.id);
   };
 
   if (!displayItem) return null;
@@ -219,15 +284,15 @@ export function MenuItemDetailSheet({
             bounces={false}
           >
             <View style={styles.heroWrap}>
-              <Image
-                source={{
-                  uri:
-                    displayItem.imageUrl ||
-                    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=600&auto=format&fit=crop',
-                }}
-                style={[styles.heroImg, !available && styles.heroDim]}
-                contentFit="cover"
-              />
+              {displayItem.imageUrl ? (
+                <Image
+                  source={{ uri: displayItem.imageUrl }}
+                  style={[styles.heroImg, !available && styles.heroDim]}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={[styles.heroImg, styles.heroPlaceholder, !available && styles.heroDim]} />
+              )}
               <View style={styles.heroActions}>
                 <Pressable style={styles.iconCircle}>
                   <Share2 color="#E87431" size={18} strokeWidth={2.5} />
@@ -273,11 +338,26 @@ export function MenuItemDetailSheet({
               <Text style={styles.priceText}>₹{unitPrice}</Text>
             </View>
 
-            {groups.map((group) => (
+            {customizations.isError ? (
+              <Text style={styles.customizationsError}>
+                Couldn’t load options. Pull to close and try again.
+              </Text>
+            ) : null}
+
+            {groups.map((group) => {
+              const single = isSingleSelect(group);
+              return (
               <View key={group.id} style={styles.optionsCard}>
                 <Text style={styles.optionsTitle}>
                   {group.name}
                   {group.required ? ' *' : ''}
+                </Text>
+                <Text style={styles.optionsHint}>
+                  {single
+                    ? 'Select one'
+                    : `Select up to ${group.max ?? 'any'}${
+                        group.min ? ` · min ${group.min}` : ''
+                      }`}
                 </Text>
                 {group.options.map((opt) => {
                   const on = (selected[group.id] ?? []).includes(opt.id);
@@ -292,11 +372,17 @@ export function MenuItemDetailSheet({
                       <View style={styles.radioContainer}>
                         <View
                           style={[
-                            styles.radioOuter,
-                            on && styles.radioOuterSelected,
+                            single ? styles.radioOuter : styles.checkOuter,
+                            on && (single ? styles.radioOuterSelected : styles.checkOuterSelected),
                           ]}
                         >
-                          {on ? <View style={styles.radioInner} /> : null}
+                          {on ? (
+                            single ? (
+                              <View style={styles.radioInner} />
+                            ) : (
+                              <Text style={styles.checkMark}>✓</Text>
+                            )
+                          ) : null}
                         </View>
                         <Text style={styles.optionName}>
                           {opt.name}
@@ -304,13 +390,14 @@ export function MenuItemDetailSheet({
                         </Text>
                       </View>
                       <Text style={styles.optionPrice}>
-                        {opt.price > 0 ? `+₹${opt.price}` : '₹0'}
+                        {opt.price > 0 ? `+₹${opt.price}` : 'Included'}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
 
           <View style={[styles.bottomBarWrap, { paddingBottom: 12 }]}>
@@ -444,6 +531,9 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#FFFFFF',
   },
+  heroPlaceholder: {
+    backgroundColor: '#F1F5F9',
+  },
   heroDim: {
     opacity: 0.55,
   },
@@ -541,7 +631,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#202020',
-    marginBottom: 16,
+    marginBottom: 4,
+  },
+  optionsHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  customizationsError: {
+    marginHorizontal: 4,
+    marginBottom: 12,
+    fontSize: 13,
+    color: '#B91C1C',
+    fontWeight: '600',
   },
   optionRow: {
     flexDirection: 'row',
@@ -576,6 +679,26 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: '#E87431',
+  },
+  checkOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#9CA3AF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkOuterSelected: {
+    borderColor: '#E87431',
+    backgroundColor: '#E87431',
+  },
+  checkMark: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 14,
   },
   optionName: {
     fontSize: 16,

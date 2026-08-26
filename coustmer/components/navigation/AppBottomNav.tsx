@@ -12,6 +12,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fonts } from '@/constants/typography';
+import { useCartSummary } from '@/lib/cart/hooks';
 import { useCartStore } from '@/store/cart-store';
 
 /** Space to leave above the floating tab bar on root tab screens. */
@@ -87,7 +88,12 @@ export function AppBottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const cartCount = useCartStore((s) => s.totalItems());
+  const localCartCount = useCartStore((s) => s.totalItems());
+  const summary = useCartSummary(true);
+  const cartCount =
+    typeof summary.data?.itemCount === 'number'
+      ? summary.data.itemCount
+      : localCartCount;
 
   const path = pathname.split('?')[0] ?? pathname;
   const onTabRoot = isAppTabRoot(path);

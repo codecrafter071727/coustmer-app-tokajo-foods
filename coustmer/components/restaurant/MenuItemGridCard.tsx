@@ -41,12 +41,14 @@ function originalPrice(item: MenuItem): number | null {
 export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
   const highlight = useSharedValue(0);
   const was = originalPrice(item);
-  
-  const quantity = useCartStore(
-    (s) =>
-      s.items.find(
-        (i) => i.id === item.id || i.menuItemId === item.id
-      )?.quantity || 0
+  const hasCustomizations =
+    item.hasCustomizations === true ||
+    (Array.isArray(item.modifierGroups) && item.modifierGroups.length > 0);
+
+  const quantity = useCartStore((s) =>
+    s.items
+      .filter((i) => i.id === item.id || i.menuItemId === item.id)
+      .reduce((n, i) => n + i.quantity, 0)
   );
 
   useEffect(() => {
@@ -74,6 +76,12 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
     transform: [{ scale: 1 + highlight.value * 0.01 }],
   }));
 
+  const openCustomise = () => {
+    playHapticFeedback();
+    if (onAdd) onAdd();
+    else onPress?.();
+  };
+
   return (
     <Animated.View style={[styles.wrap, highlightStyle]}>
       <Pressable onPress={onPress} style={styles.card}>
@@ -91,7 +99,7 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
           )}
 
           {item.isAvailable !== false ? (
-            quantity > 0 ? (
+            quantity > 0 && !hasCustomizations ? (
               <View style={styles.gridStepperWrap}>
                 <Pressable
                   style={styles.gridStepperBtn}
@@ -123,12 +131,17 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
                 hitSlop={6}
                 onPress={(e) => {
                   e.stopPropagation?.();
-                  playHapticFeedback();
-                  onAdd?.();
+                  openCustomise();
                 }}
-                accessibilityLabel={`Add ${item.name}`}
+                accessibilityLabel={
+                  hasCustomizations ? `Customise ${item.name}` : `Add ${item.name}`
+                }
               >
-                <Plus color="#FFFFFF" size={18} strokeWidth={2.8} />
+                {quantity > 0 && hasCustomizations ? (
+                  <Text style={styles.qtyBadgeText}>{quantity}</Text>
+                ) : (
+                  <Plus color="#FFFFFF" size={18} strokeWidth={2.8} />
+                )}
               </Pressable>
             )
           ) : (
@@ -260,5 +273,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800',
+  },
+  qtyBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    minWidth: 14,
+    textAlign: 'center',
   },
 });

@@ -1,14 +1,14 @@
 import {
-  coverFallbackForCuisines,
   firstImageFromList,
+  onlyApiMediaUrl,
   resolveMediaUrl,
 } from '@/lib/restaurant/media';
-import { menuItemImageForName } from '@/lib/restaurant/menu-item-images';
 import {
   getMenuItemRating,
   getMenuItemReviewCount,
   getRestaurantRating,
 } from '@/lib/restaurant/menu-rating';
+import { isPlaceholderListingEta } from '@/lib/restaurant/card-display';
 import type {
   CuisineChip,
   CustomizationGroup,
@@ -27,6 +27,39 @@ import type {
 
 function parseRating(data: Record<string, unknown>): number | undefined {
   return getRestaurantRating(data) ?? undefined;
+}
+
+function parseReviewCount(data: Record<string, unknown>): number | undefined {
+  const nested =
+    data.ratings && typeof data.ratings === 'object' && !Array.isArray(data.ratings)
+      ? (data.ratings as Record<string, unknown>)
+      : null;
+  const n = Number(
+    data.totalRatings ??
+      data.reviewCount ??
+      data.totalReviews ??
+      data.reviews ??
+      nested?.count ??
+      nested?.total ??
+      nested?.totalRatings
+  );
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function listingEtaLabel(
+  data: Record<string, unknown>
+): string | undefined {
+  const travelIncluded =
+    typeof data.travelIncluded === 'boolean' ? data.travelIncluded : undefined;
+  if (travelIncluded === false) return undefined;
+  const label =
+    (typeof data.deliveryTimeLabel === 'string' && data.deliveryTimeLabel.trim()) ||
+    (typeof data.etaLabel === 'string' && data.etaLabel.trim()) ||
+    (typeof data.deliveryTime === 'string' && data.deliveryTime.trim()) ||
+    undefined;
+  if (!label) return undefined;
+  if (isPlaceholderListingEta(label)) return undefined;
+  return label;
 }
 
 /**
@@ -116,32 +149,27 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
   const fromImages = firstImageFromList(data.images);
 
   const logoUrl =
-    resolveMediaUrl(
+    onlyApiMediaUrl(
       (data.logoUrl as string) ||
         (data.logo as string) ||
         (data.logoImage as string)
     ) || undefined;
 
   const coverUrl =
-    resolveMediaUrl(
+    onlyApiMediaUrl(
       (data.coverUrl as string) ||
         (data.coverImage as string) ||
         (data.bannerUrl as string) ||
         (data.banner as string)
     ) ||
-    fromImages ||
+    onlyApiMediaUrl(fromImages) ||
     undefined;
 
+  // Only real partner media — never invent stock covers.
   const imageUrl =
-    resolveMediaUrl(data.imageUrl as string) ||
+    onlyApiMediaUrl(data.imageUrl as string) ||
     coverUrl ||
-    logoUrl ||
-    coverFallbackForCuisines(cuisines);
-
-  const prep =
-    typeof data.settings === 'object' && data.settings
-      ? Number((data.settings as Record<string, unknown>).avgPrepTime)
-      : undefined;
+    logoUrl;
 
   const settings =
     data.settings && typeof data.settings === 'object'
@@ -194,24 +222,21 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
     coverUrl: coverUrl || imageUrl,
     logoUrl,
     rating: parseRating(data),
-    reviewCount:
-      typeof data.reviewCount === 'number'
-        ? data.reviewCount
-        : Number(data.totalReviews ?? data.reviews ?? data.totalRatings) || undefined,
+    reviewCount: parseReviewCount(data),
     cuisines,
     menuCategories,
     tags,
     slug: (data.slug as string) || undefined,
     avgRating: parseRating(data),
-    totalRatings:
-      typeof data.totalRatings === 'number'
-        ? data.totalRatings
-        : Number(data.reviewCount ?? data.totalReviews) || undefined,
+    totalRatings: parseReviewCount(data),
     offerBadges: extractOfferBadges(data),
-    deliveryTimeLabel:
-      (data.deliveryTimeLabel as string) ||
-      (data.etaLabel as string) ||
-      undefined,
+    hoursToday:
+      typeof data.hoursToday === 'string' && data.hoursToday.trim()
+        ? data.hoursToday.trim()
+        : undefined,
+    travelIncluded:
+      typeof data.travelIncluded === 'boolean' ? data.travelIncluded : undefined,
+    deliveryTimeLabel: listingEtaLabel(data),
     promiseMinutes:
       typeof data.promiseMinutes === 'number'
         ? data.promiseMinutes
@@ -227,16 +252,16 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
     isOpenNow:
       typeof data.isOpenNow === 'boolean' ? data.isOpenNow : undefined,
     nextOpenAt: (data.nextOpenAt as string) || undefined,
-    deliveryTime:
-      (data.deliveryTimeLabel as string) ||
-      (data.deliveryTime as string) ||
-      (typeof data.promiseMinutes === 'number' && data.promiseMinutes > 0
-        ? `${data.promiseMinutes} mins`
-        : undefined) ||
-      (data.avgDeliveryTime as string) ||
-      (typeof prep === 'number' && Number.isFinite(prep) && prep > 0
-        ? `${prep}–${prep + 10} mins`
-        : '25–35 mins'),
+    closedReason:
+      (data.closedReason as string) ||
+      ((data.availability as { closedReason?: string } | undefined)
+        ?.closedReason as string) ||
+      undefined,
+    zoneId:
+      (data.zoneId as string) ||
+      (data.zone as string) ||
+      undefined,
+    deliveryTime: listingEtaLabel(data),
     priceForTwo:
       typeof data.priceForTwo === 'number'
         ? data.priceForTwo
@@ -249,7 +274,11 @@ export function mapRestaurant(data: Record<string, unknown>): Restaurant {
     distance:
       typeof data.distance === 'number'
         ? data.distance
-        : Number(data.distanceKm) || undefined,
+        : typeof data.distanceKm === 'number'
+          ? data.distanceKm
+          : typeof data.distanceMeters === 'number' && data.distanceMeters > 0
+            ? data.distanceMeters / 1000
+            : Number(data.distanceKm) || undefined,
     isOpen: resolveIsOpen(data),
     address,
     city: (data.city as string) || cityFromAddress || undefined,
@@ -463,6 +492,7 @@ export function mapCustomizationGroup(
           isVeg: typeof rec.isVeg === 'boolean' ? rec.isVeg : undefined,
           isAvailable:
             rec.isAvailable !== undefined ? Boolean(rec.isAvailable) : true,
+          isDefault: rec.isDefault === true,
         };
       })
     : [];
@@ -589,7 +619,7 @@ export function mapMenuItem(
   const itemId = String(data._id ?? data.id ?? '');
 
   const apiImage =
-    resolveMediaUrl(
+    onlyApiMediaUrl(
       (data.imageUrl as string) || (data.image as string) || imageFromList
     ) || undefined;
 
@@ -613,12 +643,20 @@ export function mapMenuItem(
       ? Boolean(data.isNew)
       : tags?.some((t) => t.toLowerCase() === 'new') ?? false;
 
+  const groupsRaw =
+    data.modifierGroups ?? data.customizations ?? data.groups ?? [];
+  const modifierGroups = Array.isArray(groupsRaw)
+    ? groupsRaw.map((row) =>
+        mapCustomizationGroup((row ?? {}) as Record<string, unknown>)
+      )
+    : [];
+
   const mapped: MenuItem = {
     id: itemId,
     name: itemName,
     description: (data.description as string) || undefined,
     price: Number(data.price ?? data.basePrice ?? 0),
-    imageUrl: apiImage || menuItemImageForName(itemId || itemName),
+    imageUrl: apiImage,
     categoryId: categoryIdRaw ? String(categoryIdRaw) : undefined,
     categoryName,
     isVeg: data.isVeg !== undefined ? Boolean(data.isVeg) : undefined,
@@ -639,6 +677,8 @@ export function mapMenuItem(
       : undefined,
     totalOrdered:
       typeof data.totalOrdered === 'number' ? data.totalOrdered : undefined,
+    modifierGroups: modifierGroups.length ? modifierGroups : undefined,
+    hasCustomizations: modifierGroups.length > 0,
   };
 
   return mapped;

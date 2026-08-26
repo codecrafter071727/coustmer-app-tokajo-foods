@@ -26,10 +26,12 @@ export function applyServerCartToStore(cart: Cart) {
     menuItemId: item.menuItemId,
     name: item.name,
     price: item.price,
+    basePrice: item.basePrice,
     quantity: item.quantity,
     isVeg: item.isVeg,
     imageUrl: item.imageUrl,
     specialInstructions: item.specialInstructions,
+    modifiers: item.modifiers?.length ? item.modifiers : undefined,
   }));
 
   store.hydrateFromServer({

@@ -1,7 +1,7 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Bike,
@@ -16,7 +16,7 @@ import {
   Tag,
   Wallet,
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -38,8 +38,11 @@ import { fonts } from '@/constants/typography';
 import {
   useApplyCoupon,
   useCart,
+  useCartBill,
+  useCartSlots,
   useClearRemoteCart,
   useRemoveCoupon,
+  useSetCartSchedule,
   useSaveCart,
   useUpdateCartDeliveryAddress,
   useUpdateCartDeliveryType,
@@ -49,6 +52,9 @@ import {
 import { applyServerCartToStore } from '@/lib/cart/sync';
 import { syncCartItemQuantity } from '@/lib/order/add-to-cart';
 import { DeliveryPreferences } from '@/components/order/DeliveryPreferences';
+import { BillDetailsSection } from '@/components/order/BillDetailsSection';
+import { AutoFreeDeliveryBanner } from '@/components/order/AutoFreeDeliveryBanner';
+import { ScheduleOrderSection } from '@/components/order/ScheduleOrderSection';
 import { CartSuggestionsFromStore } from '@/components/order/CartSuggestions';
 import { GroupOrderSheet } from '@/components/order/GroupOrderSheet';
 import { CouponPickerSheet } from '@/components/order/CouponPickerSheet';
@@ -58,6 +64,7 @@ import type { DeliveryLocationResult } from '@/components/location/DeliveryLocat
 import { parseDropPin } from '@/lib/location/drop-pin';
 import { extractCityFromAddress, normalizeCityName } from '@/lib/location/format';
 import { checkoutBlockCopy } from '@/lib/cart/checkout-block';
+import { mapBillBreakdown, DEFAULT_DELIVERY_FEE } from '@/lib/cart/bill';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
   useInitiatePayment,
@@ -71,7 +78,7 @@ import { useUserProfile } from '@/lib/profile/hooks';
 import { useAuthStore } from '@/store/auth-store';
 import { useCartStore } from '@/store/cart-store';
 import { useDeliveryLocationStore } from '@/store/delivery-location-store';
-import { PaymentOptionsModal } from './PaymentOptionsModal';
+import { paymentMethodLabel } from '@/lib/checkout/payment-display';
 import { OrderPlacementModal, PlacementPhase } from '@/components/order/OrderPlacementModal';
 import { PaymentGatewayWebView } from '@/components/payment/PaymentGatewayWebView';
 
@@ -85,49 +92,6 @@ const TEXT_SEC = '#64748B';
 const TEXT_MUTED = '#94A3B8';
 const BORDER = '#E5E7EB';
 const GREEN = '#16A34A';
-
-function paymentMethodLabel(
-  method: string,
-  savedMethods?: { id: string; type?: string; upiId?: string; brand?: string; last4?: string }[]
-): string {
-  switch (method) {
-    case 'cod':
-      return 'Pay on Delivery';
-    case 'paytm_upi':
-      return 'Paytm UPI';
-    case 'gpay':
-      return 'Google Pay';
-    case 'wallet':
-      return 'Tokajo Foods Wallet';
-    case 'card':
-      return 'Credit / Debit Card';
-    default: {
-      const saved = savedMethods?.find((m) => m.id === method);
-      if (!saved) return 'Choose payment';
-      if (saved.type === 'upi' && saved.upiId) return saved.upiId;
-      if (saved.type === 'card' && saved.last4) {
-        return `${(saved.brand || 'Card').toUpperCase()} •••• ${saved.last4}`;
-      }
-      return 'Saved payment';
-    }
-  }
-}
-
-function paymentMethodHint(method: string): string {
-  switch (method) {
-    case 'cod':
-      return 'Cash or UPI at delivery';
-    case 'paytm_upi':
-    case 'gpay':
-      return 'Pay instantly via UPI';
-    case 'wallet':
-      return 'Pay from Tokajo Foods Wallet';
-    case 'card':
-      return 'Secure card payment';
-    default:
-      return 'Tap to change';
-  }
-}
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
@@ -178,6 +142,7 @@ function CartItemCard({
     quantity: number;
     imageUrl?: string;
     isVeg?: boolean;
+    modifiers?: Array<{ optionName: string; groupName?: string; price?: number }>;
   };
   busy: boolean;
   onDecrement: () => void;
@@ -186,6 +151,10 @@ function CartItemCard({
   const imageUri =
     item.imageUrl ||
     'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=200&h=200&fit=crop';
+  const modifierLabel = (item.modifiers ?? [])
+    .map((m) => m.optionName)
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <View style={styles.itemCard}>
@@ -198,6 +167,11 @@ function CartItemCard({
         <Text style={styles.itemName} numberOfLines={2}>
           {item.name}
         </Text>
+        {modifierLabel ? (
+          <Text style={styles.itemModifiers} numberOfLines={2}>
+            {modifierLabel}
+          </Text>
+        ) : null}
         <Text style={styles.itemUnitPrice}>₹{item.price.toFixed(0)} each</Text>
         <View style={styles.itemBottomRow}>
           <Text style={styles.itemPrice}>
@@ -219,6 +193,7 @@ function CartItemCard({
 
 export function CartScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ checkoutNow?: string }>();
   const insets = useSafeAreaInsets();
   const token = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
@@ -232,6 +207,7 @@ export function CartScreen() {
   const deliveryFee = useCartStore((s) => s.deliveryFee);
   const tax = useCartStore((s) => s.tax);
   const deliveryType = useCartStore((s) => s.deliveryType);
+  const scheduledFor = useCartStore((s) => s.scheduledFor);
   const clearLocal = useCartStore((s) => s.clearCart);
   const tip = useCartStore((s) => s.tip);
   const setTip = useCartStore((s) => s.setTip);
@@ -249,6 +225,33 @@ export function CartScreen() {
   const [orderPlacementPhase, setOrderPlacementPhase] = useState<PlacementPhase>('none');
 
   const remoteCart = useCart();
+  const apiCart = remoteCart.data;
+  const isFocused = useIsFocused();
+
+  /** Pin for /cart/bill — header location first, then server cart address */
+  const billPin = useMemo(() => {
+    if (location?.lat != null && location?.lng != null) {
+      return { lat: location.lat, lng: location.lng };
+    }
+    const addr = apiCart?.deliveryAddress;
+    if (addr?.lat != null && addr?.lng != null) {
+      return { lat: addr.lat, lng: addr.lng };
+    }
+    return null;
+  }, [location?.lat, location?.lng, apiCart?.deliveryAddress]);
+
+  const normalizedDeliveryType =
+    deliveryType === 'takeaway' ? ('takeaway' as const) : ('delivery' as const);
+
+  const liveBill = useCartBill(
+    billPin?.lat,
+    billPin?.lng,
+    Boolean(items.length),
+    normalizedDeliveryType,
+    Boolean(items.length)
+  );
+  const slots = useCartSlots({ days: 7, enabled: isLoggedIn && items.length > 0 });
+  const setSchedule = useSetCartSchedule();
   const clearRemote = useClearRemoteCart();
   const updateAddress = useUpdateCartDeliveryAddress();
   const updateDeliveryType = useUpdateCartDeliveryType();
@@ -262,9 +265,7 @@ export function CartScreen() {
   const initiatePayment = useInitiatePayment();
   const verifyPayment = useVerifyPayment();
 
-  const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   const paymentMethod = useCartStore((s) => s.paymentMethod);
-  const setPaymentMethod = useCartStore((s) => s.setPaymentMethod);
   const [paying, setPaying] = useState(false);
 
   const [paymentGatewayOpen, setPaymentGatewayOpen] = useState(false);
@@ -281,61 +282,100 @@ export function CartScreen() {
 
   const couponApplied = Boolean(couponCode);
 
-  // Bill: prefer live cart API fields, but tip uses store value so UI updates immediately
-  const apiCart = remoteCart.data;
-  const billSubtotal =
-    typeof apiCart?.subtotal === 'number' ? apiCart.subtotal : subtotal;
-  const displayDeliveryFee =
-    typeof apiCart?.deliveryFee === 'number'
-      ? apiCart.deliveryFee
-      : Number(deliveryFee) || 0;
-  const displayDiscount =
-    typeof apiCart?.discount === 'number'
-      ? apiCart.discount
-      : Number(discount) || 0;
+  const cachedDeliveryFee = Math.max(
+    Number(deliveryFee) || 0,
+    Number(apiCart?.deliveryFee) || 0
+  );
 
-  const apiTip =
-    typeof apiCart?.tip === 'number' && Number.isFinite(apiCart.tip)
-      ? apiCart.tip
-      : 0;
-  // Bill tip = server cart tip; optimistic store tip only while PUT /tip is in flight
-  const displayTip = updateTip.isPending
-    ? Math.max(0, Number(tip) || 0)
-    : apiTip;
+  // Bill: live /cart/bill with store fallback for instant qty/tip updates.
+  const billSubtotal = subtotal;
+  const displayTip = Math.max(0, Number(tip) || 0);
 
-  const apiTax =
-    typeof apiCart?.tax === 'number' ? apiCart.tax : Number(tax) || 0;
-  const apiTotal =
-    typeof apiCart?.total === 'number'
-      ? apiCart.total
-      : typeof serverTotal === 'number'
-        ? serverTotal
-        : null;
+  const billBreakdown = useMemo(() => {
+    if (liveBill.data) return liveBill.data;
 
-  // Derive tax from API total using API tip (not the newly selected tip)
-  const displayTax = (() => {
-    if (apiTax > 0) return apiTax;
-    if (apiTotal != null) {
-      const withoutTax =
-        billSubtotal + displayDeliveryFee + apiTip - displayDiscount;
-      const implied = Math.round((apiTotal - withoutTax) * 100) / 100;
-      if (implied > 0.009) return implied;
+    const fee =
+      cachedDeliveryFee > 0 ? cachedDeliveryFee : 0;
+
+    return mapBillBreakdown({
+      itemsSubtotal: billSubtotal,
+      deliveryFee: fee,
+      deliveryFeeBase: fee > 0 ? DEFAULT_DELIVERY_FEE : undefined,
+      deliveryType: normalizedDeliveryType,
+      taxAmount: tax ?? apiCart?.tax ?? 0,
+      packagingCharge: (apiCart as { packagingCharge?: number })?.packagingCharge ?? 0,
+      platformFee: (apiCart as { platformFee?: number })?.platformFee,
+      tipAmount: displayTip,
+      discount: discount ?? apiCart?.discount ?? 0,
+      grandTotal: serverTotal ?? estimatedTotal,
+      superFreeDelivery: (apiCart as { superFreeDelivery?: boolean })?.superFreeDelivery,
+      serviceable: fee > 0 ? true : undefined,
+    });
+  }, [
+    liveBill.data,
+    billSubtotal,
+    cachedDeliveryFee,
+    normalizedDeliveryType,
+    tax,
+    apiCart,
+    displayTip,
+    discount,
+    serverTotal,
+    estimatedTotal,
+  ]);
+
+  // Validate cart on open so delivery fee is persisted on server (GET /cart/bill needs it).
+  useEffect(() => {
+    if (!isFocused || !items.length) return;
+    if (normalizedDeliveryType === 'takeaway') return;
+    if (!billPin) return;
+    if (liveBill.data?.billReady && (liveBill.data.deliveryFee > 0 || liveBill.data.superFreeDelivery)) {
+      return;
     }
-    return 0;
-  })();
 
-  // Rebuild total so selected tip always appears in To pay + bill row
+    void validateCart
+      .mutateAsync({ dropLat: billPin.lat, dropLng: billPin.lng })
+      .then((result) => {
+        if (result.cart) applyServerCartToStore(result.cart);
+        void liveBill.refetch();
+      })
+      .catch(() => {
+        void liveBill.refetch();
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isFocused,
+    items.length,
+    billPin?.lat,
+    billPin?.lng,
+    normalizedDeliveryType,
+  ]);
+
+  const feeForTotal =
+    billBreakdown.billReady && billBreakdown.deliveryFee > 0
+      ? billBreakdown.deliveryFee
+      : cachedDeliveryFee > 0
+      ? cachedDeliveryFee
+      : !liveBill.isLoading && (liveBill.isError || !billBreakdown.billReady) && billPin
+      ? DEFAULT_DELIVERY_FEE
+      : 0;
+
   const displayTotal = Math.max(
     0,
-    Math.round(
-      (billSubtotal +
-        displayDeliveryFee +
-        displayTax +
-        displayTip -
-        displayDiscount) *
-        100
-    ) / 100
+    billBreakdown.grandTotal > 0
+      ? billBreakdown.grandTotal
+      : Number(estimatedTotal) ||
+          Math.round(
+            (billSubtotal +
+              feeForTotal +
+              billBreakdown.taxesAndChargesTotal +
+              displayTip -
+              billBreakdown.discount) *
+              100
+          ) / 100
   );
+
+  const displayDiscount = billBreakdown.discount;
 
   const displayName =
     profile.data?.displayName ||
@@ -374,9 +414,6 @@ export function CartScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.savedAddressId, isLoggedIn]);
 
-  const isFocused = useIsFocused();
-
-  // Only leave the cart screen when it is focused and empty.
   // After placing an order the cart is cleared while tracking is open —
   // that must not call router.back() and yank the user off delivery tracking.
   useEffect(() => {
@@ -390,6 +427,7 @@ export function CartScreen() {
 
   const onRefresh = () => {
     remoteCart.refetch();
+    void liveBill.refetch();
   };
 
   const goBack = () => {
@@ -403,7 +441,11 @@ export function CartScreen() {
       const ok = await syncCartItemQuantity(itemId, quantity);
       if (!ok) {
         // Helper already reverted + alerted; refresh from server for safety
-        await remoteCart.refetch();
+        await Promise.all([remoteCart.refetch(), liveBill.refetch()]);
+      } else {
+        // Reconcile server totals in background without blocking instant UI.
+        void remoteCart.refetch();
+        void liveBill.refetch();
       }
     } finally {
       setBusyId(null);
@@ -429,10 +471,10 @@ export function CartScreen() {
     void updateTip
       .mutateAsync({ tip: nextTip })
       .then((cart) => {
-        // Server cart is source of truth after a successful tip save
         if (typeof cart.tip === 'number') {
           setTip(cart.tip);
         }
+        void liveBill.refetch();
       })
       .catch((e) => {
         setTip(previousTip);
@@ -488,6 +530,27 @@ export function CartScreen() {
         Alert.alert('Could not update delivery type', message);
       });
   };
+
+  const handleScheduleSlot = (value: string | null) => {
+    if (!isLoggedIn) {
+      requireLogin('schedule your order');
+      return;
+    }
+    setSchedule
+      .mutateAsync(value)
+      .then((cart) => {
+        useCartStore.getState().setScheduledFor(cart.scheduledFor ?? value);
+      })
+      .catch((e) => {
+        Alert.alert(
+          'Could not schedule order',
+          e instanceof Error ? e.message : 'Please try again.'
+        );
+      });
+  };
+
+  const handleScheduleNow = () => handleScheduleSlot(null);
+  const handleSchedulePick = (startIso: string) => handleScheduleSlot(startIso);
 
   const handlePaymentComplete = async (success: boolean, data?: any) => {
     setPaymentGatewayOpen(false);
@@ -624,6 +687,8 @@ export function CartScreen() {
         specialInstructions: specialInstructions || undefined,
         tip: tip > 0 ? tip : 0,
         deliveryTip: tip > 0 ? tip : 0,
+        scheduledFor: scheduledFor ?? undefined,
+        isScheduled: Boolean(scheduledFor),
       };
 
       const order = await createOrder.mutateAsync(payload as any);
@@ -881,6 +946,13 @@ export function CartScreen() {
     placeOrder();
   };
 
+  useEffect(() => {
+    if (params.checkoutNow === '1') {
+      router.replace('/cart/summary' as import('expo-router').Href);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.checkoutNow]);
+
   const handleApplyVoucher = async () => {
     const code = voucherCode.trim();
     if (!code) {
@@ -1128,7 +1200,24 @@ export function CartScreen() {
             </View>
           </View>
 
+          <ScheduleOrderSection
+            scheduleData={slots.data}
+            isLoading={slots.isLoading}
+            isError={slots.isError}
+            scheduledFor={scheduledFor}
+            busy={setSchedule.isPending}
+            onSelectNow={handleScheduleNow}
+            onSelectSlot={handleSchedulePick}
+          />
+
           <DeliveryPreferences tip={tip} setTip={handleTipChange} />
+
+          {normalizedDeliveryType === 'delivery' && items.length > 0 ? (
+            <AutoFreeDeliveryBanner
+              bill={billBreakdown}
+              deliveryType={normalizedDeliveryType}
+            />
+          ) : null}
 
           {/* Promo */}
           <View style={styles.voucherCard}>
@@ -1180,11 +1269,8 @@ export function CartScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Payment method */}
-          <Pressable
-            style={styles.paymentCard}
-            onPress={() => setPaymentModalOpen(true)}
-          >
+          {/* Payment preview — change on order summary */}
+          <View style={styles.paymentCard}>
             <View style={styles.paymentIconWrap}>
               {paymentMethod === 'cod' ? (
                 <Bike color={ORANGE} size={18} strokeWidth={2.3} />
@@ -1200,70 +1286,22 @@ export function CartScreen() {
                 {paymentMethodLabel(paymentMethod, paymentMethods.data)}
               </Text>
               <Text style={styles.paymentHint} numberOfLines={1}>
-                {paymentMethodHint(paymentMethod)}
-              </Text>
-            </View>
-            <View style={styles.paymentChange}>
-              <Text style={styles.paymentChangeText}>Change</Text>
-              <ChevronRight color={ORANGE} size={16} strokeWidth={2.4} />
-            </View>
-          </Pressable>
-
-          {/* Bill */}
-          <View style={styles.billCard}>
-            <Text style={styles.cardTitle}>Bill details</Text>
-
-            <View style={styles.billRow}>
-              <Text style={styles.billLabel}>
-                Item total (
-                {items.reduce((n, i) => n + i.quantity, 0)} items)
-              </Text>
-              <Text style={styles.billValue}>₹{billSubtotal.toFixed(2)}</Text>
-            </View>
-
-            <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Delivery fee</Text>
-              {displayDeliveryFee > 0 ? (
-                <Text style={styles.billValue}>
-                  ₹{displayDeliveryFee.toFixed(2)}
-                </Text>
-              ) : (
-                <Text style={[styles.billValue, styles.billFree]}>FREE</Text>
-              )}
-            </View>
-
-            <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Taxes & charges</Text>
-              <Text style={styles.billValue}>₹{displayTax.toFixed(2)}</Text>
-            </View>
-
-            <View style={styles.billRow}>
-              <Text style={styles.billLabel}>Delivery tip</Text>
-              <Text style={styles.billValue}>
-                {displayTip > 0 ? `₹${displayTip.toFixed(2)}` : '—'}
-              </Text>
-            </View>
-
-            {displayDiscount > 0 ? (
-              <View style={styles.billRow}>
-                <Text style={[styles.billLabel, { color: GREEN }]}>
-                  {couponCode ? `Promo · ${couponCode}` : 'Discount'}
-                </Text>
-                <Text style={[styles.billValue, { color: GREEN }]}>
-                  −₹{displayDiscount.toFixed(2)}
-                </Text>
-              </View>
-            ) : null}
-
-            <View style={styles.billSeparator} />
-
-            <View style={styles.billRow}>
-              <Text style={styles.billTotalLabel}>To pay</Text>
-              <Text style={styles.billTotalValue}>
-                ₹{displayTotal.toFixed(2)}
+                Change payment on order summary
               </Text>
             </View>
           </View>
+
+          {/* Bill */}
+          <BillDetailsSection
+            bill={billBreakdown}
+            itemCount={items.reduce((n, i) => n + i.quantity, 0)}
+            couponCode={couponCode}
+            displayTip={displayTip}
+            fallbackTotal={displayTotal}
+            hasDeliveryPin={Boolean(billPin) || normalizedDeliveryType === 'takeaway'}
+            billLoading={liveBill.isLoading && !billBreakdown.billReady}
+            billError={liveBill.isError}
+          />
         </ScrollView>
 
         {/* ── Bottom Checkout Bar ─────────────────────────────────── */}
@@ -1336,34 +1374,6 @@ export function CartScreen() {
           </Pressable>
         </Modal>
 
-        {/* ── Payment Options Modal ───────────────────────────────── */}
-        <PaymentOptionsModal
-          visible={isPaymentModalOpen}
-          onClose={() => setPaymentModalOpen(false)}
-          selectedMethod={paymentMethod}
-          onSelectMethod={(m) => {
-            setPaymentMethod(m);
-            setPaymentModalOpen(false);
-          }}
-          onPay={(m) => {
-            setPaymentMethod(m);
-            setPaymentModalOpen(false);
-          }}
-          itemCount={items.length}
-          total={displayTotal}
-          savings={displayDiscount}
-          restaurantName={restaurant?.name || ''}
-          deliveryTime={
-            typeof restaurant?.deliveryTime === 'string'
-              ? restaurant.deliveryTime
-              : undefined
-          }
-          addressLabel={addressLabel}
-          addressText={addressLine}
-          savedMethods={paymentMethods.data}
-          wallet={wallet.data}
-        />
-
         {/* ── Order Placement Modal ───────────────────────────────── */}
         <OrderPlacementModal
           phase={orderPlacementPhase}
@@ -1413,6 +1423,10 @@ export function CartScreen() {
         <CouponPickerSheet
           visible={couponPickerOpen}
           onClose={() => setCouponPickerOpen(false)}
+          restaurantId={restaurant?.id}
+          lat={location?.lat}
+          lng={location?.lng}
+          subtotal={subtotal}
           onApplied={(code) => {
             setVoucherCode(code);
             setCouponPickerOpen(false);
@@ -1650,6 +1664,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TEXT,
   },
+  itemModifiers: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: ORANGE,
+    marginTop: 1,
+  },
   itemUnitPrice: {
     fontFamily: fonts.ui,
     fontSize: 12,
@@ -1720,6 +1740,42 @@ const styles = StyleSheet.create({
   deliveryTypeTextOn: {
     color: ORANGE,
     fontFamily: fonts.uiBold,
+  },
+  scheduleTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  scheduleChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#FAFAFA',
+  },
+  scheduleChipActive: {
+    borderColor: ORANGE,
+    backgroundColor: '#FFF7ED',
+  },
+  scheduleChipText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: TEXT_SEC,
+  },
+  scheduleChipTextActive: {
+    color: ORANGE,
+    fontFamily: fonts.uiBold,
+  },
+  scheduleHint: {
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    color: TEXT_SEC,
   },
 
   // ── Voucher Card ──
@@ -1838,6 +1894,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
+  billHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  billTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 15,
+    color: TEXT,
+  },
+  billItemsPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  billItemsPillText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 11,
+    color: ORANGE_DARK,
+  },
   billRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1862,6 +1942,29 @@ const styles = StyleSheet.create({
     backgroundColor: BORDER,
     marginVertical: 4,
   },
+  savingsBox: {
+    marginTop: 2,
+    marginBottom: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  savingsTitle: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: '#166534',
+  },
+  savingsValue: {
+    fontFamily: fonts.uiBold,
+    fontSize: 13,
+    color: '#166534',
+  },
   billTotalLabel: {
     fontFamily: fonts.displayBold,
     fontSize: 15,
@@ -1871,6 +1974,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displayBold,
     fontSize: 16,
     color: TEXT,
+  },
+  billFooterHint: {
+    marginTop: 2,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    color: TEXT_MUTED,
   },
 
   // ── Checkout Bar ──

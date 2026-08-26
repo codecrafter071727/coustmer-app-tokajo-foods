@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 import { api } from '@/lib/api';
+import { mapBillBreakdown, type BillBreakdown } from '@/lib/cart/bill';
+import { normalizeScheduleSlotsResponse, type ScheduleSlotsResponse } from '@/lib/cart/schedule';
 import { getCartSessionId } from '@/lib/cart/session';
 import type {
   AddCartItemPayload,
@@ -8,7 +10,6 @@ import type {
   Cart,
   CartAddress,
   CartCoupon,
-  CartHealth,
   CartLineItem,
   CartValidatePayload,
   CartValidationIssue,
@@ -131,18 +132,52 @@ function mapLineItem(raw: Record<string, unknown>): CartLineItem {
     raw.cartItemId ?? raw.lineId ?? raw._id ?? raw.id ?? menuItemId
   );
 
+  const modifiersRaw = raw.modifiers ?? raw.options ?? [];
+  const modifiers = Array.isArray(modifiersRaw)
+    ? modifiersRaw
+        .map((row) => {
+          const m = asRecord(row);
+          const groupId = String(m.groupId ?? m.group_id ?? '');
+          const optionId = String(m.optionId ?? m.option_id ?? '');
+          const optionName = String(m.optionName ?? m.name ?? '');
+          if (!groupId || !optionId || !optionName) return null;
+          return {
+            groupId,
+            groupName: String(m.groupName ?? m.group ?? 'Option'),
+            optionId,
+            optionName,
+            price: Number(m.price ?? 0) || 0,
+          };
+        })
+        .filter(Boolean) as CartLineItem['modifiers']
+    : undefined;
+
+  const basePrice = Number(raw.price ?? raw.unitPrice ?? raw.basePrice ?? 0) || 0;
+  const modifiersTotal = (modifiers ?? []).reduce((s, m) => s + (m.price || 0), 0);
+  const itemTotal = Number(raw.itemTotal ?? raw.lineTotal ?? 0);
+  const quantity = Number(raw.quantity ?? raw.qty ?? 1) || 1;
+  const unitFromTotal =
+    itemTotal > 0 && quantity > 0
+      ? Math.round((itemTotal / quantity) * 100) / 100
+      : 0;
+
   return {
     id: lineId,
     menuItemId: menuItemId || lineId,
     name: String(raw.name ?? raw.itemName ?? raw.title ?? 'Item'),
-    price: Number(raw.price ?? raw.unitPrice ?? raw.basePrice ?? 0),
-    quantity: Number(raw.quantity ?? raw.qty ?? 1),
+    price: unitFromTotal > 0 ? unitFromTotal : basePrice + modifiersTotal,
+    basePrice,
+    quantity,
     isVeg: raw.isVeg !== undefined ? Boolean(raw.isVeg) : undefined,
     imageUrl: (raw.imageUrl as string) || (raw.image as string) || undefined,
     specialInstructions:
-      (raw.specialInstructions as string) || (raw.notes as string) || undefined,
+      (raw.specialInstructions as string) ||
+      (raw.instructions as string) ||
+      (raw.notes as string) ||
+      undefined,
     restaurantId:
       String(raw.restaurantId ?? raw.restaurant_id ?? '') || undefined,
+    modifiers: modifiers?.length ? modifiers : undefined,
   };
 }
 
@@ -201,6 +236,15 @@ function pickFiniteNumber(...values: unknown[]): number | undefined {
   return undefined;
 }
 
+function istDateYYYYMMDD(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export function mapCart(data: unknown): Cart {
   const raw = asRecord(data);
   const nestedCart =
@@ -240,9 +284,11 @@ export function mapCart(data: unknown): Cart {
   const tip =
     pickFiniteNumber(
       nestedCart.tip,
+      nestedCart.tipAmount,
       nestedCart.deliveryTip,
       nestedCart.riderTip,
       pricing.tip,
+      pricing.tipAmount,
       pricing.deliveryTip
     ) ?? 0;
 
@@ -347,6 +393,8 @@ export function mapCart(data: unknown): Cart {
     discount: Number.isFinite(discount) ? discount : 0,
     deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
     tax: Number.isFinite(tax) ? tax : 0,
+    platformFee:
+      pickFiniteNumber(nestedCart.platformFee, pricing.platformFee) ?? 0,
     total: Number.isFinite(total) ? total : subtotal + tip + deliveryFee - discount,
     coupon: mapCoupon(nestedCart.coupon ?? nestedCart.promo ?? nestedCart.appliedCoupon),
     specialInstructions:
@@ -366,6 +414,7 @@ export function mapCart(data: unknown): Cart {
       (nestedCart.scheduledFor as string) ||
       (nestedCart.scheduledAt as string) ||
       null,
+    isScheduled: nestedCart.isScheduled === true || Boolean(nestedCart.scheduledFor),
     updatedAt: (nestedCart.updatedAt as string) || undefined,
   };
 }
@@ -485,27 +534,6 @@ async function mutateCart(
 }
 
 export const cartApi = {
-  /** GET /cart/health — also try service root health */
-  health: async (): Promise<CartHealth> => {
-    try {
-      const res = await request<Record<string, unknown>>(`${CART_BASE}/health`);
-      const data = asRecord(res.data ?? res);
-      return {
-        status: String(data.status ?? data.state ?? 'ok'),
-        message: (data.message as string) || res.message,
-      };
-    } catch {
-      const res = await request<Record<string, unknown>>(
-        `${CART_SERVICE}/health`
-      );
-      const data = asRecord(res.data ?? res);
-      return {
-        status: String(data.status ?? 'ok'),
-        message: (data.message as string) || res.message,
-      };
-    }
-  },
-
   /** GET /cart */
   getCart: async (): Promise<Cart> => {
     const res = await request<unknown>(CART_BASE);
@@ -514,6 +542,18 @@ export const cartApi = {
 
   /** POST /cart/items */
   addItem: async (payload: AddCartItemPayload): Promise<Cart> => {
+    const modifiers = (payload.modifiers ?? [])
+      .filter((m) => m.groupId && m.optionId && m.optionName)
+      .map((m) => ({
+        groupId: m.groupId,
+        groupName: m.groupName || 'Option',
+        optionId: m.optionId,
+        optionName: m.optionName,
+        price: Math.max(0, Number(m.price) || 0),
+      }));
+    const instructions =
+      payload.specialInstructions?.trim() || undefined;
+
     return mutateCart(`${CART_BASE}/items`, 'POST', [
       {
         menuItemId: payload.menuItemId,
@@ -523,13 +563,18 @@ export const cartApi = {
         price: payload.price,
         quantity: payload.quantity ?? 1,
         isVeg: payload.isVeg,
+        image: payload.imageUrl,
         imageUrl: payload.imageUrl,
-        specialInstructions: payload.specialInstructions,
+        instructions,
+        specialInstructions: instructions,
+        modifiers: modifiers.length ? modifiers : undefined,
       },
       {
         itemId: payload.menuItemId,
         restaurant_id: payload.restaurantId,
         qty: payload.quantity ?? 1,
+        modifiers: modifiers.length ? modifiers : undefined,
+        instructions,
       },
     ]);
   },
@@ -539,15 +584,24 @@ export const cartApi = {
     itemId: string,
     payload: UpdateCartItemPayload
   ): Promise<Cart> => {
+    const quantity =
+      typeof payload.quantity === 'number'
+        ? Math.max(0, Math.floor(payload.quantity))
+        : undefined;
     return mutateCart(`${CART_BASE}/items/${itemId}`, 'PUT', [
       {
-        quantity: payload.quantity,
+        quantity,
         specialInstructions: payload.specialInstructions,
         options: payload.options,
       },
       {
-        qty: payload.quantity,
+        // Keep quantity key for validators that require it.
+        quantity,
+        qty: quantity,
         notes: payload.specialInstructions,
+      },
+      {
+        quantity,
       },
     ]);
   },
@@ -749,68 +803,29 @@ export const cartApi = {
     }
   },
 
-  /** PUT /cart/tip — Auth only (no PATCH; gateway returns route not found). */
+  /** PUT /cart/tip — Auth only (backend expects tipAmount). */
   updateTip: async (payload: UpdateTipPayload): Promise<Cart> => {
     const tip = Math.max(0, Number(payload.tip) || 0);
-    const bodies: unknown[] = [
-      { tip },
-      { amount: tip },
-      { tipAmount: tip },
-      { deliveryTip: tip },
-      { tip, amount: tip },
-      { tip, deliveryTip: tip },
-    ];
+    const res = await request<unknown>(`${CART_BASE}/tip`, {
+      method: 'PUT',
+      body: { tipAmount: tip },
+    });
+    const cart = mapCart(res.data ?? res);
+    const got = Math.max(0, Number(cart.tip) || 0);
 
-    let lastError: Error | null = null;
-
-    for (const body of bodies) {
-      try {
-        const res = await request<unknown>(`${CART_BASE}/tip`, {
-          method: 'PUT',
-          body,
-        });
-        const cart = mapCart(res.data ?? res);
-        const got = Math.max(0, Number(cart.tip) || 0);
-
-        if (tip === 0) {
-          return { ...cart, tip: 0 };
-        }
-
-        if (Math.abs(got - tip) < 0.011) {
-          return cart;
-        }
-
-        // Response omitted tip — confirm via GET /cart
-        try {
-          const verifiedRes = await request<unknown>(CART_BASE);
-          const verified = mapCart(verifiedRes.data ?? verifiedRes);
-          const verifiedTip = Math.max(0, Number(verified.tip) || 0);
-          if (Math.abs(verifiedTip - tip) < 0.011) {
-            return verified;
-          }
-        } catch {
-          // try next body shape
-        }
-
-        lastError = new Error('Tip was not saved on the server bill');
-      } catch (error) {
-        lastError =
-          error instanceof Error ? error : new Error('Failed to update tip');
-        if (isAuthErrorMessage(lastError.message)) {
-          throw lastError;
-        }
-        // Don't keep retrying if the route itself is wrong
-        const lower = lastError.message.toLowerCase();
-        if (
-          lower.includes('not found') &&
-          (lower.includes('patch') || lower.includes('route'))
-        ) {
-          continue;
-        }
-      }
+    if (tip === 0 || Math.abs(got - tip) < 0.011) {
+      return tip === 0 ? { ...cart, tip: 0 } : cart;
     }
 
-    throw lastError ?? new Error('Failed to update tip');
+    // Confirm via GET /cart when response shape omits tip
+    const verifiedRes = await request<unknown>(CART_BASE);
+    const verified = mapCart(verifiedRes.data ?? verifiedRes);
+    const verifiedTip = Math.max(0, Number(verified.tip) || 0);
+    if (Math.abs(verifiedTip - tip) < 0.011) {
+      return verified;
+    }
+
+    throw new Error('Tip was not saved on the server bill');
   },
 
   /** PUT /cart/delivery-address — Auth; cart-service only accepts saved addressId. */
@@ -937,12 +952,12 @@ export const cartApi = {
   },
 
   /** GET /cart/bill */
-  getBill: async (dropLat?: number, dropLng?: number): Promise<Record<string, unknown>> => {
+  getBill: async (dropLat?: number, dropLng?: number): Promise<BillBreakdown> => {
     const qs = dropLat != null && dropLng != null
       ? `?dropLat=${dropLat}&dropLng=${dropLng}`
       : '';
     const res = await request<unknown>(`${CART_BASE}/bill${qs}`);
-    return asRecord(res.data ?? res);
+    return mapBillBreakdown(asRecord(res.data ?? res));
   },
 
   /** GET /cart/summary */
@@ -964,22 +979,15 @@ export const cartApi = {
     return mutateCart(`${CART_BASE}/instructions`, 'PUT', [instructions]);
   },
 
-  /** GET /cart/slots */
-  getSlots: async (date?: string): Promise<{ date: string; slots: { startTime: string; endTime: string }[] }[]> => {
-    const qs = date ? `?date=${date}` : '';
-    const res = await request<unknown>(`${CART_BASE}/slots${qs}`);
-    const payload = res.data ?? res;
-    const list = Array.isArray(payload) ? payload : asRecord(payload).slots ?? asRecord(payload).data ?? [];
-    return Array.isArray(list) ? list.map((item) => {
-      const r = asRecord(item);
-      return {
-        date: String(r.date ?? ''),
-        slots: Array.isArray(r.slots) ? r.slots.map((s: unknown) => {
-          const slot = asRecord(s);
-          return { startTime: String(slot.startTime ?? slot.start ?? ''), endTime: String(slot.endTime ?? slot.end ?? '') };
-        }) : [],
-      };
-    }) : [];
+  /** GET /cart/slots — multi-day when days>1 */
+  getSlots: async (opts?: { date?: string; days?: number }): Promise<ScheduleSlotsResponse> => {
+    const params = new URLSearchParams();
+    if (opts?.date) params.set('date', opts.date);
+    if (opts?.days != null) params.set('days', String(opts.days));
+    else if (!opts?.date) params.set('days', '7');
+    const qs = params.toString();
+    const res = await request<unknown>(`${CART_BASE}/slots${qs ? `?${qs}` : ''}`);
+    return normalizeScheduleSlotsResponse(res.data ?? res);
   },
 
   /** PUT /cart/schedule */
@@ -1069,17 +1077,37 @@ export const cartApi = {
     return mapCart(res.data ?? res);
   },
 
-  /** GET /coupons */
-  discoverCoupons: async (): Promise<Record<string, unknown>[]> => {
-    const res = await request<unknown>(`${CART_SERVICE}/coupons`);
+  /** GET /coupons — platform admin coupons + restaurant store offers when restaurantId/lat/lng provided */
+  discoverCoupons: async (opts?: {
+    restaurantId?: string;
+    lat?: number;
+    lng?: number;
+  }): Promise<Record<string, unknown>[]> => {
+    const params = new URLSearchParams();
+    if (opts?.restaurantId) params.set('restaurantId', opts.restaurantId);
+    if (opts?.lat != null && Number.isFinite(opts.lat)) params.set('lat', String(opts.lat));
+    if (opts?.lng != null && Number.isFinite(opts.lng)) params.set('lng', String(opts.lng));
+    const qs = params.toString();
+    const res = await request<unknown>(`${CART_SERVICE}/coupons${qs ? `?${qs}` : ''}`);
     const payload = res.data ?? res;
     const list = Array.isArray(payload) ? payload : extractList(payload);
     return list.map((row) => asRecord(row));
   },
 
   /** GET /coupons/:code/preview */
-  previewCoupon: async (code: string): Promise<Record<string, unknown>> => {
-    const res = await request<unknown>(`${CART_SERVICE}/coupons/${encodeURIComponent(code)}/preview`);
+  previewCoupon: async (
+    code: string,
+    opts?: { restaurantId?: string; subtotal?: number }
+  ): Promise<Record<string, unknown>> => {
+    const params = new URLSearchParams();
+    if (opts?.restaurantId) params.set('restaurantId', opts.restaurantId);
+    if (opts?.subtotal != null && Number.isFinite(opts.subtotal)) {
+      params.set('subtotal', String(opts.subtotal));
+    }
+    const qs = params.toString();
+    const res = await request<unknown>(
+      `${CART_SERVICE}/coupons/${encodeURIComponent(code)}/preview${qs ? `?${qs}` : ''}`
+    );
     return asRecord(res.data ?? res);
   },
 };

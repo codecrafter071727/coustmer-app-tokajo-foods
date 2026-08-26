@@ -30,6 +30,8 @@ export type OrderTracker = {
   status?: string;
   orderStatus?: string;
   etaMinutes?: number;
+  etaSeconds?: number;
+  etaAt?: string;
   etaText?: string;
   partner?: DeliveryPartner;
   restaurantLat?: number;
@@ -60,6 +62,8 @@ export type LiveLocation = {
 
 export type TrackingEta = {
   etaMinutes?: number;
+  etaSeconds?: number;
+  etaAt?: string;
   etaText?: string;
   distanceKm?: number;
 };
@@ -96,8 +100,35 @@ export type City = {
   slug?: string;
   lat?: number;
   lng?: number;
-  polygon?: [number, number][];
+  polygon?: number[][][] | null;
+  hours?: { open: string; close: string; tz?: string };
+  zones?: Array<{
+    zoneId: string;
+    name: string;
+    isActive?: boolean;
+    surgeMultiplier?: number;
+    polygon?: number[][][];
+  }>;
   isActive?: boolean;
+  isLive?: boolean;
+};
+
+/** Public family share track — GET /tracking/share/:shareToken (no auth). */
+export type PublicShareTracking = {
+  orderId: string;
+  deliveryId: string;
+  status: string;
+  dutyHint: string;
+  etaSeconds?: number;
+  etaAt?: string;
+  polyline?: string;
+  dropLat?: number;
+  dropLng?: number;
+  dropAddress?: string;
+  riderLat?: number;
+  riderLng?: number;
+  partner?: DeliveryPartner;
+  expiresAt?: string;
 };
 
 export type Zone = {
