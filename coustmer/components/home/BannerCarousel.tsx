@@ -152,6 +152,14 @@ export function BannerCarousel({ banners }: { banners: HomeBanner[] }) {
               <Text style={styles.title} numberOfLines={2}>
                 {banner.title}
               </Text>
+              {banner.subtitle ? (
+                <Text style={styles.subtitle} numberOfLines={2}>
+                  {banner.subtitle}
+                </Text>
+              ) : null}
+              {banner.couponCode ? (
+                <Text style={styles.code}>Use {banner.couponCode}</Text>
+              ) : null}
               <View style={styles.cta}>
                 <Text style={styles.ctaText}>Order now</Text>
                 <ArrowRight color="#fff" size={14} />
@@ -206,6 +214,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 26,
     maxWidth: '85%',
+  },
+  subtitle: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+    maxWidth: '90%',
+  },
+  code: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+    letterSpacing: 0.6,
   },
   cta: {
     flexDirection: 'row',

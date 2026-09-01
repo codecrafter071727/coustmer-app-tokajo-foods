@@ -214,6 +214,9 @@ function mapBanner(raw: Record<string, unknown>): HomeBanner {
   return {
     id: String(raw._id ?? raw.id ?? ''),
     title: String(raw.title ?? raw.name ?? raw.headline ?? 'Offer'),
+    subtitle:
+      (raw.subtitle as string | undefined) ??
+      (raw.description as string | undefined),
     imageUrl:
       (raw.imageUrl as string | undefined) ??
       (raw.image as string | undefined) ??
@@ -222,6 +225,9 @@ function mapBanner(raw: Record<string, unknown>): HomeBanner {
       (raw.deepLink as string | undefined) ??
       (raw.link as string | undefined) ??
       (raw.href as string | undefined),
+    couponCode:
+      (raw.couponCode as string | undefined) ??
+      (raw.code as string | undefined),
   };
 }
 
@@ -407,24 +413,28 @@ export const customerApi = {
     return [];
   },
 
-  /** GET /customer-service/banners (optional dedicated banners route) */
-  getBanners: async (): Promise<HomeBanner[]> => {
+  /** GET /customers/banners — CMS promo banners */
+  getBanners: async (city?: string): Promise<HomeBanner[]> => {
     try {
-      const res = await request<unknown>('/api/v1/customer-service/banners');
+      const qs = city ? `?city=${encodeURIComponent(city)}` : '';
+      const res = await request<unknown>(`${CUSTOMER_BASE}/banners${qs}`);
       return unwrapList(res.data ?? res).map(mapBanner);
     } catch {
       return [];
     }
   },
 
-  /** Deals only — banners come from useHomeFeed directly. */
+  /** CMS banners + geo deals for home promos */
   getOffersFeed: async (coords?: {
     lat: number;
     lng: number;
     radius?: number;
   }): Promise<{ banners: HomeBanner[]; deals: Deal[] }> => {
-    const deals = await customerApi.getDeals(coords).catch(() => [] as Deal[]);
-    return { banners: [], deals };
+    const [banners, deals] = await Promise.all([
+      customerApi.getBanners().catch(() => [] as HomeBanner[]),
+      customerApi.getDeals(coords).catch(() => [] as Deal[]),
+    ]);
+    return { banners, deals };
   },
 
   /** GET /customers/recommended */

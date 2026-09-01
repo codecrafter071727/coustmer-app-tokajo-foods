@@ -1,8 +1,9 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Tag, Copy, Check } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, View,  Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 
 import { ScreenHeader } from '@/components/common/ScreenHeader';
 import {
@@ -16,8 +17,15 @@ import { fonts } from '@/constants/typography';
 import { useDeals } from '@/lib/customer/hooks';
 
 export default function DealsScreen() {
+  const { code } = useLocalSearchParams<{ code?: string }>();
   const { data, isLoading, isError, error, refetch, isRefetching } = useDeals();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const promo = typeof code === 'string' ? code.trim() : '';
+    if (!promo || isLoading) return;
+    Alert.alert('Promo from banner', `Use code ${promo.toUpperCase()} at checkout`, [{ text: 'OK' }]);
+  }, [code, isLoading]);
 
   const handleCopyCode = async (code: string, dealId: string) => {
     try {

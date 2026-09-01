@@ -6,8 +6,10 @@
 export type HomeBanner = {
   id: string;
   title: string;
+  subtitle?: string;
   imageUrl?: string;
   deepLink?: string;
+  couponCode?: string;
 };
 
 /** Restaurant card shape is defensive — backend lists are empty for now. */
