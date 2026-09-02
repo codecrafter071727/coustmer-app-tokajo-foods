@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, Image } from 'react-native';
 
 import { authTheme } from '@/constants/auth-theme';
 import type { SupportTicket } from '@/lib/support/types';
@@ -28,6 +28,7 @@ type TimelineItem = {
   role?: string;
   content: string;
   at?: string;
+  attachments?: string[];
 };
 
 function buildTimeline(ticket: SupportTicket): TimelineItem[] {
@@ -37,6 +38,7 @@ function buildTimeline(ticket: SupportTicket): TimelineItem[] {
       kind: 'opened',
       content: ticket.description,
       at: ticket.createdAt,
+      attachments: ticket.attachments,
     },
   ];
   for (const msg of ticket.messages) {
@@ -46,6 +48,7 @@ function buildTimeline(ticket: SupportTicket): TimelineItem[] {
       role: msg.senderRole,
       content: msg.content,
       at: msg.createdAt,
+      attachments: msg.attachments,
     });
   }
   if (ticket.resolvedAt || ticket.resolution) {
@@ -57,6 +60,18 @@ function buildTimeline(ticket: SupportTicket): TimelineItem[] {
     });
   }
   return items;
+}
+
+function AttachmentRow({ urls }: { urls?: string[] }) {
+  const list = (urls ?? []).filter(Boolean);
+  if (!list.length) return null;
+  return (
+    <View style={styles.shots}>
+      {list.map((url) => (
+        <Image key={url} source={{ uri: url }} style={styles.shot} />
+      ))}
+    </View>
+  );
 }
 
 export function TicketTimeline({ ticket }: { ticket: SupportTicket }) {
@@ -104,9 +119,12 @@ export function TicketTimeline({ ticket }: { ticket: SupportTicket }) {
                   <Text style={styles.tlTime}>{formatMsgTime(item.at)}</Text>
                 ) : null}
               </View>
-              <Text style={[styles.tlBody, isYou && styles.tlBodyYou]}>
-                {item.content}
-              </Text>
+              {item.content ? (
+                <Text style={[styles.tlBody, isYou && styles.tlBodyYou]}>
+                  {item.content}
+                </Text>
+              ) : null}
+              <AttachmentRow urls={item.attachments} />
             </View>
           </View>
         );
@@ -164,4 +182,6 @@ const styles = StyleSheet.create({
   tlTime: { fontSize: 11, color: '#9CA3AF' },
   tlBody: { fontSize: 14, lineHeight: 20, color: authTheme.text },
   tlBodyYou: { color: '#1C1C1C' },
+  shots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  shot: { width: 72, height: 72, borderRadius: 10 },
 });

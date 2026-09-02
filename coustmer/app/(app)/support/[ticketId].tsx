@@ -1,11 +1,13 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useLocalSearchParams } from 'expo-router';
-import { Send, Star } from 'lucide-react-native';
+import { Camera, Send, Star, X } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -21,6 +23,7 @@ import { TicketTimeline } from '@/components/support/TicketTimeline';
 import { ticketDetailStyles as styles } from '@/components/support/ticket-detail-styles';
 import { authTheme } from '@/constants/auth-theme';
 import { getApiErrorMessage } from '@/lib/errors';
+import { supportApi } from '@/lib/support/support-api';
 import {
   supportKeys,
   useAddTicketMessage,
@@ -49,21 +52,39 @@ export default function TicketDetailScreen() {
   const reopenTicket = useReopenTicket(id);
 
   const [message, setMessage] = useState('');
+  const [replyShot, setReplyShot] = useState<string | null>(null);
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [reopenReason, setReopenReason] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
 
-  const handleSend = () => {
-    if (message.trim().length === 0) return;
+  const pickReplyShot = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      setReplyShot(result.assets[0].uri);
+    }
+  };
+
+  const handleSend = async () => {
+    if (message.trim().length === 0 && !replyShot) return;
     setSendError(null);
-    addMessage.mutate(
-      { content: message.trim() },
-      {
-        onSuccess: () => setMessage(''),
-        onError: (e) => setSendError(getApiErrorMessage(e)),
+    try {
+      const attachments: string[] = [];
+      if (replyShot) {
+        attachments.push(await supportApi.uploadAttachment(replyShot));
       }
-    );
+      await addMessage.mutateAsync({
+        content: message.trim() || '(screenshot)',
+        ...(attachments.length ? { attachments } : {}),
+      });
+      setMessage('');
+      setReplyShot(null);
+    } catch (e) {
+      setSendError(getApiErrorMessage(e));
+    }
   };
 
   const isResolved =
@@ -262,7 +283,24 @@ export default function TicketDetailScreen() {
                   {sendError ? (
                     <Text style={styles.sendError}>{sendError}</Text>
                   ) : null}
+                  {replyShot ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Image
+                        source={{ uri: replyShot }}
+                        style={{ width: 56, height: 56, borderRadius: 8 }}
+                      />
+                      <Pressable onPress={() => setReplyShot(null)}>
+                        <X color={authTheme.textMuted} size={18} />
+                      </Pressable>
+                    </View>
+                  ) : null}
                   <View style={styles.inputRow}>
+                    <Pressable
+                      onPress={() => void pickReplyShot()}
+                      style={{ paddingHorizontal: 6, justifyContent: 'center' }}
+                    >
+                      <Camera color={authTheme.brand} size={20} />
+                    </Pressable>
                     <TextInput
                       style={styles.messageInput}
                       value={message}
@@ -273,9 +311,10 @@ export default function TicketDetailScreen() {
                     />
                     <Pressable
                       style={styles.sendButton}
-                      onPress={handleSend}
+                      onPress={() => void handleSend()}
                       disabled={
-                        addMessage.isPending || message.trim().length === 0
+                        addMessage.isPending ||
+                        (message.trim().length === 0 && !replyShot)
                       }
                     >
                       {addMessage.isPending ? (
