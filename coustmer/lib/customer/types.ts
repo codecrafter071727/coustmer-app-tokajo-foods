@@ -98,26 +98,50 @@ export type CustomerKitchenAlert = {
 };
 
 export const SUPPORT_CATEGORIES = [
-  'order_issue',
-  'payment_issue',
-  'delivery_issue',
-  'account_issue',
+  'missing_item',
+  'wrong_item',
+  'food_quality',
+  'food_safety',
+  'late_delivery',
+  'delivery_partner_issue',
   'restaurant_issue',
+  'payment_issue',
+  'refund_issue',
+  'coupon_issue',
+  'account_issue',
+  'order_issue',
+  'delivery_issue',
   'other',
 ] as const;
 
 export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
 
 export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
-  order_issue: 'Order issue',
-  payment_issue: 'Payment issue',
-  delivery_issue: 'Delivery issue',
-  account_issue: 'Account issue',
+  missing_item: 'Missing item',
+  wrong_item: 'Wrong item',
+  food_quality: 'Food quality',
+  food_safety: 'Food safety',
+  late_delivery: 'Late delivery',
+  delivery_partner_issue: 'Delivery partner',
   restaurant_issue: 'Restaurant issue',
+  payment_issue: 'Payment issue',
+  refund_issue: 'Refund issue',
+  coupon_issue: 'Coupon issue',
+  account_issue: 'Account issue',
+  order_issue: 'Order issue',
+  delivery_issue: 'Delivery issue',
   other: 'Other',
 };
 
-export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus =
+  | 'open'
+  | 'in_progress'
+  | 'waiting_for_customer'
+  | 'waiting_for_internal'
+  | 'escalated'
+  | 'resolved'
+  | 'closed'
+  | 'reopened';
 
 export type TicketMessage = {
   id?: string;
@@ -129,6 +153,7 @@ export type TicketMessage = {
 
 export type SupportTicket = {
   id: string;
+  ticketNo: string;
   userId: string;
   category: SupportCategory;
   subject: string;
@@ -140,6 +165,11 @@ export type SupportTicket = {
   messages: TicketMessage[];
   rating?: number;
   feedback?: string;
+  resolution?: string | null;
+  resolutionType?: string | null;
+  refundId?: string | null;
+  compensationAmount?: number | null;
+  resolvedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

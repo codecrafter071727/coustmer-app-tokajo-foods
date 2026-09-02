@@ -35,6 +35,22 @@ export type ServerToClientEvents = {
   'chat:new-message': (data: ChatMessageEvent) => void;
   /** Typing dots */
   typing: (data: { orderId: string; from: 'customer' | 'partner'; isTyping: boolean }) => void;
+  /** Support ticket updated (agent reply, status, refund, etc.) */
+  'support:ticket-updated': (data: {
+    ticketId?: string | null;
+    ticketNo?: string | null;
+    kind?: string | null;
+    status?: string | null;
+    updatedAt?: string | null;
+    refundId?: string;
+    amount?: number;
+  }) => void;
+  /** Admin forced logout / account restriction — sign out immediately */
+  'session:revoked': (data: {
+    userId?: string;
+    reason?: string | null;
+    action?: string | null;
+  }) => void;
 };
 
 /** Client → Server events */

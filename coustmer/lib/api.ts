@@ -139,7 +139,18 @@ function applyCsrfHeader(headers: AxiosHeaders, token: string) {
   headers.set('X-CSRF-Token', token);
 }
 
-function isAuthFailure(status: number | undefined, message: string): boolean {
+function isAuthFailure(
+  status: number | undefined,
+  message: string,
+  code?: string,
+): boolean {
+  if (
+    status === 403 &&
+    code &&
+    ['ACCOUNT_SUSPENDED', 'ACCOUNT_BLOCKED', 'ACCOUNT_DEACTIVATED'].includes(code)
+  ) {
+    return true;
+  }
   if (status !== 401 && status !== 403) return false;
   const lower = message.toLowerCase();
   return (
@@ -148,7 +159,10 @@ function isAuthFailure(status: number | undefined, message: string): boolean {
     lower.includes('log in') ||
     lower.includes('not authenticated') ||
     lower.includes('invalid token') ||
-    lower.includes('session')
+    lower.includes('session') ||
+    lower.includes('suspended') ||
+    lower.includes('blocked') ||
+    lower.includes('deactivated')
   );
 }
 
@@ -186,6 +200,7 @@ api.interceptors.response.use(
     const original = error.config;
     const message =
       error.response?.data?.message ?? error.response?.data?.error ?? '';
+    const code = (error.response?.data as { code?: string } | undefined)?.code;
     const status = error.response?.status;
 
     const isCsrfError =
@@ -208,7 +223,7 @@ api.interceptors.response.use(
     if (
       original &&
       !original._authLogout &&
-      isAuthFailure(status, String(message))
+      isAuthFailure(status, String(message), code)
     ) {
       original._authLogout = true;
       await clearApiSession();

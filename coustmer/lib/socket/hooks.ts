@@ -236,3 +236,44 @@ export function useGroupCartSocket(onUpdate?: (data: { cartId?: string; userId?:
     onUpdate?.(data);
   });
 }
+
+// ─── Support tickets ──────────────────────────────────────────────────────────
+
+export type SupportTicketSocketEvent = {
+  ticketId?: string | null;
+  ticketNo?: string | null;
+  kind?: string | null;
+  status?: string | null;
+  updatedAt?: string | null;
+};
+
+/** Live refresh for a single support ticket detail screen. */
+export function useSupportTicketSocket(
+  ticketId: string,
+  onUpdate?: (data: SupportTicketSocketEvent) => void,
+) {
+  useSocketEvent(
+    'support:ticket-updated',
+    (data) => {
+      if (!ticketId || data.ticketId !== ticketId) return;
+      onUpdate?.(data);
+    },
+    [ticketId],
+  );
+}
+
+/** Live refresh for the support tickets list (any ticket for this user). */
+export function useSupportTicketsSocket(onUpdate?: (data: SupportTicketSocketEvent) => void) {
+  useSocketEvent('support:ticket-updated', (data) => {
+    onUpdate?.(data);
+  });
+}
+
+/** Immediate logout when admin revokes sessions (force logout / suspend / block). */
+export function useSessionRevokedSocket(
+  onRevoked?: (data: { reason?: string | null; action?: string | null }) => void,
+) {
+  useSocketEvent('session:revoked', (data) => {
+    onRevoked?.({ reason: data.reason, action: data.action });
+  });
+}

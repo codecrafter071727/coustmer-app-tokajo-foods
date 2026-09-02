@@ -123,8 +123,18 @@ function mapTicket(data: Record<string, unknown>): SupportTicket {
         (data.order as { id?: string }).id
       : undefined);
 
+  const rawMessages = (data.messages as Record<string, unknown>[] | undefined) ?? [];
+  const messages = rawMessages.map((m, i) => ({
+    id: String(m.messageId ?? m._id ?? m.id ?? i),
+    sender: String(m.sender ?? ''),
+    senderRole: String(m.sender ?? m.senderRole ?? 'customer'),
+    content: String(m.content ?? ''),
+    createdAt: m.sentAt ? String(m.sentAt) : m.createdAt ? String(m.createdAt) : undefined,
+  }));
+
   return {
-    id: String(data._id ?? data.id ?? ''),
+    id: String(data.ticketId ?? data._id ?? data.id ?? ''),
+    ticketNo: String(data.ticketNo ?? data.ticket_no ?? ''),
     userId: String(data.userId ?? data.customerId ?? ''),
     category: data.category as SupportTicket['category'],
     subject: String(data.subject ?? data.title ?? ''),
@@ -133,9 +143,15 @@ function mapTicket(data: Record<string, unknown>): SupportTicket {
     priority: String(data.priority ?? 'medium'),
     orderId: orderRef ? String(orderRef) : undefined,
     attachments: (data.attachments as string[]) ?? [],
-    messages: (data.messages as SupportTicket['messages']) ?? [],
-    rating: data.rating as number | undefined,
-    feedback: data.feedback as string | undefined,
+    messages,
+    rating: (data.satisfactionRating ?? data.rating) as number | undefined,
+    feedback: (data.satisfactionFeedback ?? data.feedback) as string | undefined,
+    resolution: data.resolution != null ? String(data.resolution) : null,
+    resolutionType: data.resolutionType != null ? String(data.resolutionType) : null,
+    refundId: data.refundId != null ? String(data.refundId) : null,
+    compensationAmount:
+      data.compensationAmount != null ? Number(data.compensationAmount) : null,
+    resolvedAt: data.resolvedAt ? String(data.resolvedAt) : null,
     createdAt: String(data.createdAt ?? ''),
     updatedAt: String(data.updatedAt ?? ''),
   };
@@ -560,6 +576,31 @@ export const customerApi = {
     };
   },
 
+  /** POST /customers/support/attachments/upload — multipart image → Cloudinary URL */
+  uploadSupportAttachment: async (localUri: string): Promise<string> => {
+    const form = new FormData();
+    const name = localUri.split('/').pop() ?? 'evidence.jpg';
+    form.append('image', {
+      uri: localUri,
+      name,
+      type: 'image/jpeg',
+    } as unknown as Blob);
+
+    try {
+      const response = await api.post<Envelope<{ url?: string; imageUrl?: string }>>(
+        `${CUSTOMER_BASE}/support/attachments/upload`,
+        form,
+        { headers: { Accept: 'application/json' } },
+      );
+      const url = response.data?.data?.url ?? response.data?.data?.imageUrl;
+      if (!url) throw new Error('Upload did not return a URL');
+      return url;
+    } catch (error) {
+      const customerError = handleCustomerServiceError(error);
+      throw new Error(customerError.userMessage);
+    }
+  },
+
   /** POST /customers/support/tickets */
   createTicket: async (payload: CreateTicketPayload): Promise<SupportTicket> => {
     const body = {
@@ -671,6 +712,15 @@ export const customerApi = {
     const res = await request<Record<string, unknown>>(
       `${CUSTOMER_BASE}/support/tickets/${ticketId}/close`,
       { method: 'POST', body: {} }
+    );
+    return mapTicket(res.data ?? {});
+  },
+
+  /** POST /customers/support/tickets/:ticketId/reopen */
+  reopenTicket: async (ticketId: string, reason: string): Promise<SupportTicket> => {
+    const res = await request<Record<string, unknown>>(
+      `${CUSTOMER_BASE}/support/tickets/${ticketId}/reopen`,
+      { method: 'POST', body: { reason } }
     );
     return mapTicket(res.data ?? {});
   },

@@ -301,6 +301,17 @@ export function useCloseTicket(ticketId: string) {
   });
 }
 
+export function useReopenTicket(ticketId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reason: string) => customerApi.reopenTicket(ticketId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
+      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
+    },
+  });
+}
+
 export function useRequestCallback() {
   return useMutation({
     mutationFn: (payload: CallbackRequestPayload) =>

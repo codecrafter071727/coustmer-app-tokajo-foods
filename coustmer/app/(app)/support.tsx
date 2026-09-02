@@ -2,12 +2,15 @@ import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, ChevronRight, CheckCircle2, HelpCircle, PhoneCall, RotateCcw } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Alert, StyleSheet, Text, View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrders } from '@/lib/order/hooks';
 import { usePaymentHistory } from '@/lib/payment/hooks';
-import { useRequestCallback } from '@/lib/customer/hooks';
+import { useRequestCallback, useTickets, customerKeys } from '@/lib/customer/hooks';
+import { useSupportTicketsSocket } from '@/lib/socket/hooks';
+import { SUPPORT_CATEGORY_LABELS } from '@/lib/customer/types';
 import { authTheme } from '@/constants/auth-theme';
 
 export default function SupportHubScreen() {
@@ -38,6 +41,11 @@ export default function SupportHubScreen() {
   };
 
   const callback = useRequestCallback();
+  const queryClient = useQueryClient();
+  const ticketsQuery = useTickets();
+  useSupportTicketsSocket(() => {
+    void queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
+  });
   const [callbackSent, setCallbackSent] = useState(false);
 
   const handleCallback = () => {
@@ -87,6 +95,45 @@ export default function SupportHubScreen() {
           <View style={styles.refundIconWrap}>
             <RotateCcw color={authTheme.textMuted} size={24} />
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>MY SUPPORT TICKETS</Text>
+            <Pressable onPress={() => router.push('/support/new' as import('expo-router').Href)}>
+              <Text style={styles.newTicketLink}>NEW TICKET</Text>
+            </Pressable>
+          </View>
+          {ticketsQuery.isLoading ? (
+            <ActivityIndicator color={authTheme.brand} style={{ marginVertical: 12 }} />
+          ) : (ticketsQuery.data?.tickets.length ?? 0) === 0 ? (
+            <Text style={styles.emptyTickets}>No support tickets yet.</Text>
+          ) : (
+            ticketsQuery.data!.tickets.slice(0, 8).map((t) => (
+              <Pressable
+                key={t.id}
+                style={styles.ticketRow}
+                onPress={() =>
+                  router.push({
+                    pathname: '/support/[ticketId]',
+                    params: { ticketId: t.id },
+                  })
+                }
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ticketNo}>{t.ticketNo || t.id.slice(-8)}</Text>
+                  <Text style={styles.ticketSubject} numberOfLines={1}>
+                    {t.subject}
+                  </Text>
+                  <Text style={styles.ticketMeta}>
+                    {SUPPORT_CATEGORY_LABELS[t.category] ?? t.category} ·{' '}
+                    {t.status.replace(/_/g, ' ')}
+                  </Text>
+                </View>
+                <ChevronRight color="#9CA3AF" size={18} />
+              </Pressable>
+            ))
+          )}
         </View>
 
         {recentOrder && (
@@ -240,6 +287,48 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  newTicketLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: authTheme.brand,
+    letterSpacing: 0.4,
+  },
+  emptyTickets: {
+    fontSize: 13,
+    color: '#6B7280',
+    paddingVertical: 8,
+  },
+  ticketRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  ticketNo: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: authTheme.brand,
+  },
+  ticketSubject: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1C',
+    marginTop: 2,
+  },
+  ticketMeta: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+    textTransform: 'capitalize',
   },
   sectionTitle: {
     fontSize: 12,

@@ -2,7 +2,9 @@ import { Pressable } from '@/components/common/Pressable';
 import { useLocalSearchParams } from 'expo-router';
 import { Send, Star } from 'lucide-react-native';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   
@@ -20,8 +22,11 @@ import {
   useAddTicketMessage,
   useCloseTicket,
   useRateTicket,
+  useReopenTicket,
   useTicket,
 } from '@/lib/customer/hooks';
+import { customerKeys } from '@/lib/customer/hooks';
+import { useSupportTicketSocket } from '@/lib/socket/hooks';
 import { SUPPORT_CATEGORY_LABELS } from '@/lib/customer/types';
 
 export default function TicketDetailScreen() {
@@ -29,9 +34,15 @@ export default function TicketDetailScreen() {
   const id = String(ticketId ?? '');
 
   const { data: ticket, isLoading, isError, error, refetch } = useTicket(id);
+  const queryClient = useQueryClient();
+  useSupportTicketSocket(id, () => {
+    void queryClient.invalidateQueries({ queryKey: customerKeys.ticket(id) });
+    void queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
+  });
   const addMessage = useAddTicketMessage(id);
   const rateTicket = useRateTicket(id);
   const closeTicket = useCloseTicket(id);
+  const reopenTicket = useReopenTicket(id);
 
   const [message, setMessage] = useState('');
   const [rating, setRating] = useState(0);
@@ -55,7 +66,25 @@ export default function TicketDetailScreen() {
 
   const isResolved =
     ticket?.status === 'resolved' || ticket?.status === 'closed';
+  const canReopen = isResolved;
   const alreadyRated = typeof ticket?.rating === 'number';
+
+  const handleReopen = () => {
+    Alert.prompt(
+      'Reopen ticket',
+      'Tell us why this issue is not resolved yet.',
+      (reason) => {
+        if (!reason?.trim()) return;
+        reopenTicket.mutate(reason.trim(), {
+          onError: (e) =>
+            Alert.alert(
+              'Failed',
+              e instanceof Error ? e.message : 'Could not reopen ticket'
+            ),
+        });
+      }
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -65,10 +94,10 @@ export default function TicketDetailScreen() {
       >
         <View style={styles.container}>
           <ScreenHeader
-            title={ticket?.subject ?? 'Ticket'}
+            title={ticket?.ticketNo || ticket?.subject || 'Ticket'}
             subtitle={
               ticket
-                ? SUPPORT_CATEGORY_LABELS[ticket.category] ?? ticket.category
+                ? `${SUPPORT_CATEGORY_LABELS[ticket.category] ?? ticket.category} · ${ticket.status.replace(/_/g, ' ')}`
                 : undefined
             }
           />
@@ -92,6 +121,20 @@ export default function TicketDetailScreen() {
                 <View style={styles.descriptionCard}>
                   <Text style={styles.descLabel}>Issue</Text>
                   <Text style={styles.descText}>{ticket.description}</Text>
+                  {ticket.resolution ? (
+                    <>
+                      <Text style={[styles.descLabel, { marginTop: 12 }]}>Resolution</Text>
+                      <Text style={styles.descText}>{ticket.resolution}</Text>
+                    </>
+                  ) : null}
+                  {ticket.refundId ? (
+                    <Text style={styles.refundLine}>Refund initiated · ref …{ticket.refundId.slice(-8)}</Text>
+                  ) : null}
+                  {ticket.compensationAmount ? (
+                    <Text style={styles.compLine}>
+                      ₹{ticket.compensationAmount} credited to your wallet
+                    </Text>
+                  ) : null}
                 </View>
 
                 <Text style={styles.conversationLabel}>Conversation</Text>
@@ -191,6 +234,18 @@ export default function TicketDetailScreen() {
                 </Pressable>
               )}
 
+              {canReopen ? (
+                <Pressable
+                  style={styles.reopenBtn}
+                  onPress={handleReopen}
+                  disabled={reopenTicket.isPending}
+                >
+                  <Text style={styles.reopenText}>
+                    {reopenTicket.isPending ? 'Reopening…' : 'Reopen ticket'}
+                  </Text>
+                </Pressable>
+              ) : null}
+
               <View style={styles.inputBar}>
                 <TextInput
                   style={styles.messageInput}
@@ -255,6 +310,18 @@ const styles = StyleSheet.create({
     color: authTheme.text,
     fontSize: 14,
     lineHeight: 20,
+  },
+  refundLine: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  compLine: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#16A34A',
   },
   conversationLabel: {
     color: authTheme.text,
@@ -360,6 +427,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#16A34A',
+  },
+  reopenBtn: {
+    marginBottom: 8,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reopenText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#EA580C',
   },
   inputBar: {
     flexDirection: 'row',

@@ -301,15 +301,11 @@ export function OrderDetailScreen() {
     );
   };
 
-  const handleHelp = async () => {
-    // Try POST /orders/:id/help first, fallback to issues screen
-    try {
-      const result = await orderHelp.mutateAsync({ type: 'general', message: 'Customer needs help with this order.' });
-      Alert.alert('Support', result.message ?? 'Support request created.');
-    } catch {
-      // Fallback: open issues screen
-      router.push({ pathname: '/orders/[orderId]/issues', params: { orderId: data!.id } });
-    }
+  const handleHelp = () => {
+    router.push({
+      pathname: '/support/new',
+      params: { orderId: data!.id },
+    });
   };
 
   const handleInvoice = async () => {

@@ -1,82 +1,106 @@
 import { Pressable } from '@/components/common/Pressable';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Camera, Check, HelpCircle, CreditCard, Truck, AlertTriangle, MessageSquare, X, Image as ImageIcon } from 'lucide-react-native';
+import {
+  AlertTriangle,
+  Camera,
+  CreditCard,
+  HelpCircle,
+  MessageSquare,
+  Truck,
+  X,
+} from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { KeyboardAvoidingView,
+import {
+  KeyboardAvoidingView,
   Platform,
-  
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  Image } from 'react-native';
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthMessageBanner } from '@/components/auth/AuthMessageBanner';
 import { ScreenHeader } from '@/components/common/ScreenHeader';
 import { CustomerServiceStatus } from '@/components/customer/CustomerServiceStatus';
 import { authTheme } from '@/constants/auth-theme';
-import { fonts } from '@/constants/typography';
 import { useCreateTicket } from '@/lib/customer/hooks';
+import { customerApi } from '@/lib/customer/api';
 import {
   SUPPORT_CATEGORIES,
   SUPPORT_CATEGORY_LABELS,
   type SupportCategory,
 } from '@/lib/customer/types';
 
+const QUICK_SUBJECTS: Partial<Record<SupportCategory, string[]>> = {
+  missing_item: ['Missing items', 'Partial order received'],
+  wrong_item: ['Wrong item received', 'Incorrect quantity'],
+  food_quality: ['Food arrived cold', 'Poor taste or quality'],
+  food_safety: ['Foreign object in food', 'Spoiled food'],
+  late_delivery: ['Order is extremely late', 'ETA not updated'],
+  delivery_partner_issue: ['Rude delivery partner', 'Partner did not follow instructions'],
+  payment_issue: ['Charged but order failed', 'Double charged'],
+  refund_issue: ['Refund not received', 'Incorrect refund amount'],
+  coupon_issue: ['Coupon not applied', 'Cashback not credited'],
+  account_issue: ['Cannot update profile', 'Trouble logging in'],
+  restaurant_issue: ['Restaurant closed but accepted order'],
+  order_issue: ['Missing items', 'Wrong order received'],
+  delivery_issue: ['Order is extremely late'],
+  other: ['App is crashing', 'Other issue'],
+};
+
+const CATEGORY_ICON: Record<string, typeof Truck> = {
+  missing_item: Truck,
+  wrong_item: Truck,
+  food_quality: AlertTriangle,
+  food_safety: AlertTriangle,
+  late_delivery: Truck,
+  delivery_partner_issue: Truck,
+  payment_issue: CreditCard,
+  refund_issue: CreditCard,
+  coupon_issue: CreditCard,
+  account_issue: MessageSquare,
+  restaurant_issue: AlertTriangle,
+  order_issue: Truck,
+  delivery_issue: Truck,
+  other: HelpCircle,
+};
+
 export default function NewTicketScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ orderId?: string }>();
   const createTicket = useCreateTicket();
 
-  const [category, setCategory] = useState<SupportCategory>('order_issue');
+  const [category, setCategory] = useState<SupportCategory>(
+    params.orderId ? 'missing_item' : 'account_issue'
+  );
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
-  const [attachments, setAttachments] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<{ uri: string }[]>([]);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [banner, setBanner] = useState<string | null>(null);
-
-  // Quick subjects mapped by category
-  const quickSubjects: Record<SupportCategory, string[]> = {
-    order_issue: ['Missing items', 'Wrong order received', 'Food arrived cold'],
-    payment_issue: ['Charged but order failed', 'Did not receive refund'],
-    delivery_issue: ['Order is extremely late', 'Delivery partner was rude'],
-    account_issue: ['Cannot update profile', 'Trouble logging in'],
-    restaurant_issue: ['Restaurant closed but accepted order'],
-    other: ['App is crashing', 'Feature request'],
-  };
-
-  // Category icons mapping
-  const categoryIcons = {
-    order_issue: Truck,
-    payment_issue: CreditCard,
-    delivery_issue: Truck,
-    account_issue: MessageSquare,
-    restaurant_issue: AlertTriangle,
-    other: HelpCircle,
-  } as const;
+  const [submitting, setSubmitting] = useState(false);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
       quality: 0.7,
-      base64: true,
     });
 
-    if (!result.canceled && result.assets[0].base64) {
-      const b64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-      setAttachments((prev) => [...prev, b64]);
+    if (!result.canceled && result.assets[0]?.uri) {
+      setPendingFiles((prev) => [...prev, { uri: result.assets[0].uri! }]);
     }
   };
 
   const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const nextErrors = {
       subject: subject.trim().length < 3 ? 'Subject is too short' : null,
       description:
@@ -88,29 +112,43 @@ export default function NewTicketScreen() {
     setBanner(null);
     if (Object.values(nextErrors).some(Boolean)) return;
 
-    createTicket.mutate(
-      {
-        category,
-        subject: subject.trim(),
-        description: description.trim(),
-        orderId: params.orderId,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      },
-      {
-        onSuccess: (ticket) => {
-          router.replace({
-            pathname: '/support/[ticketId]',
-            params: { ticketId: ticket.id },
-          });
-        },
-        onError: (error) => {
-          setBanner(
-            error instanceof Error ? error.message : 'Failed to create ticket'
-          );
-        },
+    setSubmitting(true);
+    try {
+      const attachmentUrls: string[] = [];
+      for (const file of pendingFiles) {
+        attachmentUrls.push(await customerApi.uploadSupportAttachment(file.uri));
       }
-    );
+
+      createTicket.mutate(
+        {
+          category,
+          subject: subject.trim(),
+          description: description.trim(),
+          orderId: params.orderId,
+          attachments: attachmentUrls.length > 0 ? attachmentUrls : undefined,
+        },
+        {
+          onSuccess: (ticket) => {
+            router.replace({
+              pathname: '/support/[ticketId]',
+              params: { ticketId: ticket.id },
+            });
+          },
+          onError: (error) => {
+            setBanner(
+              error instanceof Error ? error.message : 'Failed to create ticket'
+            );
+          },
+          onSettled: () => setSubmitting(false),
+        }
+      );
+    } catch (error) {
+      setSubmitting(false);
+      setBanner(error instanceof Error ? error.message : 'Failed to upload attachment');
+    }
   };
+
+  const quickSubjects = QUICK_SUBJECTS[category] ?? [];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -120,42 +158,40 @@ export default function NewTicketScreen() {
       >
         <View style={styles.container}>
           <ScreenHeader title="New ticket" subtitle="Tell us what went wrong" />
-
           <CustomerServiceStatus />
-
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.scroll}
           >
-            {banner ? (
-              <AuthMessageBanner message={banner} type="error" />
-            ) : null}
+            {banner ? <AuthMessageBanner message={banner} type="error" /> : null}
 
-            {params.orderId && (
+            {params.orderId ? (
               <View style={styles.linkedOrderCard}>
                 <Truck color={authTheme.brand} size={20} />
                 <View>
                   <Text style={styles.linkedOrderTitle}>Linked Order</Text>
-                  <Text style={styles.linkedOrderValue}>#{params.orderId.slice(-10).toUpperCase()}</Text>
+                  <Text style={styles.linkedOrderValue}>
+                    #{params.orderId.slice(-10).toUpperCase()}
+                  </Text>
                 </View>
               </View>
-            )}
+            ) : null}
 
             <Text style={styles.label}>Category</Text>
             <View style={styles.categoryGrid}>
               {SUPPORT_CATEGORIES.map((cat) => {
                 const active = cat === category;
-                const Icon = categoryIcons[cat];
+                const Icon = CATEGORY_ICON[cat] ?? HelpCircle;
                 return (
                   <Pressable
                     key={cat}
                     style={[styles.categoryChip, active && styles.categoryActive]}
                     onPress={() => setCategory(cat)}
                   >
-                    <Icon 
-                      color={active ? "#FFFFFF" : authTheme.textMuted} 
-                      size={16} 
+                    <Icon
+                      color={active ? '#FFFFFF' : authTheme.textMuted}
+                      size={16}
                       strokeWidth={1.7}
                     />
                     <Text
@@ -172,26 +208,34 @@ export default function NewTicketScreen() {
             </View>
 
             <Text style={styles.label}>Subject</Text>
-            <View style={styles.quickSubjectScrollWrapper}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickSubjectScroll}>
-                {quickSubjects[category]?.map((qs) => (
-                  <Pressable key={qs} style={styles.quickSubjectChip} onPress={() => setSubject(qs)}>
-                    <Text style={styles.quickSubjectText}>{qs}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
+            {quickSubjects.length > 0 ? (
+              <View style={styles.quickSubjectScrollWrapper}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickSubjectScroll}
+                >
+                  {quickSubjects.map((qs) => (
+                    <Pressable
+                      key={qs}
+                      style={styles.quickSubjectChip}
+                      onPress={() => setSubject(qs)}
+                    >
+                      <Text style={styles.quickSubjectText}>{qs}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
             <TextInput
               style={styles.input}
               value={subject}
               onChangeText={setSubject}
-              placeholder="e.g. Payment deducted but no order"
+              placeholder="Brief summary of your issue"
               placeholderTextColor={authTheme.textDim}
               maxLength={120}
             />
-            {errors.subject ? (
-              <Text style={styles.error}>{errors.subject}</Text>
-            ) : null}
+            {errors.subject ? <Text style={styles.error}>{errors.subject}</Text> : null}
 
             <Text style={styles.label}>Description</Text>
             <TextInput
@@ -212,35 +256,33 @@ export default function NewTicketScreen() {
               <Text style={styles.label}>Attachments</Text>
               <Text style={styles.optionalText}>(Optional)</Text>
             </View>
-            
             <View style={styles.attachmentsContainer}>
-              {attachments.map((uri, idx) => (
+              {pendingFiles.map((file, idx) => (
                 <View key={idx} style={styles.attachmentWrapper}>
-                  <Image source={{ uri }} style={styles.attachmentImg} />
-                  <Pressable style={styles.removeAttachmentBtn} onPress={() => removeAttachment(idx)}>
+                  <Image source={{ uri: file.uri }} style={styles.attachmentImg} />
+                  <Pressable
+                    style={styles.removeAttachmentBtn}
+                    onPress={() => removeAttachment(idx)}
+                  >
                     <X color="#FFFFFF" size={14} strokeWidth={3} />
                   </Pressable>
                 </View>
               ))}
-              
-              {attachments.length < 3 && (
+              {pendingFiles.length < 3 ? (
                 <Pressable style={styles.addAttachmentBtn} onPress={pickImage}>
                   <Camera color={authTheme.brand} size={24} />
                   <Text style={styles.addAttachmentText}>Add Photo</Text>
                 </Pressable>
-              )}
+              ) : null}
             </View>
 
             <Pressable
-              style={[
-                styles.submitButton,
-                createTicket.isPending && styles.submitDisabled,
-              ]}
+              style={[styles.submitButton, (createTicket.isPending || submitting) && styles.submitDisabled]}
               onPress={handleSubmit}
-              disabled={createTicket.isPending}
+              disabled={createTicket.isPending || submitting}
             >
               <Text style={styles.submitText}>
-                {createTicket.isPending ? 'Submitting…' : 'Submit ticket'}
+                {createTicket.isPending || submitting ? 'Submitting…' : 'Submit ticket'}
               </Text>
             </Pressable>
           </ScrollView>
@@ -251,21 +293,10 @@ export default function NewTicketScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: authTheme.bg,
-  },
-  flex: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  scroll: {
-    paddingBottom: 32,
-  },
+  safe: { flex: 1, backgroundColor: authTheme.bg },
+  flex: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingBottom: 32 },
   label: {
     color: authTheme.text,
     fontSize: 14,
@@ -273,11 +304,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 10,
   },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -291,18 +318,9 @@ const styles = StyleSheet.create({
     minWidth: '47%',
     flex: 1,
   },
-  categoryActive: {
-    backgroundColor: authTheme.brand,
-    borderColor: authTheme.brand,
-  },
-  categoryText: {
-    color: authTheme.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  categoryTextActive: {
-    color: '#FFFFFF',
-  },
+  categoryActive: { backgroundColor: authTheme.brand, borderColor: authTheme.brand },
+  categoryText: { color: authTheme.text, fontSize: 13, fontWeight: '600' },
+  categoryTextActive: { color: '#FFFFFF' },
   input: {
     backgroundColor: authTheme.input,
     borderWidth: 1.5,
@@ -313,15 +331,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: authTheme.text,
   },
-  textarea: {
-    minHeight: 120,
-  },
-  error: {
-    color: authTheme.error,
-    fontSize: 12,
-    marginTop: 6,
-    fontWeight: '500',
-  },
+  textarea: { minHeight: 120 },
+  error: { color: authTheme.error, fontSize: 12, marginTop: 6, fontWeight: '500' },
   submitButton: {
     marginTop: 28,
     backgroundColor: authTheme.brand,
@@ -329,14 +340,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
   },
-  submitDisabled: {
-    opacity: 0.6,
-  },
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  submitDisabled: { opacity: 0.6 },
+  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   linkedOrderCard: {
     backgroundColor: '#FFF0ED',
     borderWidth: 1,
@@ -354,19 +359,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  linkedOrderValue: {
-    fontSize: 15,
-    color: '#F15700',
-    fontWeight: '500',
-  },
-  quickSubjectScrollWrapper: {
-    marginHorizontal: -20,
-    marginBottom: 12,
-  },
-  quickSubjectScroll: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
+  linkedOrderValue: { fontSize: 15, color: '#F15700', fontWeight: '500' },
+  quickSubjectScrollWrapper: { marginHorizontal: -20, marginBottom: 12 },
+  quickSubjectScroll: { paddingHorizontal: 20, gap: 8 },
   quickSubjectChip: {
     backgroundColor: authTheme.card,
     borderWidth: 1,
@@ -375,28 +370,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  quickSubjectText: {
-    fontSize: 13,
-    color: authTheme.text,
-    fontWeight: '500',
-  },
-  attachmentsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  quickSubjectText: { fontSize: 13, color: authTheme.text, fontWeight: '500' },
+  attachmentsHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   optionalText: {
     fontSize: 13,
     color: authTheme.textDim,
     marginTop: 20,
     marginBottom: 10,
   },
-  attachmentsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 4,
-  },
+  attachmentsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 4 },
   attachmentWrapper: {
     width: 80,
     height: 80,
@@ -406,10 +388,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: authTheme.inputBorder,
   },
-  attachmentImg: {
-    width: '100%',
-    height: '100%',
-  },
+  attachmentImg: { width: '100%', height: '100%' },
   removeAttachmentBtn: {
     position: 'absolute',
     top: 4,
@@ -430,9 +409,5 @@ const styles = StyleSheet.create({
     backgroundColor: authTheme.input,
     gap: 4,
   },
-  addAttachmentText: {
-    fontSize: 10,
-    color: authTheme.brand,
-    fontWeight: '600',
-  },
+  addAttachmentText: { fontSize: 10, color: authTheme.brand, fontWeight: '600' },
 });
