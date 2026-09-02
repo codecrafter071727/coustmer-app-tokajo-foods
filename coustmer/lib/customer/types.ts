@@ -97,82 +97,20 @@ export type CustomerKitchenAlert = {
   pushed?: boolean;
 };
 
-export const SUPPORT_CATEGORIES = [
-  'missing_item',
-  'wrong_item',
-  'food_quality',
-  'food_safety',
-  'late_delivery',
-  'delivery_partner_issue',
-  'restaurant_issue',
-  'payment_issue',
-  'refund_issue',
-  'coupon_issue',
-  'account_issue',
-  'order_issue',
-  'delivery_issue',
-  'other',
-] as const;
-
-export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
-
-export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
-  missing_item: 'Missing item',
-  wrong_item: 'Wrong item',
-  food_quality: 'Food quality',
-  food_safety: 'Food safety',
-  late_delivery: 'Late delivery',
-  delivery_partner_issue: 'Delivery partner',
-  restaurant_issue: 'Restaurant issue',
-  payment_issue: 'Payment issue',
-  refund_issue: 'Refund issue',
-  coupon_issue: 'Coupon issue',
-  account_issue: 'Account issue',
-  order_issue: 'Order issue',
-  delivery_issue: 'Delivery issue',
-  other: 'Other',
-};
-
-export type TicketStatus =
-  | 'open'
-  | 'in_progress'
-  | 'waiting_for_customer'
-  | 'waiting_for_internal'
-  | 'escalated'
-  | 'resolved'
-  | 'closed'
-  | 'reopened';
-
-export type TicketMessage = {
-  id?: string;
-  sender?: string;
-  senderRole?: string;
-  content: string;
-  createdAt?: string;
-};
-
-export type SupportTicket = {
-  id: string;
-  ticketNo: string;
-  userId: string;
-  category: SupportCategory;
-  subject: string;
-  description: string;
-  status: TicketStatus;
-  priority: string;
-  orderId?: string;
-  attachments: string[];
-  messages: TicketMessage[];
-  rating?: number;
-  feedback?: string;
-  resolution?: string | null;
-  resolutionType?: string | null;
-  refundId?: string | null;
-  compensationAmount?: number | null;
-  resolvedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+export {
+  SUPPORT_CATEGORIES,
+  SUPPORT_CATEGORY_LABELS,
+  type SupportCategory,
+  type SupportCategoryOrLegacy,
+  type TicketStatus,
+  type TicketMessage,
+  type SupportTicket,
+  type CreateTicketPayload,
+  type AddTicketMessagePayload,
+  type RateTicketPayload,
+  type FaqItem,
+  type CallbackRequestPayload,
+} from '@/lib/support/types';
 
 export type PaginationMeta = {
   total: number;
@@ -180,23 +118,6 @@ export type PaginationMeta = {
   limit: number;
   totalPages: number;
   hasNext: boolean;
-};
-
-export type CreateTicketPayload = {
-  category: SupportCategory;
-  subject: string;
-  description: string;
-  orderId?: string;
-  attachments?: string[];
-};
-
-export type AddTicketMessagePayload = {
-  content: string;
-};
-
-export type RateTicketPayload = {
-  rating: number;
-  feedback?: string;
 };
 
 // ─── App config (splash) ──────────────────────────────────────────────────────
@@ -251,24 +172,6 @@ export type FavouriteDish = {
   isVeg?: boolean;
   rating?: number;
   [key: string]: unknown;
-};
-
-// ─── FAQ ─────────────────────────────────────────────────────────────────────
-
-export type FaqItem = {
-  id: string;
-  question: string;
-  answer?: string;
-  category?: string;
-  sortOrder?: number;
-};
-
-// ─── Callback request ────────────────────────────────────────────────────────
-
-export type CallbackRequestPayload = {
-  phone?: string;
-  orderId?: string;
-  reason?: string;
 };
 
 // ─── Loyalty ─────────────────────────────────────────────────────────────────

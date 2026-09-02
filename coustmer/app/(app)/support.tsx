@@ -8,9 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOrders } from '@/lib/order/hooks';
 import { usePaymentHistory } from '@/lib/payment/hooks';
-import { useRequestCallback, useTickets, customerKeys } from '@/lib/customer/hooks';
+import {
+  supportKeys,
+  useRequestCallback,
+  useSupportTickets,
+} from '@/lib/support/support-hooks';
 import { useSupportTicketsSocket } from '@/lib/socket/hooks';
-import { SUPPORT_CATEGORY_LABELS } from '@/lib/customer/types';
+import { SUPPORT_CATEGORY_LABELS } from '@/lib/support/types';
+import { getApiErrorMessage } from '@/lib/errors';
 import { authTheme } from '@/constants/auth-theme';
 
 export default function SupportHubScreen() {
@@ -42,9 +47,9 @@ export default function SupportHubScreen() {
 
   const callback = useRequestCallback();
   const queryClient = useQueryClient();
-  const ticketsQuery = useTickets();
+  const ticketsQuery = useSupportTickets();
   useSupportTicketsSocket(() => {
-    void queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
+    void queryClient.invalidateQueries({ queryKey: supportKeys.tickets() });
   });
   const [callbackSent, setCallbackSent] = useState(false);
 
@@ -57,8 +62,11 @@ export default function SupportHubScreen() {
           setCallbackSent(true);
           Alert.alert('Callback requested', "We'll call you back shortly.");
         },
-        onError: () => {
-          Alert.alert('Failed', 'Could not request a callback. Try again.');
+        onError: (e) => {
+          Alert.alert(
+            'Failed',
+            getApiErrorMessage(e, 'Could not request a callback. Try again.')
+          );
         },
       }
     );
@@ -106,6 +114,15 @@ export default function SupportHubScreen() {
           </View>
           {ticketsQuery.isLoading ? (
             <ActivityIndicator color={authTheme.brand} style={{ marginVertical: 12 }} />
+          ) : ticketsQuery.isError ? (
+            <View style={{ gap: 8, paddingVertical: 8 }}>
+              <Text style={styles.emptyTickets}>
+                {getApiErrorMessage(ticketsQuery.error, 'Could not load tickets.')}
+              </Text>
+              <Pressable onPress={() => void ticketsQuery.refetch()}>
+                <Text style={styles.newTicketLink}>TRY AGAIN</Text>
+              </Pressable>
+            </View>
           ) : (ticketsQuery.data?.tickets.length ?? 0) === 0 ? (
             <Text style={styles.emptyTickets}>No support tickets yet.</Text>
           ) : (

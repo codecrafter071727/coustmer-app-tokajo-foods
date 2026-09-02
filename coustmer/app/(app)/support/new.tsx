@@ -27,13 +27,14 @@ import { AuthMessageBanner } from '@/components/auth/AuthMessageBanner';
 import { ScreenHeader } from '@/components/common/ScreenHeader';
 import { CustomerServiceStatus } from '@/components/customer/CustomerServiceStatus';
 import { authTheme } from '@/constants/auth-theme';
-import { useCreateTicket } from '@/lib/customer/hooks';
-import { customerApi } from '@/lib/customer/api';
+import { useCreateTicket } from '@/lib/support/support-hooks';
+import { supportApi } from '@/lib/support/support-api';
 import {
   SUPPORT_CATEGORIES,
   SUPPORT_CATEGORY_LABELS,
   type SupportCategory,
-} from '@/lib/customer/types';
+} from '@/lib/support/types';
+import { getApiErrorMessage } from '@/lib/errors';
 
 const QUICK_SUBJECTS: Partial<Record<SupportCategory, string[]>> = {
   missing_item: ['Missing items', 'Partial order received'],
@@ -116,7 +117,7 @@ export default function NewTicketScreen() {
     try {
       const attachmentUrls: string[] = [];
       for (const file of pendingFiles) {
-        attachmentUrls.push(await customerApi.uploadSupportAttachment(file.uri));
+        attachmentUrls.push(await supportApi.uploadAttachment(file.uri));
       }
 
       createTicket.mutate(
@@ -135,16 +136,14 @@ export default function NewTicketScreen() {
             });
           },
           onError: (error) => {
-            setBanner(
-              error instanceof Error ? error.message : 'Failed to create ticket'
-            );
+            setBanner(getApiErrorMessage(error, 'Failed to create ticket'));
           },
           onSettled: () => setSubmitting(false),
         }
       );
     } catch (error) {
       setSubmitting(false);
-      setBanner(error instanceof Error ? error.message : 'Failed to upload attachment');
+      setBanner(getApiErrorMessage(error, 'Failed to upload attachment'));
     }
   };
 

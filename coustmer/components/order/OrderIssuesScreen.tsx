@@ -28,8 +28,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
-import { useTickets } from '@/lib/customer/hooks';
-import type { SupportTicket } from '@/lib/customer/types';
+import { useTickets } from '@/lib/support/support-hooks';
+import type { SupportTicket } from '@/lib/support/types';
 import {
   useOrder,
   useOrderIssues,

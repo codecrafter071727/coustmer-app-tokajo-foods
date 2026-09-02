@@ -6,9 +6,9 @@ import { authTheme } from '@/constants/auth-theme';
 import { 
   useCustomerProfile, 
   useFavorites, 
-  useTickets,
   useDeals 
 } from '@/lib/customer/hooks';
+import { useTickets } from '@/lib/support/support-hooks';
 
 export function CustomerDashboard() {
   const router = useRouter();

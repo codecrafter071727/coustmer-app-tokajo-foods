@@ -14,13 +14,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { authTheme } from '@/constants/auth-theme';
 import { fonts } from '@/constants/typography';
-import { useFaqs } from '@/lib/customer/hooks';
-import type { FaqItem } from '@/lib/customer/types';
+import { useFaqs } from '@/lib/support/support-hooks';
+import type { FaqItem } from '@/lib/support/types';
+import { getApiErrorMessage } from '@/lib/errors';
 
 export default function FaqScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data: faqs, isLoading, isError, refetch } = useFaqs();
+  const { data: faqs, isLoading, isError, error, refetch } = useFaqs();
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -62,8 +63,8 @@ export default function FaqScreen() {
             <ChevronDown size={16} color="#6B7280" strokeWidth={2} />
           )}
         </View>
-        {expanded && faq.answer ? (
-          <Text style={styles.faqA}>{faq.answer}</Text>
+        {expanded && (faq.answer || faq.answerPreview) ? (
+          <Text style={styles.faqA}>{faq.answer || faq.answerPreview}</Text>
         ) : null}
       </TouchableOpacity>
     );
@@ -106,7 +107,9 @@ export default function FaqScreen() {
 
       {isError && !isLoading && (
         <View style={styles.center}>
-          <Text style={styles.errorText}>Could not load FAQs.</Text>
+          <Text style={styles.errorText}>
+            {getApiErrorMessage(error, 'Could not load FAQs.')}
+          </Text>
           <TouchableOpacity onPress={() => void refetch()} style={styles.retryBtn}>
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>

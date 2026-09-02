@@ -6,17 +6,27 @@ import {
 
 import { customerApi } from '@/lib/customer/api';
 import type {
-  AddTicketMessagePayload,
   AppFeedbackPayload,
-  CallbackRequestPayload,
   CrashReportPayload,
-  CreateTicketPayload,
-  RateTicketPayload,
   UpdateCustomerPrefsPayload,
 } from '@/lib/customer/types';
+import { supportKeys } from '@/lib/support/support-hooks';
 import { useDeliveryCoords } from '@/store/delivery-location-store';
 import { useAuthStore } from '@/store/auth-store';
 import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
+
+export {
+  useTickets,
+  useTicket,
+  useCreateTicket,
+  useAddTicketMessage,
+  useRateTicket,
+  useCloseTicket,
+  useReopenTicket,
+  useRequestCallback,
+  useFaqs,
+  useFaq,
+} from '@/lib/support/support-hooks';
 
 export const customerKeys = {
   all: ['customer'] as const,
@@ -34,13 +44,14 @@ export const customerKeys = {
   favouriteDishes: () => [...customerKeys.all, 'favouriteDishes'] as const,
   recent: () => [...customerKeys.all, 'recent'] as const,
   onboarding: () => [...customerKeys.all, 'onboarding'] as const,
-  tickets: () => [...customerKeys.all, 'tickets'] as const,
-  ticket: (id: string) => [...customerKeys.all, 'ticket', id] as const,
+  /** Prefer supportKeys — kept for existing invalidate call sites. */
+  tickets: () => supportKeys.tickets(),
+  ticket: (id: string) => supportKeys.ticket(id),
   alerts: () => [...customerKeys.all, 'alerts'] as const,
   collections: () => [...customerKeys.all, 'collections'] as const,
   collection: (slug: string) => [...customerKeys.all, 'collection', slug] as const,
-  faqs: () => [...customerKeys.all, 'faqs'] as const,
-  faq: (id: string) => [...customerKeys.all, 'faq', id] as const,
+  faqs: (params?: { category?: string; q?: string }) => supportKeys.faqs(params),
+  faq: (id: string) => supportKeys.faq(id),
   loyalty: () => [...customerKeys.all, 'loyalty'] as const,
   loyaltyHistory: () => [...customerKeys.all, 'loyaltyHistory'] as const,
   subscriptionPlans: () => [...customerKeys.all, 'subscriptionPlans'] as const,
@@ -237,103 +248,6 @@ export function useCompleteOnboardingStep() {
       queryClient.invalidateQueries({ queryKey: customerKeys.onboarding() });
       queryClient.invalidateQueries({ queryKey: customerKeys.profile() });
     },
-  });
-}
-
-export function useTickets() {
-  return useQuery({
-    queryKey: customerKeys.tickets(),
-    queryFn: customerApi.getTickets,
-  });
-}
-
-export function useTicket(ticketId: string) {
-  return useQuery({
-    queryKey: customerKeys.ticket(ticketId),
-    queryFn: () => customerApi.getTicket(ticketId),
-    enabled: Boolean(ticketId),
-  });
-}
-
-export function useCreateTicket() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: CreateTicketPayload) =>
-      customerApi.createTicket(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
-    },
-  });
-}
-
-export function useAddTicketMessage(ticketId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: AddTicketMessagePayload) =>
-      customerApi.addTicketMessage(ticketId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
-      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
-    },
-  });
-}
-
-export function useRateTicket(ticketId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: RateTicketPayload) =>
-      customerApi.rateTicket(ticketId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
-      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
-    },
-  });
-}
-
-export function useCloseTicket(ticketId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => customerApi.closeTicket(ticketId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
-      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
-    },
-  });
-}
-
-export function useReopenTicket(ticketId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (reason: string) => customerApi.reopenTicket(ticketId, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: customerKeys.ticket(ticketId) });
-      queryClient.invalidateQueries({ queryKey: customerKeys.tickets() });
-    },
-  });
-}
-
-export function useRequestCallback() {
-  return useMutation({
-    mutationFn: (payload: CallbackRequestPayload) =>
-      customerApi.requestCallback(payload),
-  });
-}
-
-export function useFaqs() {
-  return useQuery({
-    queryKey: customerKeys.faqs(),
-    queryFn: customerApi.getFaqs,
-    staleTime: 10 * 60_000,
-    retry: 1,
-  });
-}
-
-export function useFaq(faqId: string) {
-  return useQuery({
-    queryKey: customerKeys.faq(faqId),
-    queryFn: () => customerApi.getFaq(faqId),
-    enabled: Boolean(faqId),
-    staleTime: 10 * 60_000,
   });
 }
 

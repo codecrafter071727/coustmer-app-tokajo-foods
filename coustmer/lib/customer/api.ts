@@ -1,20 +1,14 @@
-import axios from 'axios';
-
 import { api } from '@/lib/api';
 import { handleCustomerServiceError } from '@/lib/customer/error-handler';
 import type {
   ActiveSubscription,
-  AddTicketMessagePayload,
   AppConfig,
   AppFeedbackPayload,
-  CallbackRequestPayload,
   Collection,
   CollectionRestaurantsResult,
   CrashReportPayload,
-  CreateTicketPayload,
   CustomerProfile,
   Deal,
-  FaqItem,
   FavouriteDish,
   HomeBanner,
   HomeFeed,
@@ -22,15 +16,20 @@ import type {
   LoyaltyTransaction,
   OnboardingStatus,
   PaginationMeta,
-  RateTicketPayload,
   RecentActivity,
   Recommendation,
   RestaurantCard,
   ScratchCard,
   SubscriptionPlan,
-  SupportTicket,
   UpdateCustomerPrefsPayload,
 } from '@/lib/customer/types';
+import { supportApi } from '@/lib/support/support-api';
+import type {
+  AddTicketMessagePayload,
+  CallbackRequestPayload,
+  CreateTicketPayload,
+  RateTicketPayload,
+} from '@/lib/support/types';
 import { mapRestaurant } from '@/lib/restaurant/mappers';
 import { mapHomeFeedPayload } from '@/lib/home/feed-mappers';
 import type { KitchenAlert } from '@/lib/restaurant/types';
@@ -111,49 +110,6 @@ function mapProfile(data: Record<string, unknown>): CustomerProfile {
     loyaltyPoints: Number(data.loyaltyPoints ?? data.points ?? 0),
     onboardingCompleted: Boolean(data.onboardingCompleted ?? false),
     onboardingStep: Number(data.onboardingStep ?? 0),
-  };
-}
-
-function mapTicket(data: Record<string, unknown>): SupportTicket {
-  const orderRef =
-    data.orderId ??
-    data.order_id ??
-    (data.order && typeof data.order === 'object'
-      ? (data.order as { _id?: string; id?: string })._id ??
-        (data.order as { id?: string }).id
-      : undefined);
-
-  const rawMessages = (data.messages as Record<string, unknown>[] | undefined) ?? [];
-  const messages = rawMessages.map((m, i) => ({
-    id: String(m.messageId ?? m._id ?? m.id ?? i),
-    sender: String(m.sender ?? ''),
-    senderRole: String(m.sender ?? m.senderRole ?? 'customer'),
-    content: String(m.content ?? ''),
-    createdAt: m.sentAt ? String(m.sentAt) : m.createdAt ? String(m.createdAt) : undefined,
-  }));
-
-  return {
-    id: String(data.ticketId ?? data._id ?? data.id ?? ''),
-    ticketNo: String(data.ticketNo ?? data.ticket_no ?? ''),
-    userId: String(data.userId ?? data.customerId ?? ''),
-    category: data.category as SupportTicket['category'],
-    subject: String(data.subject ?? data.title ?? ''),
-    description: String(data.description ?? data.message ?? data.details ?? ''),
-    status: (data.status as SupportTicket['status']) ?? 'open',
-    priority: String(data.priority ?? 'medium'),
-    orderId: orderRef ? String(orderRef) : undefined,
-    attachments: (data.attachments as string[]) ?? [],
-    messages,
-    rating: (data.satisfactionRating ?? data.rating) as number | undefined,
-    feedback: (data.satisfactionFeedback ?? data.feedback) as string | undefined,
-    resolution: data.resolution != null ? String(data.resolution) : null,
-    resolutionType: data.resolutionType != null ? String(data.resolutionType) : null,
-    refundId: data.refundId != null ? String(data.refundId) : null,
-    compensationAmount:
-      data.compensationAmount != null ? Number(data.compensationAmount) : null,
-    resolvedAt: data.resolvedAt ? String(data.resolvedAt) : null,
-    createdAt: String(data.createdAt ?? ''),
-    updatedAt: String(data.updatedAt ?? ''),
   };
 }
 
@@ -576,88 +532,19 @@ export const customerApi = {
     };
   },
 
-  /** POST /customers/support/attachments/upload — multipart image → Cloudinary URL */
-  uploadSupportAttachment: async (localUri: string): Promise<string> => {
-    const form = new FormData();
-    const name = localUri.split('/').pop() ?? 'evidence.jpg';
-    form.append('image', {
-      uri: localUri,
-      name,
-      type: 'image/jpeg',
-    } as unknown as Blob);
+  /** @deprecated Prefer supportApi — kept for older call sites */
+  uploadSupportAttachment: (localUri: string) =>
+    supportApi.uploadAttachment(localUri),
 
-    try {
-      const response = await api.post<Envelope<{ url?: string; imageUrl?: string }>>(
-        `${CUSTOMER_BASE}/support/attachments/upload`,
-        form,
-        { headers: { Accept: 'application/json' } },
-      );
-      const url = response.data?.data?.url ?? response.data?.data?.imageUrl;
-      if (!url) throw new Error('Upload did not return a URL');
-      return url;
-    } catch (error) {
-      const customerError = handleCustomerServiceError(error);
-      throw new Error(customerError.userMessage);
-    }
-  },
+  createTicket: (payload: CreateTicketPayload) =>
+    supportApi.createTicket(payload),
 
-  /** POST /customers/support/tickets */
-  createTicket: async (payload: CreateTicketPayload): Promise<SupportTicket> => {
-    const body = {
-      category: payload.category,
-      subject: payload.subject,
-      description: payload.description,
-      ...(payload.orderId
-        ? { orderId: payload.orderId, order_id: payload.orderId }
-        : {}),
-      ...(payload.attachments?.length
-        ? { attachments: payload.attachments }
-        : {}),
-    };
+  getTickets: () => supportApi.getTickets(),
 
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets`,
-      { method: 'POST', body }
-    );
-    return mapTicket((res.data as Record<string, unknown>) ?? {});
-  },
+  getTicket: (ticketId: string) => supportApi.getTicket(ticketId),
 
-  /** GET /customers/support/tickets */
-  getTickets: async (): Promise<{
-    tickets: SupportTicket[];
-    meta?: PaginationMeta;
-  }> => {
-    const res = await request<unknown>(`${CUSTOMER_BASE}/support/tickets`);
-    const list = unwrapList(res.data).map(mapTicket);
-    // Fallback if API returns a bare array on envelope.data
-    const tickets =
-      list.length > 0
-        ? list
-        : Array.isArray(res.data)
-          ? (res.data as Record<string, unknown>[]).map(mapTicket)
-          : [];
-    return { tickets, meta: res.meta };
-  },
-
-  /** GET /customers/support/tickets/:ticketId */
-  getTicket: async (ticketId: string): Promise<SupportTicket> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets/${ticketId}`
-    );
-    return mapTicket(res.data ?? {});
-  },
-
-  /** POST /customers/support/tickets/:ticketId/messages */
-  addTicketMessage: async (
-    ticketId: string,
-    payload: AddTicketMessagePayload
-  ): Promise<SupportTicket> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets/${ticketId}/messages`,
-      { method: 'POST', body: payload }
-    );
-    return mapTicket(res.data ?? {});
-  },
+  addTicketMessage: (ticketId: string, payload: AddTicketMessagePayload) =>
+    supportApi.addMessage(ticketId, payload),
 
   /** GET /customers/collections — collection rails */
   getCollections: async (): Promise<Collection[]> => {
@@ -695,74 +582,20 @@ export const customerApi = {
     };
   },
 
-  /** POST /customers/support/tickets/:ticketId/rate */
-  rateTicket: async (
-    ticketId: string,
-    payload: RateTicketPayload
-  ): Promise<SupportTicket> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets/${ticketId}/rate`,
-      { method: 'POST', body: payload }
-    );
-    return mapTicket(res.data ?? {});
-  },
+  rateTicket: (ticketId: string, payload: RateTicketPayload) =>
+    supportApi.rateTicket(ticketId, payload),
 
-  /** POST /customers/support/tickets/:ticketId/close */
-  closeTicket: async (ticketId: string): Promise<SupportTicket> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets/${ticketId}/close`,
-      { method: 'POST', body: {} }
-    );
-    return mapTicket(res.data ?? {});
-  },
+  closeTicket: (ticketId: string) => supportApi.closeTicket(ticketId),
 
-  /** POST /customers/support/tickets/:ticketId/reopen */
-  reopenTicket: async (ticketId: string, reason: string): Promise<SupportTicket> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/tickets/${ticketId}/reopen`,
-      { method: 'POST', body: { reason } }
-    );
-    return mapTicket(res.data ?? {});
-  },
+  reopenTicket: (ticketId: string, reason: string) =>
+    supportApi.reopenTicket(ticketId, reason),
 
-  /** POST /customers/support/callback */
-  requestCallback: async (payload: CallbackRequestPayload): Promise<void> => {
-    await request(`${CUSTOMER_BASE}/support/callback`, {
-      method: 'POST',
-      body: payload,
-    });
-  },
+  requestCallback: (payload: CallbackRequestPayload) =>
+    supportApi.requestCallback(payload),
 
-  /** GET /customers/support/faq */
-  getFaqs: async (): Promise<FaqItem[]> => {
-    try {
-      const res = await request<unknown>(`${CUSTOMER_BASE}/support/faq`);
-      const rows = unwrapList(res.data ?? res);
-      return rows.map((raw) => ({
-        id: String(raw._id ?? raw.id ?? ''),
-        question: String(raw.question ?? raw.title ?? raw.q ?? ''),
-        answer: (raw.answer ?? raw.body ?? raw.content ?? raw.a) as string | undefined,
-        category: raw.category as string | undefined,
-        sortOrder: typeof raw.sortOrder === 'number' ? raw.sortOrder : undefined,
-      }));
-    } catch {
-      return [];
-    }
-  },
+  getFaqs: () => supportApi.getFaqs(),
 
-  /** GET /customers/support/faq/:faqId */
-  getFaq: async (faqId: string): Promise<FaqItem> => {
-    const res = await request<Record<string, unknown>>(
-      `${CUSTOMER_BASE}/support/faq/${faqId}`
-    );
-    const raw = (res.data ?? res ?? {}) as Record<string, unknown>;
-    return {
-      id: String(raw._id ?? raw.id ?? faqId),
-      question: String(raw.question ?? raw.title ?? raw.q ?? ''),
-      answer: (raw.answer ?? raw.body ?? raw.content ?? raw.a) as string | undefined,
-      category: raw.category as string | undefined,
-    };
-  },
+  getFaq: (faqId: string) => supportApi.getFaq(faqId),
 
   /** PUT /customers/me — update veg preference, cuisine prefs */
   updatePrefs: async (payload: UpdateCustomerPrefsPayload): Promise<CustomerProfile> => {
