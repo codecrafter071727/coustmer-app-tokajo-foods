@@ -183,7 +183,7 @@ export function HomeOfferHeroBanner({
               ) : null}
               <View style={styles.orderBtn}>
                 <Text style={styles.orderText}>Order now</Text>
-                <ArrowRight color="#FC8019" size={15} strokeWidth={2.6} />
+                <ArrowRight color="#FC8019" size={13} strokeWidth={2.6} />
               </View>
             </View>
           </Pressable>
@@ -257,20 +257,20 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   orderBtn: {
-    marginTop: 14,
+    marginTop: 12,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   orderText: {
     color: '#FC8019',
     fontFamily: fonts.uiBold,
-    fontSize: 14,
+    fontSize: 12.5,
   },
   dots: {
     position: 'absolute',
