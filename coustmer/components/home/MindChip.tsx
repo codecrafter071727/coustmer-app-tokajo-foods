@@ -5,42 +5,88 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fonts } from '@/constants/typography';
 import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
 
-export const MIND_CHIP_SIZE = 72;
+/** Default circle diameter; shrinks when slot is narrower. */
+export const MIND_CHIP_SIZE = 64;
 
 type Props = {
   label: string;
   slug: string;
   imageUrl?: string;
   onPress: () => void;
+  /** Full column width for this chip (from 5-up grid). */
+  slotWidth?: number;
 };
 
-export function MindChip({ label, slug, imageUrl, onPress }: Props) {
+export function MindChip({
+  label,
+  slug,
+  imageUrl,
+  onPress,
+  slotWidth,
+}: Props) {
   const [failed, setFailed] = useState(false);
   const uri = useMemo(
     () => resolveMindChipImage(slug, label, imageUrl),
     [slug, label, imageUrl]
   );
 
+  const size = Math.min(
+    MIND_CHIP_SIZE,
+    slotWidth ? Math.max(52, Math.floor(slotWidth - 8)) : MIND_CHIP_SIZE
+  );
+  const ring = size + 4;
+
   return (
     <Pressable
-      style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
+      style={({ pressed }) => [
+        styles.item,
+        slotWidth ? { width: slotWidth } : null,
+        pressed && styles.itemPressed,
+      ]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <View style={styles.ring}>
-        <View style={styles.imgWrap}>
+      <View
+        style={[
+          styles.ring,
+          {
+            width: ring,
+            height: ring,
+            borderRadius: ring / 2,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.imgWrap,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+            },
+          ]}
+        >
           {!failed ? (
             <Image
               source={{ uri }}
-              style={styles.img}
+              style={{ width: size, height: size, borderRadius: size / 2 }}
               contentFit="cover"
               transition={220}
               cachePolicy="memory-disk"
               onError={() => setFailed(true)}
             />
           ) : (
-            <View style={[styles.img, styles.imgFallback]}>
+            <View
+              style={[
+                styles.imgFallback,
+                {
+                  width: size,
+                  height: size,
+                  borderRadius: size / 2,
+                },
+              ]}
+            >
               <Text style={styles.fallbackLetter}>
                 {(label || '?').charAt(0).toUpperCase()}
               </Text>
@@ -55,44 +101,30 @@ export function MindChip({ label, slug, imageUrl, onPress }: Props) {
   );
 }
 
-const SIZE = MIND_CHIP_SIZE;
-
 const styles = StyleSheet.create({
   item: {
     alignItems: 'center',
-    width: 88,
   },
   itemPressed: {
     opacity: 0.88,
     transform: [{ scale: 0.96 }],
   },
   ring: {
-    width: SIZE + 6,
-    height: SIZE + 6,
-    borderRadius: (SIZE + 6) / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    marginBottom: 7,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: '#F0F0F0',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
+    elevation: 2,
   },
   imgWrap: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#F3F4F6',
-  },
-  img: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
   },
   imgFallback: {
     alignItems: 'center',
@@ -101,15 +133,15 @@ const styles = StyleSheet.create({
   },
   fallbackLetter: {
     fontFamily: fonts.displayBold,
-    fontSize: 26,
+    fontSize: 22,
     color: '#AC0F45',
   },
   label: {
     fontFamily: fonts.uiSemi,
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#374151',
     textAlign: 'center',
-    lineHeight: 14,
-    paddingHorizontal: 2,
+    lineHeight: 13,
+    paddingHorizontal: 1,
   },
 });
