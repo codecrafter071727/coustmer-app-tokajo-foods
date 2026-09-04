@@ -290,7 +290,7 @@ export function useSetCartSchedule() {
 export function useApplyCartWallet() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => cartApi.applyWallet(),
+    mutationFn: (amount?: number) => cartApi.applyWallet(amount),
     onSuccess: (cart) => syncAndInvalidate(queryClient, cart),
   });
 }

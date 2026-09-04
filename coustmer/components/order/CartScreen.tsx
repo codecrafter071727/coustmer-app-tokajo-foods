@@ -65,6 +65,10 @@ import { parseDropPin } from '@/lib/location/drop-pin';
 import { extractCityFromAddress, normalizeCityName } from '@/lib/location/format';
 import { checkoutBlockCopy } from '@/lib/cart/checkout-block';
 import { mapBillBreakdown, DEFAULT_DELIVERY_FEE } from '@/lib/cart/bill';
+import {
+  ensureWalletCoversCheckout,
+  payableBeforeWallet,
+} from '@/lib/cart/ensure-wallet-checkout';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
   useInitiatePayment,
@@ -655,6 +659,14 @@ export function CartScreen() {
           mappedMethod = saved.type;
           mappedMethodId = saved.id;
         }
+      }
+
+      if (mappedMethod === 'wallet') {
+        await ensureWalletCoversCheckout({
+          payableBeforeWallet: payableBeforeWallet(billBreakdown),
+          walletBalance: Number(wallet.data?.balance ?? 0),
+        });
+        void liveBill.refetch();
       }
 
       const payload = {

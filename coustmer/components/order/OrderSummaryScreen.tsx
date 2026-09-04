@@ -36,6 +36,10 @@ import {
   paymentMethodLabel,
 } from '@/lib/checkout/payment-display';
 import { mapBillBreakdown } from '@/lib/cart/bill';
+import {
+  ensureWalletCoversCheckout,
+  payableBeforeWallet,
+} from '@/lib/cart/ensure-wallet-checkout';
 import { useCart, useCartBill } from '@/lib/cart/hooks';
 import { formatScheduledForDisplay } from '@/lib/cart/schedule';
 import { useCreateOrder } from '@/lib/order/hooks';
@@ -207,6 +211,14 @@ export function OrderSummaryScreen() {
           mappedMethod = saved.type;
           mappedMethodId = saved.id;
         }
+      }
+
+      if (mappedMethod === 'wallet') {
+        await ensureWalletCoversCheckout({
+          payableBeforeWallet: payableBeforeWallet(billBreakdown),
+          walletBalance: Number(wallet.data?.balance ?? 0),
+        });
+        void bill.refetch();
       }
 
       const order = await createOrder.mutateAsync({

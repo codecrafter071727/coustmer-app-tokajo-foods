@@ -220,5 +220,11 @@ export function isPaymentSuccess(status?: string) {
 
 export function needsOnlinePayment(method?: string) {
   const m = String(method ?? '').toLowerCase();
-  return m !== 'cod' && m !== 'cash' && m !== 'cash_on_delivery';
+  return (
+    m !== 'cod' &&
+    m !== 'cash' &&
+    m !== 'cash_on_delivery' &&
+    m !== 'wallet' &&
+    m !== 'tokajo_wallet'
+  );
 }

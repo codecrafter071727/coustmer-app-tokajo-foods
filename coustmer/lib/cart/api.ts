@@ -1010,9 +1010,13 @@ export const cartApi = {
     ]);
   },
 
-  /** PUT /cart/wallet */
-  applyWallet: async (): Promise<Cart> => {
-    return mutateCart(`${CART_BASE}/wallet`, 'PUT', [{ apply: true }, {}]);
+  /** PUT /cart/wallet — amount optional; omit / apply:true covers full bill up to balance */
+  applyWallet: async (amount?: number): Promise<Cart> => {
+    const body =
+      amount != null && Number.isFinite(amount) && amount > 0
+        ? { amount: Math.round(amount * 100) / 100 }
+        : { apply: true };
+    return mutateCart(`${CART_BASE}/wallet`, 'PUT', [body]);
   },
 
   /** DELETE /cart/wallet */
