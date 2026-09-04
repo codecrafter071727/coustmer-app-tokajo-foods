@@ -143,6 +143,12 @@ export type CuisineChip = {
   imageUrl?: string;
 };
 
+/** GET /cuisines/nearby — What's on your mind payload. */
+export type MindCategoriesResponse = {
+  restaurantSampleSize: number;
+  categories: CuisineChip[];
+};
+
 export type DayTimingSlot = {
   open?: string;
   close?: string;

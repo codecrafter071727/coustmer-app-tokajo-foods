@@ -24,6 +24,8 @@ type Props = {
   restaurants: Restaurant[];
   topRestaurants: Restaurant[];
   homeCategories: HomeCategory[];
+  mindCategories?: CuisineChip[];
+  mindCategoriesLoading?: boolean;
   liveCuisines?: CuisineChip[];
   deals: Deal[];
   feedRails?: HomeFeed | null;
@@ -56,6 +58,8 @@ export function HomeFeedSections({
   restaurants,
   topRestaurants,
   homeCategories,
+  mindCategories = [],
+  mindCategoriesLoading = false,
   liveCuisines = [],
   deals,
   feedRails,
@@ -131,7 +135,10 @@ export function HomeFeedSections({
         hideCuisineRow
       />
 
-      <WhatsOnYourMind restaurants={baseRestaurants} />
+      <WhatsOnYourMind
+        categories={mindCategories}
+        loading={mindCategoriesLoading}
+      />
 
       {deals.length > 0 ? <AutoScrollingDeals deals={deals} /> : null}
 

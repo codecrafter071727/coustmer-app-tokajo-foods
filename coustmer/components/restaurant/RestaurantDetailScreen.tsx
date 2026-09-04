@@ -1214,17 +1214,15 @@ export function RestaurantDetailScreen() {
                 `${restaurantName} serves ${cuisineLine.toLowerCase()}. Order fresh favourites with live tracking.`}
             </Text>
 
-            {(r.cuisines?.length || r.tags?.length) ? (
+            {(r.cuisines?.length || 0) > 0 ? (
               <>
                 <Text style={[styles.infoLabel, { marginTop: 18 }]}>Cuisines</Text>
                 <View style={styles.infoChips}>
-                  {(r.cuisines?.length ? r.cuisines : r.tags || [])
-                    .slice(0, 8)
-                    .map((c) => (
-                      <View key={c} style={styles.infoChip}>
-                        <Text style={styles.infoChipText}>{c}</Text>
-                      </View>
-                    ))}
+                  {r.cuisines!.slice(0, 8).map((c) => (
+                    <View key={c} style={styles.infoChip}>
+                      <Text style={styles.infoChipText}>{c}</Text>
+                    </View>
+                  ))}
                 </View>
               </>
             ) : null}

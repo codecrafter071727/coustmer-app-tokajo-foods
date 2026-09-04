@@ -55,10 +55,12 @@ import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
   useHomeCategories,
   useInfiniteRestaurants,
+  useNearbyMindCategories,
   useNearbyRestaurants,
   useRestaurantCuisines,
 } from '@/lib/restaurant/hooks';
 import { homeFiltersToNearbyParams } from '@/lib/restaurant/nearby-params';
+import { filterMindCategoriesToRestaurants } from '@/lib/restaurant/home-categories';
 import { useAuthStore } from '@/store/auth-store';
 import {
   useDeliveryCoords,
@@ -199,6 +201,10 @@ export default function HomeScreen() {
   );
   const nearby = useNearbyRestaurants(nearbyParams);
   const liveCuisines = useRestaurantCuisines();
+  const mindCategories = useNearbyMindCategories(coords, {
+    radiusKm: CUSTOMER_DISCOVERY_RADIUS_KM,
+    restaurantLimit: 40,
+  });
   const { chipLabel: surgeChipLabel } = useActiveZoneSurge();
 
   const feedRails = home.data;
@@ -235,7 +241,11 @@ export default function HomeScreen() {
 
   const homeCategories = useHomeCategories(baseRestaurants);
 
-
+  const mindCategoriesForHome = useMemo(() => {
+    const fromApi = mindCategories.data?.categories ?? [];
+    if (!baseRestaurants.length) return fromApi;
+    return filterMindCategoriesToRestaurants(fromApi, baseRestaurants);
+  }, [mindCategories.data?.categories, baseRestaurants]);
 
   /** Top rail: highest rated first (different order than feed / deals) */
   const topRestaurants = useMemo(() => {
@@ -263,7 +273,8 @@ export default function HomeScreen() {
     home.isRefetching ||
     deals.isRefetching ||
     offers.isRefetching ||
-    liveCuisines.isRefetching;
+    liveCuisines.isRefetching ||
+    mindCategories.isRefetching;
 
   const onRefresh = () => {
     feed.refetch();
@@ -273,6 +284,7 @@ export default function HomeScreen() {
     offers.refetch();
     profile.refetch();
     liveCuisines.refetch();
+    mindCategories.refetch();
   };
 
   const onVegApply = (mode: VegMode) => {
@@ -542,6 +554,8 @@ export default function HomeScreen() {
         restaurants={restaurants}
         topRestaurants={topRestaurants}
         homeCategories={homeCategories.data ?? []}
+        mindCategories={mindCategoriesForHome}
+        mindCategoriesLoading={mindCategories.isLoading}
         liveCuisines={liveCuisines.data}
         deals={activeDeals}
         feedRails={feedRails}

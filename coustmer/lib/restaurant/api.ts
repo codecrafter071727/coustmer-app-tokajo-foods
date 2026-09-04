@@ -24,6 +24,7 @@ import type {
   KitchenAlert,
   MenuItem,
   MenuItemListParams,
+  MindCategoriesResponse,
   NearbyParams,
   PaginationMeta,
   Restaurant,
@@ -252,6 +253,41 @@ export const restaurantApi = {
     return (Array.isArray(list) ? list : []).map((row, i) =>
       mapCuisineChip((row ?? {}) as Record<string, unknown> | string, i)
     );
+  },
+
+  /**
+   * GET /cuisines/nearby — unique cuisines from restaurants near the pin
+   * (What's on your mind). Updates when nearby outlets / cuisine tags change.
+   */
+  getNearbyMindCategories: async (params: {
+    lat: number;
+    lng: number;
+    radius?: number;
+    limit?: number;
+  }): Promise<MindCategoriesResponse> => {
+    const res = await request<Record<string, unknown>>(
+      `${SERVICE_BASE}/cuisines/nearby${buildQuery({
+        lat: params.lat,
+        lng: params.lng,
+        radius: params.radius ?? CUSTOMER_DISCOVERY_RADIUS_KM,
+        limit: params.limit ?? 40,
+      })}`
+    );
+    const payload = (res.data ?? res ?? {}) as Record<string, unknown>;
+    const rawList = Array.isArray(payload.categories)
+      ? payload.categories
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    return {
+      restaurantSampleSize:
+        typeof payload.restaurantSampleSize === 'number'
+          ? payload.restaurantSampleSize
+          : Number(payload.restaurantSampleSize) || 0,
+      categories: rawList.map((row, i) =>
+        mapCuisineChip((row ?? {}) as Record<string, unknown> | string, i)
+      ),
+    };
   },
 
   /** GET /restaurants/:id/timings */

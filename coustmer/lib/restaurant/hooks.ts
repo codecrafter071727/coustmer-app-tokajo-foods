@@ -36,6 +36,12 @@ export const restaurantKeys = {
   nearby: (params: NearbyParams) =>
     [...restaurantKeys.all, 'nearby', params] as const,
   cuisines: () => [...restaurantKeys.all, 'cuisines'] as const,
+  mindCategories: (params: {
+    lat: number;
+    lng: number;
+    radius?: number;
+    limit?: number;
+  }) => [...restaurantKeys.all, 'mind-categories', params] as const,
   detail: (id: string) => [...restaurantKeys.all, 'detail', id] as const,
   slug: (slug: string) => [...restaurantKeys.all, 'slug', slug] as const,
   timings: (id: string) => [...restaurantKeys.all, 'timings', id] as const,
@@ -424,6 +430,45 @@ export function useRestaurantCuisines() {
     queryFn: (): Promise<CuisineChip[]> => restaurantApi.getCuisines(),
     staleTime: 5 * 60_000,
     retry: 1,
+  });
+}
+
+/**
+ * What's on your mind — unique cuisines from restaurants near the user pin.
+ * Refetches when location / radius changes; new nearby outlets appear automatically.
+ */
+export function useNearbyMindCategories(
+  coords?: { lat?: number; lng?: number } | null,
+  options?: { radiusKm?: number; restaurantLimit?: number; enabled?: boolean }
+) {
+  const lat = coords?.lat;
+  const lng = coords?.lng;
+  const radius = options?.radiusKm ?? CUSTOMER_DISCOVERY_RADIUS_KM;
+  const limit = options?.restaurantLimit ?? 40;
+
+  return useQuery({
+    queryKey: restaurantKeys.mindCategories({
+      lat: lat ?? 0,
+      lng: lng ?? 0,
+      radius,
+      limit,
+    }),
+    queryFn: () =>
+      restaurantApi.getNearbyMindCategories({
+        lat: lat as number,
+        lng: lng as number,
+        radius,
+        limit,
+      }),
+    enabled:
+      options?.enabled !== false &&
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    meta: { persist: false },
   });
 }
 
