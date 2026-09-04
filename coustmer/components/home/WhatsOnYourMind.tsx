@@ -18,14 +18,21 @@ function toColumns(cats: HomeCategory[]): HomeCategory[][] {
   return cols;
 }
 
+/**
+ * Dynamic “What's on your mind” — only categories present near the user.
+ * Renders nothing when the area has no cuisine/menu categories yet.
+ */
 export function WhatsOnYourMind({ categories }: Props) {
   const router = useRouter();
   if (!categories.length) return null;
 
-  const columns = toColumns(categories.slice(0, 16));
+  const columns = toColumns(categories);
 
-  const open = (slug: string) => {
-    router.push({ pathname: '/restaurants', params: { cuisine: slug } });
+  const open = (cat: HomeCategory) => {
+    router.push({
+      pathname: '/restaurants',
+      params: { cuisine: cat.slug, label: cat.label },
+    });
   };
 
   return (
@@ -41,9 +48,9 @@ export function WhatsOnYourMind({ categories }: Props) {
           <View key={`col-${idx}`} style={styles.column}>
             {col.map((cat) => (
               <Pressable
-                key={cat.slug}
+                key={cat.id || cat.slug}
                 style={styles.item}
-                onPress={() => open(cat.slug)}
+                onPress={() => open(cat)}
                 accessibilityRole="button"
                 accessibilityLabel={cat.label}
               >
@@ -53,7 +60,8 @@ export function WhatsOnYourMind({ categories }: Props) {
                       source={{ uri: cat.imageUrl }}
                       style={styles.img}
                       contentFit="cover"
-                      transition={160}
+                      transition={180}
+                      recyclingKey={cat.slug}
                     />
                   ) : (
                     <View style={[styles.img, styles.imgFallback]} />
@@ -73,8 +81,8 @@ export function WhatsOnYourMind({ categories }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 8,
-    paddingBottom: 4,
+    marginTop: 10,
+    paddingBottom: 6,
   },
   title: {
     fontFamily: fonts.displayBold,
@@ -86,27 +94,29 @@ const styles = StyleSheet.create({
   },
   rail: {
     paddingHorizontal: 12,
-    gap: 4,
+    gap: 2,
   },
   column: {
-    width: 88,
-    gap: 14,
+    width: 92,
+    gap: 16,
   },
   item: {
     alignItems: 'center',
-    width: 88,
+    width: 92,
   },
   imgWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     overflow: 'hidden',
     backgroundColor: '#F4F4F5',
-    marginBottom: 6,
+    marginBottom: 7,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E7E7E7',
   },
   img: {
-    width: 72,
-    height: 72,
+    width: 78,
+    height: 78,
   },
   imgFallback: {
     backgroundColor: '#FFE8D6',

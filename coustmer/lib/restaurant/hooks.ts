@@ -541,16 +541,15 @@ export function useRestaurantCategories(restaurantId: string) {
 }
 
 /**
- * Home “What's on your mind” categories — built from restaurant cuisines /
- * menuCategories plus live GET /restaurants/:id/categories samples so new
- * categories appear automatically.
+ * Home “What's on your mind” — only categories present on nearby restaurants.
+ * No hardcoded filler list when the area has no cuisine tags yet.
  */
 export function useHomeCategories(restaurants: Restaurant[]) {
   const sampleIds = useMemo(
     () =>
       restaurants
         .filter((r) => r.id && r.status !== 'deleted')
-        .slice(0, 10)
+        .slice(0, 24)
         .map((r) => r.id),
     [restaurants]
   );
