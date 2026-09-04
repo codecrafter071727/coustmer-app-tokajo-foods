@@ -88,13 +88,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   searchOnBanner: {
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: '#FFFFFF',
   },
   placeholder: {
     flex: 1,
-    color: '#6B7280',
+    color: '#9A9A9A',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -107,9 +105,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bellOnBanner: {
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: '#FFFFFF',
   },
   badge: {
     position: 'absolute',
