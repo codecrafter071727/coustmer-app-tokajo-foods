@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+﻿import { useRouter } from 'expo-router';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -20,20 +20,22 @@ type Props = {
   loading?: boolean;
 };
 
-/** Collapsed grid: row1 = 5 cats, row2 = 4 cats + Show more. */
+/** Collapsed: row1 = 5 cats, row2 = 4 cats + Show more. */
 const ROW1 = 5;
 const ROW2_CATS = 4;
-const PREVIEW_CATS = ROW1 + ROW2_CATS; // 9
-
+const PREVIEW_CATS = ROW1 + ROW2_CATS;
 const H_PAD = 12;
 
-/** Row1: 5 categories · Row2: 4 categories + Show more. */
 export function WhatsOnYourMind({ categories, loading = false }: Props) {
   const router = useRouter();
   const { width: screenW } = useWindowDimensions();
   const [expanded, setExpanded] = useState(false);
 
   const slotW = (screenW - H_PAD * 2) / ROW1;
+  const circle = Math.min(
+    MIND_CHIP_SIZE,
+    Math.max(52, Math.floor(slotW - 8))
+  );
 
   const withPhotos = useMemo(
     () =>
@@ -52,8 +54,8 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
   }, [withPhotos, expanded, needsMore]);
 
   const row1 = visible.slice(0, ROW1);
-  const row2Cats = visible.slice(ROW1, expanded ? undefined : ROW1 + ROW2_CATS);
-  // When expanded past 9, remaining rows after row2
+  const row2Cats = visible.slice(ROW1, ROW1 + ROW2_CATS);
+
   const restRows = useMemo(() => {
     if (!expanded || visible.length <= PREVIEW_CATS) return [] as CuisineChip[][];
     const rest = visible.slice(PREVIEW_CATS);
@@ -73,66 +75,74 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
 
   if (!loading && categories.length === 0) return null;
 
-  const renderRow = (cats: CuisineChip[], key: string, trailing?: React.ReactNode) => (
+  const renderRow = (
+    cats: CuisineChip[],
+    key: string,
+    trailing?: ReactNode
+  ) => (
     <View key={key} style={styles.row}>
       {cats.map((cat) => (
-        <View key={cat.id || cat.slug} style={{ width: slotW }}>
-          <MindChip
-            label={cat.name}
-            slug={cat.slug}
-            imageUrl={cat.imageUrl}
-            onPress={() => open(cat)}
-            slotWidth={slotW}
-          />
-        </View>
+        <MindChip
+          key={cat.id || cat.slug}
+          label={cat.name}
+          slug={cat.slug}
+          imageUrl={cat.imageUrl}
+          onPress={() => open(cat)}
+          slotWidth={slotW}
+        />
       ))}
       {trailing}
     </View>
   );
 
-  const showMoreBtn = (
+  const moreControl = (mode: 'more' | 'less') => (
     <Pressable
       style={({ pressed }) => [
         { width: slotW },
         styles.moreCol,
         pressed && styles.pressed,
       ]}
-      onPress={() => setExpanded(true)}
+      onPress={() => setExpanded(mode === 'more')}
       accessibilityRole="button"
-      accessibilityLabel="Show more categories"
+      accessibilityLabel={mode === 'more' ? 'Show more categories' : 'Show less'}
     >
-      <View style={styles.moreRing}>
-        <View style={styles.moreCircle}>
-          <LayoutGrid size={18} color="#AC0F45" strokeWidth={2.2} />
+      <View
+        style={[
+          styles.moreRing,
+          {
+            width: circle + 4,
+            height: circle + 4,
+            borderRadius: (circle + 4) / 2,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.moreCircle,
+            {
+              width: circle - 2,
+              height: circle - 2,
+              borderRadius: (circle - 2) / 2,
+            },
+            mode === 'less' && styles.moreCircleMuted,
+          ]}
+        >
+          {mode === 'more' ? (
+            <LayoutGrid size={18} color="#AC0F45" strokeWidth={2.2} />
+          ) : (
+            <Text style={styles.moreMinus}>-</Text>
+          )}
         </View>
       </View>
-      <Text style={styles.moreLabel}>Show more</Text>
-    </Pressable>
-  );
-
-  const showLessBtn = (
-    <Pressable
-      style={({ pressed }) => [
-        { width: slotW },
-        styles.moreCol,
-        pressed && styles.pressed,
-      ]}
-      onPress={() => setExpanded(false)}
-      accessibilityRole="button"
-      accessibilityLabel="Show less"
-    >
-      <View style={styles.moreRing}>
-        <View style={[styles.moreCircle, styles.moreCircleMuted]}>
-          <Text style={styles.moreMinus}>−</Text>
-        </View>
-      </View>
-      <Text style={styles.moreLabel}>Show less</Text>
+      <Text style={styles.moreLabel}>
+        {mode === 'more' ? 'Show more' : 'Show less'}
+      </Text>
     </Pressable>
   );
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>What's on your mind?</Text>
+      <Text style={styles.title}>What&apos;s on your mind?</Text>
       {loading && categories.length === 0 ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator color="#AC0F45" />
@@ -145,9 +155,9 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
                 row2Cats,
                 'row-2',
                 !expanded && needsMore
-                  ? showMoreBtn
+                  ? moreControl('more')
                   : expanded && needsMore && restRows.length === 0
-                    ? showLessBtn
+                    ? moreControl('less')
                     : null
               )
             : null}
@@ -155,7 +165,9 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
             renderRow(
               row,
               `row-extra-${i}`,
-              i === restRows.length - 1 && needsMore ? showLessBtn : null
+              i === restRows.length - 1 && needsMore
+                ? moreControl('less')
+                : null
             )
           )}
         </View>
@@ -163,8 +175,6 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
     </View>
   );
 }
-
-const SIZE = MIND_CHIP_SIZE;
 
 const styles = StyleSheet.create({
   wrap: {
@@ -200,17 +210,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   moreRing: {
-    width: SIZE + 4,
-    height: SIZE + 4,
-    borderRadius: (SIZE + 4) / 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
   },
   moreCircle: {
-    width: SIZE - 4,
-    height: SIZE - 4,
-    borderRadius: (SIZE - 4) / 2,
     backgroundColor: '#FFF5F7',
     borderWidth: 1.5,
     borderColor: '#F3C0CE',
@@ -224,9 +228,9 @@ const styles = StyleSheet.create({
     borderStyle: 'solid',
   },
   moreMinus: {
-    fontSize: 24,
+    fontSize: 22,
     color: '#52525B',
-    lineHeight: 26,
+    lineHeight: 24,
     fontWeight: '600',
   },
   moreLabel: {
