@@ -95,6 +95,9 @@ export type Cart = {
   discount: number;
   deliveryFee?: number;
   tax?: number;
+  platformFee?: number;
+  packagingCharge?: number;
+  rainFee?: number;
   total: number;
   coupon?: CartCoupon | null;
   specialInstructions?: string;

@@ -344,6 +344,18 @@ export function mapCart(data: unknown): Cart {
     if (taxLike > 0) tax = taxLike;
   }
 
+  const platformFee =
+    pickFiniteNumber(nestedCart.platformFee, pricing.platformFee) ?? 0;
+  const packagingCharge =
+    pickFiniteNumber(
+      nestedCart.packagingCharge,
+      nestedCart.packagingFee,
+      pricing.packagingCharge
+    ) ?? 0;
+  const rainFee =
+    pickFiniteNumber(nestedCart.rainFee, nestedCart.rainCharge, pricing.rainFee) ??
+    0;
+
   const total =
     pickFiniteNumber(
       nestedCart.total,
@@ -354,18 +366,15 @@ export function mapCart(data: unknown): Cart {
       pricing.total,
       pricing.grandTotal,
       pricing.payableAmount
-    ) ?? subtotal + tip + deliveryFee + tax - discount;
-
-  // If tax line missing but grand total includes it, derive from API total
-  if (
-    tax <= 0 &&
-    Number.isFinite(total) &&
-    total > 0
-  ) {
-    const withoutTax = subtotal + deliveryFee + tip - discount;
-    const implied = Math.round((total - withoutTax) * 100) / 100;
-    if (implied > 0.009) tax = implied;
-  }
+    ) ??
+    subtotal +
+      tip +
+      deliveryFee +
+      tax +
+      platformFee +
+      packagingCharge +
+      rainFee -
+      discount;
 
   return {
     id: String(nestedCart._id ?? nestedCart.id ?? nestedCart.cartId ?? '') || undefined,
@@ -393,9 +402,12 @@ export function mapCart(data: unknown): Cart {
     discount: Number.isFinite(discount) ? discount : 0,
     deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
     tax: Number.isFinite(tax) ? tax : 0,
-    platformFee:
-      pickFiniteNumber(nestedCart.platformFee, pricing.platformFee) ?? 0,
-    total: Number.isFinite(total) ? total : subtotal + tip + deliveryFee - discount,
+    platformFee,
+    packagingCharge,
+    rainFee,
+    total: Number.isFinite(total)
+      ? total
+      : subtotal + tip + deliveryFee + tax + platformFee + packagingCharge + rainFee - discount,
     coupon: mapCoupon(nestedCart.coupon ?? nestedCart.promo ?? nestedCart.appliedCoupon),
     specialInstructions:
       (nestedCart.specialInstructions as string) ||

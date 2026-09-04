@@ -317,6 +317,9 @@ export function mapOrder(data: Record<string, unknown>): Order {
     }, 0);
   }
 
+  const rainFee =
+    pickNum(customerBill?.rainFee, data.rainFee, pricing?.rainFee) ?? 0;
+
   let total =
     pickNum(
       customerBill?.grandTotal,
@@ -330,24 +333,14 @@ export function mapOrder(data: Record<string, unknown>): Order {
       pricing?.grandTotal,
       pricing?.payableAmount
     ) ??
-    subtotal + packagingCharge + platformFee + deliveryFee + tax + tip - discount;
+    subtotal + packagingCharge + platformFee + deliveryFee + tax + rainFee + tip - discount;
 
-  // Derive tax from grand total when API omits an explicit tax line
+  // Derive tax from grand total only when the API omitted a customer bill slice.
   if (!customerBill && tax <= 0 && Number.isFinite(total) && total > 0) {
     const withoutTax =
-      subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
+      subtotal + packagingCharge + platformFee + deliveryFee + rainFee + tip - discount;
     const implied = Math.round((total - withoutTax) * 100) / 100;
     if (implied > 0.009) tax = implied;
-  }
-
-  // Tokajo default: 5% tax on item total when still missing
-  if (!customerBill && tax <= 0 && subtotal > 0) {
-    tax = Math.round(subtotal * 0.05 * 100) / 100;
-    const withoutTax =
-      subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
-    if (Math.abs(total - withoutTax) < 0.02) {
-      total = Math.round((withoutTax + tax) * 100) / 100;
-    }
   }
 
   return {
@@ -370,6 +363,7 @@ export function mapOrder(data: Record<string, unknown>): Order {
     tax: Number.isFinite(tax) ? tax : undefined,
     discount: Number.isFinite(discount) ? discount : undefined,
     tip: Number.isFinite(tip) ? tip : undefined,
+    rainFee: Number.isFinite(rainFee) && rainFee > 0 ? rainFee : undefined,
     couponCode:
       (data.couponCode as string) ||
       (data.promoCode as string) ||

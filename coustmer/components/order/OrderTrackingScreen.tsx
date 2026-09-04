@@ -865,6 +865,7 @@ export function OrderTrackingScreen() {
   const platformFee = Number(o?.platformFee ?? 0);
   const tip = Number(o?.tip ?? 0);
   const discount = Number(o?.discount ?? 0);
+  const rainFee = Number(o?.rainFee ?? 0);
   const couponCode =
     o?.couponCode ||
     (typeof o?.raw?.couponCode === 'string' ? o.raw.couponCode : undefined) ||
@@ -873,46 +874,27 @@ export function OrderTrackingScreen() {
       ? (o?.raw?.coupon as { code?: string }).code
       : undefined);
 
-  // Tax: API value → implied from grand total → 5% of item total
-  const TAX_RATE = 0.05;
-  const tax = (() => {
-    const fromApi = Number(o?.tax ?? 0);
-    if (fromApi > 0.009) return Math.round(fromApi * 100) / 100;
-
-    if (typeof o?.total === 'number' && o.total > 0) {
-      const withoutTax =
-        subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
-      const implied = Math.round((o.total - withoutTax) * 100) / 100;
-      if (implied > 0.009) return implied;
-    }
-
-    if (subtotal > 0) {
-      return Math.round(subtotal * TAX_RATE * 100) / 100;
-    }
-    return 0;
-  })();
+  const tax = Number(o?.tax ?? 0);
 
   const total = (() => {
     if (typeof o?.total === 'number' && o.total > 0) {
-      const withoutTax =
-        subtotal + packagingCharge + platformFee + deliveryFee + tip - discount;
-      // API total omitted tax — include the 5% we display
-      if (tax > 0 && Math.abs(o.total - withoutTax) < 0.02) {
-        return Math.round((withoutTax + tax) * 100) / 100;
-      }
       return o.total;
     }
     return Math.max(
       0,
       Math.round(
-        (subtotal + packagingCharge + platformFee + deliveryFee + tax + tip - discount) *
+        (subtotal +
+          packagingCharge +
+          platformFee +
+          deliveryFee +
+          tax +
+          rainFee +
+          tip -
+          discount) *
           100,
       ) / 100,
     );
   })();
-  const taxIsFivePercent =
-    tax > 0 &&
-    Math.abs(tax - Math.round(subtotal * TAX_RATE * 100) / 100) < 0.05;
 
   const address =
     o?.deliveryAddress?.formattedAddress ||
@@ -1592,6 +1574,7 @@ export function OrderTrackingScreen() {
                 value={deliveryFee}
                 free={deliveryFee <= 0}
               />
+              {rainFee > 0 ? <BillLine label="Rain fee" value={rainFee} /> : null}
               {discount > 0 ? (
                 <BillLine
                   label={
@@ -1603,14 +1586,9 @@ export function OrderTrackingScreen() {
                   green
                 />
               ) : null}
-              <BillLine
-                label={
-                  taxIsFivePercent
-                    ? 'Taxes & charges (5%)'
-                    : 'Taxes & charges'
-                }
-                value={tax}
-              />
+              {tax > 0 ? (
+                <BillLine label="Taxes & charges" value={tax} />
+              ) : null}
               {tip > 0 ? <BillLine label="Partner tip" value={tip} /> : null}
               <View style={styles.totalRule} />
               <View style={styles.totalRow}>

@@ -102,6 +102,7 @@ export type Order = {
   discount?: number;
   tip?: number;
   couponCode?: string;
+  rainFee?: number;
   total?: number;
   paymentMethod?: string;
   paymentStatus?: string;
