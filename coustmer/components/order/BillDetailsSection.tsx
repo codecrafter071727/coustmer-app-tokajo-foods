@@ -72,10 +72,6 @@ export function BillDetailsSection({
         <BillRow label="Rain fee" value={bill.rainFee} />
       ) : null}
 
-      {bill.surgeExtra > 0 ? (
-        <BillRow label="Peak hour surcharge" value={bill.surgeExtra} />
-      ) : null}
-
       <TaxesRow
         total={bill.taxesAndChargesTotal}
         lines={bill.chargeLines}

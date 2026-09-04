@@ -62,8 +62,6 @@ function pickNullableNumber(...values: unknown[]): number | null {
   return null;
 }
 
-/** Default when cart-service image not rebuilt yet (matches PLATFORM_FEE env default). */
-const FALLBACK_PLATFORM_FEE = 12;
 /** Matches cart-service BASE_DELIVERY_FEE default. */
 export const DEFAULT_DELIVERY_FEE = 15;
 export const DEFAULT_DELIVERY_FEE_MAX = 50;
@@ -93,9 +91,6 @@ export function mapBillBreakdown(raw: Record<string, unknown>): BillBreakdown {
     raw.gst
   );
   let platformFee = num(raw.platformFee, raw.platformCharge);
-  if (platformFee <= 0 && itemsSubtotal > 0 && raw.platformFee === undefined) {
-    platformFee = FALLBACK_PLATFORM_FEE;
-  }
   const tipAmount = num(raw.tipAmount, raw.tip, raw.deliveryTip);
   const discount = num(raw.discount, raw.couponDiscount);
   const walletApplied = num(raw.walletApplied, raw.walletDeduction);
@@ -106,8 +101,6 @@ export function mapBillBreakdown(raw: Record<string, unknown>): BillBreakdown {
   const preSurge = deliveryFeeBase + deliveryDistanceCharge;
   if (deliveryFee > preSurge + 0.009) {
     surgeExtra = Math.round((deliveryFee - preSurge) * 100) / 100;
-  } else if (surgeMultiplier > 1 && preSurge > 0 && deliveryFee >= deliveryFeeMax - 0.009) {
-    surgeExtra = Math.round((preSurge * (surgeMultiplier - 1)) * 100) / 100;
   }
 
   const chargeLines: BillChargeLine[] = [];
@@ -120,7 +113,7 @@ export function mapBillBreakdown(raw: Record<string, unknown>): BillBreakdown {
           ? `Restaurant taxes (${taxRate}% GST)`
           : 'Restaurant taxes',
       value: restaurantTaxAmount,
-      hint: 'GST on food items charged by the restaurant',
+          hint: 'GST on food items',
     });
   }
 
