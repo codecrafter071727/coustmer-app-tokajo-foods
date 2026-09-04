@@ -22,30 +22,28 @@ type Props = {
   loading?: boolean;
 };
 
-/** ~6 columns fit on screen (top + bottom = two lines of 6). */
+/** 6 columns fill the screen width with no empty right strip. */
 const COLS_VISIBLE = 6;
-const H_PAD = 12;
-const GAP = 12;
+const H_PAD = 10;
+const GAP = 8;
 
 type Col = { top?: CuisineChip; bottom?: CuisineChip | 'more' };
 
 /**
- * What's on your mind:
- * - ~6 categories per visible line (2-row columns)
- * - Wider gaps + horizontal scroll for more
- * - Show more opens a drawer with every nearby menu category
- * - List stays live from GET /cuisines/nearby (new restaurant categories appear automatically)
+ * What's on your mind — larger chips, edge-to-edge 6-up, horizontal scroll,
+ * Show more opens the full category drawer.
  */
 export function WhatsOnYourMind({ categories, loading = false }: Props) {
   const router = useRouter();
   const { width: screenW } = useWindowDimensions();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Exact fit: pad + 6 slots + 5 gaps = screen width (no leftover white).
   const slotW =
     (screenW - H_PAD * 2 - GAP * (COLS_VISIBLE - 1)) / COLS_VISIBLE;
   const circle = Math.min(
     MIND_CHIP_SIZE,
-    Math.max(48, Math.floor(slotW - 6))
+    Math.max(54, Math.floor(slotW - 2))
   );
 
   const withPhotos = useMemo(
@@ -65,7 +63,6 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
         bottom: withPhotos[i + 1],
       });
     }
-    // Always offer the full-list drawer when there is more than one screenful.
     if (withPhotos.length > COLS_VISIBLE) {
       const last = cols[cols.length - 1];
       if (last && last.bottom == null) {
@@ -100,76 +97,85 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
           contentContainerStyle={styles.rail}
           decelerationRate="fast"
         >
-          {scrollColumns.map((col, idx) => (
-            <View
-              key={`col-${idx}`}
-              style={[styles.column, { width: slotW, marginRight: GAP }]}
-            >
-              {col.top ? (
-                <MindChip
-                  label={col.top.name}
-                  slug={col.top.slug}
-                  imageUrl={col.top.imageUrl}
-                  onPress={() => open(col.top!)}
-                  slotWidth={slotW}
-                />
-              ) : (
-                <View style={{ height: circle + 36 }} />
-              )}
-              <View style={{ height: GAP + 6 }} />
-              {col.bottom === 'more' ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.moreCol,
-                    { width: slotW },
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => setDrawerOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Show more categories"
-                >
-                  <View
-                    style={[
-                      styles.moreRing,
-                      {
-                        width: circle + 4,
-                        height: circle + 4,
-                        borderRadius: (circle + 4) / 2,
-                      },
+          {scrollColumns.map((col, idx) => {
+            const isLast = idx === scrollColumns.length - 1;
+            return (
+              <View
+                key={`col-${idx}`}
+                style={[
+                  styles.column,
+                  {
+                    width: slotW,
+                    marginRight: isLast ? 0 : GAP,
+                  },
+                ]}
+              >
+                {col.top ? (
+                  <MindChip
+                    label={col.top.name}
+                    slug={col.top.slug}
+                    imageUrl={col.top.imageUrl}
+                    onPress={() => open(col.top!)}
+                    slotWidth={slotW}
+                  />
+                ) : (
+                  <View style={{ height: circle + 34 }} />
+                )}
+                <View style={{ height: GAP + 8 }} />
+                {col.bottom === 'more' ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.moreCol,
+                      { width: slotW },
+                      pressed && styles.pressed,
                     ]}
+                    onPress={() => setDrawerOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Show more categories"
                   >
                     <View
                       style={[
-                        styles.moreCircle,
+                        styles.moreRing,
                         {
-                          width: circle - 2,
-                          height: circle - 2,
-                          borderRadius: (circle - 2) / 2,
+                          width: circle + 2,
+                          height: circle + 2,
+                          borderRadius: (circle + 2) / 2,
                         },
                       ]}
                     >
-                      <LayoutGrid
-                        size={16}
-                        color="#AC0F45"
-                        strokeWidth={2.2}
-                      />
+                      <View
+                        style={[
+                          styles.moreCircle,
+                          {
+                            width: circle,
+                            height: circle,
+                            borderRadius: circle / 2,
+                          },
+                        ]}
+                      >
+                        <LayoutGrid
+                          size={18}
+                          color="#AC0F45"
+                          strokeWidth={2.2}
+                        />
+                      </View>
                     </View>
-                  </View>
-                  <Text style={styles.moreLabel}>Show more</Text>
-                </Pressable>
-              ) : col.bottom ? (
-                <MindChip
-                  label={col.bottom.name}
-                  slug={col.bottom.slug}
-                  imageUrl={col.bottom.imageUrl}
-                  onPress={() => open(col.bottom as CuisineChip)}
-                  slotWidth={slotW}
-                />
-              ) : (
-                <View style={{ height: circle + 36 }} />
-              )}
-            </View>
-          ))}
+                    <Text style={styles.moreLabel}>Show more</Text>
+                  </Pressable>
+                ) : col.bottom ? (
+                  <MindChip
+                    label={col.bottom.name}
+                    slug={col.bottom.slug}
+                    imageUrl={col.bottom.imageUrl}
+                    onPress={() => open(col.bottom as CuisineChip)}
+                    slotWidth={slotW}
+                  />
+                ) : (
+                  <View style={{ height: circle + 34 }} />
+                )}
+              </View>
+            );
+          })}
         </ScrollView>
       )}
 
@@ -197,13 +203,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   loadingRow: {
-    height: 150,
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rail: {
     paddingHorizontal: H_PAD,
-    paddingRight: H_PAD + 8,
   },
   column: {
     alignItems: 'center',

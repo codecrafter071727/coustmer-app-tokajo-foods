@@ -5,15 +5,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fonts } from '@/constants/typography';
 import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
 
-/** Default circle diameter; shrinks when slot is narrower. */
-export const MIND_CHIP_SIZE = 64;
+/** Default circle diameter; grows with wider slots. */
+export const MIND_CHIP_SIZE = 76;
 
 type Props = {
   label: string;
   slug: string;
   imageUrl?: string;
   onPress: () => void;
-  /** Full column width for this chip (from 5-up grid). */
+  /** Full column width for this chip (from 6-up grid). */
   slotWidth?: number;
 };
 
@@ -30,11 +30,11 @@ export function MindChip({
     [slug, label, imageUrl]
   );
 
-  const size = Math.min(
-    MIND_CHIP_SIZE,
-    slotWidth ? Math.max(52, Math.floor(slotWidth - 8)) : MIND_CHIP_SIZE
-  );
-  const ring = size + 4;
+  // Fill most of the column so the strip looks dense edge-to-edge.
+  const size = slotWidth
+    ? Math.min(MIND_CHIP_SIZE, Math.max(54, Math.floor(slotWidth - 2)))
+    : MIND_CHIP_SIZE;
+  const ring = size + 2;
 
   return (
     <Pressable
