@@ -85,6 +85,7 @@ import { useCartStore } from '@/store/cart-store';
 
 const ORANGE = '#FF6A00';
 const ORANGE_SOFT = '#FFF4EC';
+const ORANGE_DARK = '#EA580C';
 const INK = '#111827';
 const INK_SOFT = '#374151';
 const MUTED = '#6B7280';
@@ -1558,9 +1559,16 @@ export function OrderTrackingScreen() {
             ))}
 
             <View style={styles.billBlock}>
-              <Text style={styles.billHeading}>Bill details</Text>
+              <View style={styles.billHeaderRow}>
+                <Text style={styles.billHeading}>Bill details</Text>
+                <View style={styles.billItemsPill}>
+                  <Text style={styles.billItemsPillText}>
+                    {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                  </Text>
+                </View>
+              </View>
               <BillLine
-                label={`Item total (${itemCount})`}
+                label={`Item total`}
                 value={subtotal}
               />
               {packagingCharge > 0 ? (
@@ -1597,7 +1605,7 @@ export function OrderTrackingScreen() {
                   o?.paymentMethod &&
                   String(o.paymentMethod).toLowerCase() === 'cod'
                     ? 'To pay'
-                    : 'Grand total'}
+                    : 'Paid'}
                 </Text>
                 <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
               </View>
@@ -2226,12 +2234,29 @@ const styles = StyleSheet.create({
     color: INK_SOFT,
   },
   billBlock: { marginTop: 14, gap: 8 },
+  billHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
   billHeading: {
     fontFamily: fonts.uiBold,
+    fontSize: 14,
+    color: INK,
+  },
+  billItemsPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  billItemsPillText: {
+    fontFamily: fonts.uiBold,
     fontSize: 11,
-    letterSpacing: 1,
-    color: MUTED,
-    marginBottom: 4,
+    color: ORANGE_DARK,
   },
   billLine: {
     flexDirection: 'row',
