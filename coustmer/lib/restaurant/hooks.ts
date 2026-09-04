@@ -541,36 +541,30 @@ export function useRestaurantCategories(restaurantId: string) {
 }
 
 /**
- * Home “What's on your mind” — only categories present on nearby restaurants.
- * No hardcoded filler list when the area has no cuisine tags yet.
+ * Home “What's on your mind” — unique cuisines from nearby restaurants only.
+ * Sync: no menu-section sampling (that invented extras like Snacks / Recommended).
  */
 export function useHomeCategories(restaurants: Restaurant[]) {
-  const sampleIds = useMemo(
-    () =>
-      restaurants
-        .filter((r) => r.id && r.status !== 'deleted')
-        .slice(0, 24)
-        .map((r) => r.id),
-    [restaurants]
-  );
+  const fingerprint = useMemo(() => {
+    const parts: string[] = [];
+    for (const r of restaurants) {
+      if (!r?.id || r.status === 'deleted') continue;
+      for (const c of r.cuisines ?? []) {
+        const s = String(c).toLowerCase().trim();
+        if (s) parts.push(s);
+      }
+    }
+    parts.sort();
+    return parts.join('|');
+  }, [restaurants]);
 
   return useQuery({
-    queryKey: [...restaurantKeys.all, 'home-categories', sampleIds],
-    queryFn: async (): Promise<HomeCategory[]> => {
-      const samples = await Promise.all(
-        sampleIds.map((id) =>
-          restaurantApi.getCategories(id).catch(() => [])
-        )
-      );
-      return buildHomeCategories({
-        restaurants,
-        menuCategories: samples.flat(),
-      });
-    },
+    queryKey: [...restaurantKeys.all, 'home-categories', fingerprint],
+    queryFn: (): Promise<HomeCategory[]> =>
+      Promise.resolve(buildHomeCategories({ restaurants })),
     enabled: restaurants.length > 0,
     staleTime: 5 * 60_000,
-    placeholderData: () =>
-      buildHomeCategories({ restaurants, menuCategories: [] }),
+    placeholderData: () => buildHomeCategories({ restaurants }),
   });
 }
 

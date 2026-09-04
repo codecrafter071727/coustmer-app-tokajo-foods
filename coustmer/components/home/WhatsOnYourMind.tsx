@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/typography';
@@ -9,7 +10,25 @@ type Props = {
   categories: HomeCategory[];
 };
 
-/** Pair categories into columns for Swiggy-style 2-row mind strip. */
+const EMOJI: Record<string, string> = {
+  pizza: '🍕',
+  biryani: '🍲',
+  burger: '🍔',
+  'north-indian': '🍛',
+  chinese: '🥡',
+  dessert: '🍰',
+  cafe: '☕',
+  rolls: '🌯',
+  momos: '🥟',
+  shawarma: '🥙',
+  'south-indian': '🥞',
+  seafood: '🦐',
+  pasta: '🍝',
+  noodles: '🍜',
+  thali: '🍽️',
+  chaat: '🫓',
+};
+
 function toColumns(cats: HomeCategory[]): HomeCategory[][] {
   const cols: HomeCategory[][] = [];
   for (let i = 0; i < cats.length; i += 2) {
@@ -18,9 +37,49 @@ function toColumns(cats: HomeCategory[]): HomeCategory[][] {
   return cols;
 }
 
+function MindChip({
+  cat,
+  onPress,
+}: {
+  cat: HomeCategory;
+  onPress: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const emoji = EMOJI[cat.slug] ?? '🍴';
+  const showImage = Boolean(cat.imageUrl) && !failed;
+
+  return (
+    <Pressable
+      style={styles.item}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={cat.label}
+    >
+      <View style={styles.imgWrap}>
+        {showImage ? (
+          <Image
+            source={{ uri: cat.imageUrl }}
+            style={styles.img}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
+            onError={() => setFailed(true)}
+          />
+        ) : (
+          <View style={[styles.img, styles.imgFallback]}>
+            <Text style={styles.emoji}>{emoji}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.label} numberOfLines={2}>
+        {cat.label}
+      </Text>
+    </Pressable>
+  );
+}
+
 /**
- * Dynamic “What's on your mind” — only categories present near the user.
- * Renders nothing when the area has no cuisine/menu categories yet.
+ * Unique cuisines from nearby restaurants. Hides when none are tagged.
  */
 export function WhatsOnYourMind({ categories }: Props) {
   const router = useRouter();
@@ -37,7 +96,7 @@ export function WhatsOnYourMind({ categories }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>What&apos;s on your mind?</Text>
+      <Text style={styles.title}>What's on your mind?</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -47,30 +106,11 @@ export function WhatsOnYourMind({ categories }: Props) {
         {columns.map((col, idx) => (
           <View key={`col-${idx}`} style={styles.column}>
             {col.map((cat) => (
-              <Pressable
+              <MindChip
                 key={cat.id || cat.slug}
-                style={styles.item}
+                cat={cat}
                 onPress={() => open(cat)}
-                accessibilityRole="button"
-                accessibilityLabel={cat.label}
-              >
-                <View style={styles.imgWrap}>
-                  {cat.imageUrl ? (
-                    <Image
-                      source={{ uri: cat.imageUrl }}
-                      style={styles.img}
-                      contentFit="cover"
-                      transition={180}
-                      recyclingKey={cat.slug}
-                    />
-                  ) : (
-                    <View style={[styles.img, styles.imgFallback]} />
-                  )}
-                </View>
-                <Text style={styles.label} numberOfLines={2}>
-                  {cat.label}
-                </Text>
-              </Pressable>
+              />
             ))}
           </View>
         ))}
@@ -78,6 +118,8 @@ export function WhatsOnYourMind({ categories }: Props) {
     </View>
   );
 }
+
+const SIZE = 80;
 
 const styles = StyleSheet.create({
   wrap: {
@@ -94,32 +136,38 @@ const styles = StyleSheet.create({
   },
   rail: {
     paddingHorizontal: 12,
-    gap: 2,
+    gap: 4,
   },
   column: {
-    width: 92,
+    width: 96,
     gap: 16,
   },
   item: {
     alignItems: 'center',
-    width: 92,
+    width: 96,
   },
   imgWrap: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: SIZE,
+    height: SIZE,
+    borderRadius: SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#F4F4F5',
-    marginBottom: 7,
+    marginBottom: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#E7E7E7',
   },
   img: {
-    width: 78,
-    height: 78,
+    width: SIZE,
+    height: SIZE,
+    borderRadius: SIZE / 2,
   },
   imgFallback: {
-    backgroundColor: '#FFE8D6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF4EC',
+  },
+  emoji: {
+    fontSize: 34,
   },
   label: {
     fontFamily: fonts.uiSemi,
