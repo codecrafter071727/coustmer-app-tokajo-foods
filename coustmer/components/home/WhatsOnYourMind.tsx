@@ -142,7 +142,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>What&apos;s on your mind?</Text>
+      <Text style={styles.title}>{"What's on your mind?"}</Text>
       {loading && categories.length === 0 ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator color="#AC0F45" />
