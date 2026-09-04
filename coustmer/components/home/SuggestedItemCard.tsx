@@ -94,13 +94,16 @@ export function SuggestedItemCard({ dish, onPress }: Props) {
 }
 
 const CARD_W = 158;
+const IMAGE_RADIUS = 22;
 
 const styles = StyleSheet.create({
   card: {
     width: CARD_W,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: 18,
+    overflow: 'visible',
+    paddingTop: 8,
+    paddingHorizontal: 8,
     ...Platform.select({
       ios: {
         shadowColor: '#1A1A1A',
@@ -118,27 +121,32 @@ const styles = StyleSheet.create({
   },
   imageWrap: {
     width: '100%',
-    height: 148,
+    height: 142,
+    borderRadius: IMAGE_RADIUS,
+    overflow: 'hidden',
     backgroundColor: '#E8E4E1',
     position: 'relative',
   },
   image: {
     width: '100%',
     height: '100%',
+    borderRadius: IMAGE_RADIUS,
   },
   fade: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 56,
+    height: 52,
+    borderBottomLeftRadius: IMAGE_RADIUS,
+    borderBottomRightRadius: IMAGE_RADIUS,
   },
   vegWrap: {
     position: 'absolute',
     top: 10,
     left: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 4,
+    borderRadius: 5,
     padding: 3,
   },
   vegBox: {
@@ -187,9 +195,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   body: {
-    paddingHorizontal: 11,
+    paddingHorizontal: 4,
     paddingTop: 10,
-    paddingBottom: 11,
+    paddingBottom: 12,
   },
   name: {
     fontFamily: fonts.displayBold,
