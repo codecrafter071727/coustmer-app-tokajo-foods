@@ -2,11 +2,11 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { LayoutGrid } from 'lucide-react-native';
@@ -22,29 +22,26 @@ type Props = {
   loading?: boolean;
 };
 
-/** 6 columns fill the screen width with no empty right strip. */
+/** How many columns fill the first screen (no right empty strip). */
 const COLS_VISIBLE = 6;
-const H_PAD = 10;
-const GAP = 8;
+const H_PAD = 8;
+const GAP = 6;
 
 type Col = { top?: CuisineChip; bottom?: CuisineChip | 'more' };
 
 /**
- * What's on your mind — larger chips, edge-to-edge 6-up, horizontal scroll,
- * Show more opens the full category drawer.
+ * What's on your mind — chips sized from measured width so 6 columns
+ * fill the screen edge-to-edge (no white gap on the right).
  */
 export function WhatsOnYourMind({ categories, loading = false }: Props) {
   const router = useRouter();
-  const { width: screenW } = useWindowDimensions();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [railW, setRailW] = useState(0);
 
-  // Exact fit: pad + 6 slots + 5 gaps = screen width (no leftover white).
-  const slotW =
-    (screenW - H_PAD * 2 - GAP * (COLS_VISIBLE - 1)) / COLS_VISIBLE;
-  const circle = Math.min(
-    MIND_CHIP_SIZE,
-    Math.max(54, Math.floor(slotW - 2))
-  );
+  const onRailLayout = (e: LayoutChangeEvent) => {
+    const w = Math.round(e.nativeEvent.layout.width);
+    if (w > 0 && w !== railW) setRailW(w);
+  };
 
   const withPhotos = useMemo(
     () =>
@@ -74,6 +71,18 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
     return cols;
   }, [withPhotos]);
 
+  // Fill the measured row: ≤6 cols stretch full width; more scroll at 6-up density.
+  const innerW = Math.max(0, railW - H_PAD * 2);
+  const colCount = Math.max(1, scrollColumns.length);
+  const colsForFit = Math.min(COLS_VISIBLE, colCount);
+  const slotW =
+    railW > 0
+      ? (innerW - GAP * Math.max(0, colsForFit - 1)) / colsForFit
+      : 56;
+  const circle = Math.min(
+    MIND_CHIP_SIZE,
+    Math.max(48, Math.floor(slotW - 4))
+  );
   const open = (cat: CuisineChip) => {
     router.push({
       pathname: '/restaurants',
@@ -84,7 +93,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
   if (!loading && categories.length === 0) return null;
 
   return (
-    <View style={styles.wrap}>
+    <View style={styles.wrap} onLayout={onRailLayout}>
       <Text style={styles.title}>What's on your mind?</Text>
       {loading && categories.length === 0 ? (
         <View style={styles.loadingRow}>
@@ -117,6 +126,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
                     imageUrl={col.top.imageUrl}
                     onPress={() => open(col.top!)}
                     slotWidth={slotW}
+                    circleSize={circle}
                   />
                 ) : (
                   <View style={{ height: circle + 34 }} />
@@ -154,7 +164,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
                         ]}
                       >
                         <LayoutGrid
-                          size={18}
+                          size={Math.round(circle * 0.28)}
                           color="#AC0F45"
                           strokeWidth={2.2}
                         />
@@ -169,6 +179,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
                     imageUrl={col.bottom.imageUrl}
                     onPress={() => open(col.bottom as CuisineChip)}
                     slotWidth={slotW}
+                    circleSize={circle}
                   />
                 ) : (
                   <View style={{ height: circle + 34 }} />
@@ -193,6 +204,7 @@ const styles = StyleSheet.create({
   wrap: {
     marginTop: 6,
     paddingBottom: 10,
+    width: '100%',
   },
   title: {
     fontFamily: fonts.displayBold,
@@ -203,7 +215,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   loadingRow: {
-    height: 160,
+    height: 168,
     alignItems: 'center',
     justifyContent: 'center',
   },

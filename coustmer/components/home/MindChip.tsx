@@ -5,16 +5,18 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fonts } from '@/constants/typography';
 import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
 
-/** Default circle diameter; grows with wider slots. */
-export const MIND_CHIP_SIZE = 76;
+/** Soft max for very wide screens; phone size comes from the slot. */
+export const MIND_CHIP_SIZE = 88;
 
 type Props = {
   label: string;
   slug: string;
   imageUrl?: string;
   onPress: () => void;
-  /** Full column width for this chip (from 6-up grid). */
+  /** Column width from the 6-up rail — circle fills this. */
   slotWidth?: number;
+  /** Explicit circle diameter (overrides slotWidth sizing). */
+  circleSize?: number;
 };
 
 export function MindChip({
@@ -23,6 +25,7 @@ export function MindChip({
   imageUrl,
   onPress,
   slotWidth,
+  circleSize,
 }: Props) {
   const [failed, setFailed] = useState(false);
   const uri = useMemo(
@@ -30,10 +33,12 @@ export function MindChip({
     [slug, label, imageUrl]
   );
 
-  // Fill most of the column so the strip looks dense edge-to-edge.
-  const size = slotWidth
-    ? Math.min(MIND_CHIP_SIZE, Math.max(54, Math.floor(slotWidth - 2)))
-    : MIND_CHIP_SIZE;
+  // Fill the column so 6 chips sit edge-to-edge with no empty strip.
+  const size =
+    circleSize ??
+    (slotWidth
+      ? Math.min(MIND_CHIP_SIZE, Math.max(48, Math.floor(slotWidth - 4)))
+      : MIND_CHIP_SIZE);
   const ring = size + 2;
 
   return (
