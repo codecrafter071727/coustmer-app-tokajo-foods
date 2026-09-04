@@ -86,6 +86,7 @@ export function HomeFeedSections({
           allRestaurants={baseRestaurants}
           categories={homeCategories}
           liveCuisines={liveCuisines}
+          hideCuisineRow
         />
         <Text style={styles.filteredTitle}>
           {restaurants.length > 0
@@ -127,6 +128,7 @@ export function HomeFeedSections({
         allRestaurants={baseRestaurants}
         categories={homeCategories}
         liveCuisines={liveCuisines}
+        hideCuisineRow
       />
 
       <WhatsOnYourMind categories={homeCategories} />

@@ -3,24 +3,17 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Platform,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import Animated, {
-  runOnJS,
-  useAnimatedReaction,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LoadingView } from '@/components/common/StateViews';
 import { SaveAddressLabelModal } from '@/components/address/SaveAddressLabelModal';
 import { HomeFeedSections } from '@/components/home/HomeFeedSections';
-import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { SwiggyHomeChrome } from '@/components/home/SwiggyHomeChrome';
 import { VegModeModal } from '@/components/home/VegModeModal';
 import { DeliveryLocationPicker } from '@/components/location/DeliveryLocationPicker';
@@ -101,7 +94,6 @@ export default function HomeScreen() {
   const [hasPromptedLocation, setHasPromptedLocation] = useState(false);
   const [homeFilters, setHomeFilters] =
     useState<HomeFilterState>(DEFAULT_HOME_FILTERS);
-  const [mindPinned, setMindPinned] = useState(false);
   const [savePrompt, setSavePrompt] = useState<{
     label: string;
     formattedAddress: string;
@@ -114,10 +106,6 @@ export default function HomeScreen() {
 
   const vegMode = useVegPreferenceStore((s) => s.mode);
   const setVegMode = useVegPreferenceStore((s) => s.setMode);
-
-  const scrollY = useSharedValue(0);
-  /** Y offset in the list where mind *items* begin (title already above this). */
-  const pinAt = useSharedValue(0);
 
   useDeliveryLocationInit();
 
@@ -309,30 +297,6 @@ export default function HomeScreen() {
     setHomeFilters(DEFAULT_HOME_FILTERS);
     if (vegMode === 'pure_veg') setVegMode('all');
   };
-
-  const onScroll = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
-  });
-
-  useAnimatedReaction(
-    () => scrollY.value >= 120,
-    (isPinned, prev) => {
-      if (isPinned !== prev) {
-        runOnJS(setMindPinned)(!!isPinned);
-      }
-    }
-  );
-
-  const pinOverlayStyle = useAnimatedStyle(() => {
-    const show = scrollY.value >= 120;
-    return { opacity: show ? 1 : 0 };
-  });
-
-  useEffect(() => {
-    return () => setMindPinned(false);
-  }, []);
 
   const onConfirmLocation = async (result: {
     lat: number;
@@ -568,13 +532,7 @@ export default function HomeScreen() {
    */
   const listHeader = (
     <View>
-      <View
-        onLayout={(e) => {
-          pinAt.value = e.nativeEvent.layout.height;
-        }}
-      >
-        {chrome}
-      </View>
+      {chrome}
 
       <HomeFeedSections
         filtersActive={filtersActive}
@@ -651,13 +609,11 @@ export default function HomeScreen() {
     <View style={styles.root}>
       <StatusBar style="dark" />
 
-      <Animated.FlatList
+      <FlatList
         data={restaurants}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
-        scrollEventThrottle={16}
-        onScroll={onScroll}
         onEndReached={() => {
           if (nearbyParams) return;
           if (feed.hasNextPage && !feed.isFetchingNextPage) {
@@ -709,29 +665,6 @@ export default function HomeScreen() {
         renderItem={() => null}
       />
 
-
-
-      {/* Sticky category strip only (filters scroll away) */}
-      <Animated.View
-        style={[
-          styles.pinOverlay,
-          { paddingTop: insets.top, paddingBottom: 0 },
-          pinOverlayStyle,
-        ]}
-        pointerEvents={mindPinned ? 'auto' : 'none'}
-      >
-        <HomeFiltersBar
-          compact
-          categoriesOnly
-          filters={homeFilters}
-          onChange={onFiltersChange}
-          onClear={onClearFilters}
-          allRestaurants={baseRestaurants}
-          categories={homeCategories.data}
-          style={{ paddingTop: 4 }}
-        />
-      </Animated.View>
-
       {locationPicker}
       {initialSheet}
       {saveLabelModal}
@@ -750,24 +683,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-  },
-  pinOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    backgroundColor: '#FFFFFF',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-      },
-      android: { elevation: 6 },
-      default: {},
-    }),
   },
   emptyCard: {
     marginTop: 8,

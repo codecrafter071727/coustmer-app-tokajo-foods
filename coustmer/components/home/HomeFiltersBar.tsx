@@ -55,6 +55,8 @@ type Props = {
   compact?: boolean;
   /** Sticky strip: cuisine chips only — hide Filters / Sort / quick chips. */
   categoriesOnly?: boolean;
+  /** Hide Popular / Chinese / Japanese cuisine chip row. */
+  hideCuisineRow?: boolean;
   style?: object;
 };
 
@@ -110,6 +112,7 @@ export function HomeFiltersBar({
   liveCuisines = [],
   compact = false,
   categoriesOnly = false,
+  hideCuisineRow = false,
   style,
 }: Props) {
   const router = useRouter();
@@ -321,28 +324,30 @@ export function HomeFiltersBar({
 
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact, style]}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.cuisineRow}
-      >
-        {previewChips.map((cat) => renderCuisinePill(cat, compact))}
+      {!hideCuisineRow ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.cuisineRow}
+        >
+          {previewChips.map((cat) => renderCuisinePill(cat, compact))}
 
-        {hasMoreCats ? (
-          <Pressable
-            style={[
-              compact ? styles.cuisinePillCompact : styles.cuisinePill,
-              styles.showAllPill,
-            ]}
-            onPress={() => setShowAllCats(true)}
-          >
-            <LayoutGrid color="#F97316" size={14} strokeWidth={2.4} />
-            <Text style={[styles.cuisineLabel, styles.showAllLabel]}>
-              Show all
-            </Text>
-          </Pressable>
-        ) : null}
-      </ScrollView>
+          {hasMoreCats ? (
+            <Pressable
+              style={[
+                compact ? styles.cuisinePillCompact : styles.cuisinePill,
+                styles.showAllPill,
+              ]}
+              onPress={() => setShowAllCats(true)}
+            >
+              <LayoutGrid color="#F97316" size={14} strokeWidth={2.4} />
+              <Text style={[styles.cuisineLabel, styles.showAllLabel]}>
+                Show all
+              </Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      ) : null}
 
       {categoriesOnly ? null : (
         <ScrollView
