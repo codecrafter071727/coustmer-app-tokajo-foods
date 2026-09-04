@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SmoothPressable } from '@/components/common/SmoothPressable';
+import { HomeOfferHeroBanner } from '@/components/home/HomeOfferHeroBanner';
 import { fonts } from '@/constants/typography';
+import type { HomeBanner } from '@/lib/customer/types';
 import { useUnreadNotificationCount } from '@/lib/notification/hooks';
 import { useUserProfile } from '@/lib/profile/hooks';
 import { useAuthStore } from '@/store/auth-store';
@@ -17,10 +19,10 @@ type Props = {
   deliverySubtitle?: string;
   isDetectingLocation?: boolean;
   onLocationPress?: () => void;
-  onMenuPress?: () => void;
-  vegActive?: boolean;
-  onVegPress?: () => void;
+  banners?: HomeBanner[];
 };
+
+const HERO_BODY = 236;
 
 const SEARCH_HINTS = [
   'Search for “biryani”',
@@ -30,13 +32,17 @@ const SEARCH_HINTS = [
   'Search for dishes',
 ];
 
-/** Swiggy-style location + search chrome for home. */
+/**
+ * Offer hero up top · location left · profile right ·
+ * search + notifications docked under Order now.
+ */
 export function SwiggyHomeChrome({
   topInset = 0,
   deliveryTitle,
   deliverySubtitle,
   isDetectingLocation,
   onLocationPress,
+  banners = [],
 }: Props) {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
@@ -67,65 +73,72 @@ export function SwiggyHomeChrome({
     return () => clearInterval(t);
   }, []);
 
+  const heroH = HERO_BODY + topInset;
   const headline = isDetectingLocation
     ? 'Detecting location…'
     : deliveryTitle || 'Select location';
-  const subline = deliverySubtitle;
 
   return (
-    <View style={[styles.container, { paddingTop: topInset + 6 }]}>
-      <View style={styles.topBar}>
-        <SmoothPressable
-          style={styles.locationWrap}
-          onPress={onLocationPress}
-          pressScale={0.98}
-          accessibilityLabel="Change delivery location"
-        >
-          <View style={styles.pinCircle}>
-            <MapPin color="#FC8019" size={16} strokeWidth={2.6} />
-          </View>
-          <View style={styles.locationTextWrap}>
-            <View style={styles.headlineRow}>
-              <Text style={styles.locationHeadline} numberOfLines={1}>
-                {headline}
-              </Text>
-              <ChevronDown color="#1C1C1C" size={18} strokeWidth={2.6} />
-            </View>
-            {subline ? (
-              <Text style={styles.locationSubline} numberOfLines={1}>
-                {subline}
-              </Text>
-            ) : null}
-          </View>
-        </SmoothPressable>
+    <View style={styles.root}>
+      <View style={[styles.heroShell, { height: heroH }]}>
+        <HomeOfferHeroBanner
+          banners={banners}
+          height={heroH}
+          contentTopPad={topInset + 52}
+        />
 
-        <SmoothPressable
-          style={styles.avatarBtn}
-          onPress={() => router.push('/profile')}
-          accessibilityLabel="Profile"
-        >
-          {photoUrl ? (
-            <Image
-              source={{ uri: photoUrl }}
-              style={styles.avatar}
-              contentFit="cover"
-            />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitials}>{initials}</Text>
+        <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>
+          <SmoothPressable
+            style={styles.locationWrap}
+            onPress={onLocationPress}
+            pressScale={0.98}
+            accessibilityLabel="Change delivery location"
+          >
+            <View style={styles.pinCircle}>
+              <MapPin color="#FC8019" size={15} strokeWidth={2.6} />
             </View>
-          )}
-          {unreadCount > 0 ? <View style={styles.avatarDot} /> : null}
-        </SmoothPressable>
+            <View style={styles.locationTextWrap}>
+              <View style={styles.headlineRow}>
+                <Text style={styles.locationHeadline} numberOfLines={1}>
+                  {headline}
+                </Text>
+                <ChevronDown color="#FFFFFF" size={17} strokeWidth={2.6} />
+              </View>
+              {deliverySubtitle ? (
+                <Text style={styles.locationSubline} numberOfLines={1}>
+                  {deliverySubtitle}
+                </Text>
+              ) : null}
+            </View>
+          </SmoothPressable>
+
+          <SmoothPressable
+            style={styles.avatarBtn}
+            onPress={() => router.push('/profile')}
+            accessibilityLabel="Profile"
+          >
+            {photoUrl ? (
+              <Image
+                source={{ uri: photoUrl }}
+                style={styles.avatar}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+          </SmoothPressable>
+        </View>
       </View>
 
-      <View style={styles.searchRow}>
+      <View style={styles.searchDock}>
         <Pressable
           style={styles.searchBox}
           onPress={() => router.push('/search')}
           accessibilityRole="search"
         >
-          <Search color="#FC8019" size={20} strokeWidth={2.4} />
+          <Search color="#FC8019" size={19} strokeWidth={2.4} />
           <Text style={styles.searchPlaceholder} numberOfLines={1}>
             {SEARCH_HINTS[hintIndex]}
           </Text>
@@ -141,7 +154,7 @@ export function SwiggyHomeChrome({
               : 'Notifications'
           }
         >
-          <Bell color="#1C1C1C" size={21} strokeWidth={2.2} />
+          <Bell color="#1C1C1C" size={20} strokeWidth={2.2} />
           {unreadCount > 0 ? (
             <View style={styles.bellBadge}>
               <Text style={styles.bellBadgeText}>
@@ -156,28 +169,35 @@ export function SwiggyHomeChrome({
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     backgroundColor: '#FFFFFF',
-    paddingBottom: 12,
+    marginBottom: 6,
+  },
+  heroShell: {
+    position: 'relative',
   },
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    gap: 12,
+    paddingHorizontal: 14,
+    gap: 10,
+    zIndex: 4,
   },
   locationWrap: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   pinCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFF4EB',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -187,83 +207,72 @@ const styles = StyleSheet.create({
   headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   locationHeadline: {
     fontFamily: fonts.displayBold,
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#1C1C1C',
-    letterSpacing: -0.35,
+    fontSize: 16,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
     flexShrink: 1,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   locationSubline: {
     marginTop: 1,
-    fontSize: 12.5,
-    color: '#8A8A8A',
+    fontSize: 11.5,
+    color: 'rgba(255,255,255,0.85)',
     fontWeight: '500',
   },
   avatarBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#F0F0F0',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#FFF4EB',
   },
   avatar: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
   },
   avatarFallback: {
-    width: 40,
-    height: 40,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFF4EB',
   },
   avatarInitials: {
     color: '#FC8019',
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: fonts.displayBold,
-    fontWeight: '800',
   },
-  avatarDot: {
-    position: 'absolute',
-    top: 1,
-    right: 1,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: '#FC8019',
-    borderWidth: 1.5,
-    borderColor: '#fff',
-  },
-  searchRow: {
+  searchDock: {
+    marginTop: -20,
+    marginHorizontal: 14,
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
     alignItems: 'center',
-    marginTop: 12,
+    gap: 10,
+    zIndex: 5,
   },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    height: 48,
+    height: 50,
     gap: 10,
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    borderColor: '#ECECEC',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   searchPlaceholder: {
     flex: 1,
@@ -272,19 +281,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bellBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    borderColor: '#ECECEC',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   bellBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 9,
+    right: 9,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -299,6 +313,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 9,
     fontFamily: fonts.uiBold,
-    fontWeight: '800',
   },
 });

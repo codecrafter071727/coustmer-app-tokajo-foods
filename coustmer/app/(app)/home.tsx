@@ -545,19 +545,15 @@ export default function HomeScreen() {
       deliverySubtitle={deliverySubtitle}
       isDetectingLocation={isDetectingLocation}
       onLocationPress={() => setPickerOpen(true)}
-      vegActive={vegMode === 'pure_veg' || homeFilters.pureVeg}
-      onVegPress={() => setVegModalOpen(true)}
-      banners={offers.data?.banners ?? home.data?.banners}
-      deals={offers.data?.deals ?? deals.data}
+      banners={
+        (offers.data?.banners?.length
+          ? offers.data.banners
+          : home.data?.banners) ?? []
+      }
     />
   );
 
   const filtersActive = countActiveHomeFilters(homeFilters) > 0;
-
-  const offerBanners = offers.data?.banners;
-  const homeBanners = home.data?.banners ?? [];
-  const activeBanners =
-    offerBanners && offerBanners.length > 0 ? offerBanners : homeBanners;
   const activeDeals = offers.data?.deals ?? deals.data ?? [];
 
   /**
@@ -584,7 +580,6 @@ export default function HomeScreen() {
         topRestaurants={topRestaurants}
         homeCategories={homeCategories.data ?? []}
         liveCuisines={liveCuisines.data}
-        banners={activeBanners}
         deals={activeDeals}
         feedRails={feedRails}
         homeLoading={home.isLoading}

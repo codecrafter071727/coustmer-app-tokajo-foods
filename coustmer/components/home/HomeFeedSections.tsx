@@ -2,7 +2,6 @@ import { useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { AutoScrollingDeals } from '@/components/home/AutoScrollingDeals';
-import { BannerCarousel } from '@/components/home/BannerCarousel';
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { HomeRestaurantRail } from '@/components/home/HomeRestaurantRail';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
@@ -11,7 +10,7 @@ import { WhatsOnYourMind } from '@/components/home/WhatsOnYourMind';
 import { ErrorView } from '@/components/common/StateViews';
 import { fonts } from '@/constants/typography';
 import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
-import type { Deal, HomeBanner, HomeFeed } from '@/lib/customer/types';
+import type { Deal, HomeFeed } from '@/lib/customer/types';
 import type { HomeFilterState } from '@/lib/home/filters';
 import type { HomeCategory } from '@/lib/home/types';
 import type { CuisineChip, Restaurant } from '@/lib/restaurant/types';
@@ -26,7 +25,6 @@ type Props = {
   topRestaurants: Restaurant[];
   homeCategories: HomeCategory[];
   liveCuisines?: CuisineChip[];
-  banners: HomeBanner[];
   deals: Deal[];
   feedRails?: HomeFeed | null;
   homeLoading: boolean;
@@ -59,7 +57,6 @@ export function HomeFeedSections({
   topRestaurants,
   homeCategories,
   liveCuisines = [],
-  banners,
   deals,
   feedRails,
   homeLoading,
@@ -133,8 +130,6 @@ export function HomeFeedSections({
       />
 
       <WhatsOnYourMind categories={homeCategories} />
-
-      {banners.length > 0 ? <BannerCarousel banners={banners} /> : null}
 
       {deals.length > 0 ? <AutoScrollingDeals deals={deals} /> : null}
 
