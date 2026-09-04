@@ -1,7 +1,7 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Plus } from 'lucide-react-native';
+import { Star } from 'lucide-react-native';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/typography';
@@ -12,12 +12,19 @@ type Props = {
   onPress: () => void;
 };
 
-/** Swiggy-style suggestion card — large food photo, price, kitchen name. */
+/**
+ * Suggested dish card — Swiggy/Zomato style:
+ * big food photo, rating chip, clean type, ADD CTA.
+ */
 export function SuggestedItemCard({ dish, onPress }: Props) {
+  const price = dish.price > 0 ? `₹${Math.round(dish.price)}` : null;
+
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${dish.name}, ${dish.restaurantName}`}
     >
       <View style={styles.imageWrap}>
         {dish.imageUrl ? (
@@ -25,37 +32,46 @@ export function SuggestedItemCard({ dish, onPress }: Props) {
             source={{ uri: dish.imageUrl }}
             style={styles.image}
             contentFit="cover"
-            transition={200}
+            transition={220}
+            cachePolicy="memory-disk"
           />
         ) : (
-          <LinearGradient colors={['#3F3A36', '#1C1917']} style={styles.image} />
+          <LinearGradient colors={['#2A2623', '#151311']} style={styles.image} />
         )}
+
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.55)']}
+          colors={['transparent', 'rgba(0,0,0,0.35)']}
           style={styles.fade}
         />
+
         {dish.isVeg != null ? (
-          <View
-            style={[
-              styles.veg,
-              { borderColor: dish.isVeg ? '#22C55E' : '#EF4444' },
-            ]}
-          >
+          <View style={styles.vegWrap}>
             <View
               style={[
-                styles.vegDot,
-                { backgroundColor: dish.isVeg ? '#22C55E' : '#EF4444' },
+                styles.vegBox,
+                { borderColor: dish.isVeg ? '#0F8A3B' : '#C62828' },
               ]}
-            />
+            >
+              <View
+                style={[
+                  styles.vegDot,
+                  { backgroundColor: dish.isVeg ? '#0F8A3B' : '#C62828' },
+                ]}
+              />
+            </View>
           </View>
         ) : null}
-        {dish.badge ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText} numberOfLines={1}>
-              {dish.badge}
-            </Text>
+
+        {typeof dish.rating === 'number' && dish.rating > 0 ? (
+          <View style={styles.ratingPill}>
+            <Text style={styles.ratingNum}>{dish.rating.toFixed(1)}</Text>
+            <Star color="#FFF" fill="#FFF" size={9} />
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.suggestedPill}>
+            <Text style={styles.suggestedText}>SUGGESTED</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.body}>
@@ -65,12 +81,11 @@ export function SuggestedItemCard({ dish, onPress }: Props) {
         <Text style={styles.restaurant} numberOfLines={1}>
           {dish.restaurantName}
         </Text>
+
         <View style={styles.footer}>
-          <Text style={styles.price}>
-            {dish.price > 0 ? `₹${Math.round(dish.price)}` : '—'}
-          </Text>
-          <View style={styles.addBtn}>
-            <Plus color="#AC0F45" size={16} strokeWidth={2.6} />
+          {price ? <Text style={styles.price}>{price}</Text> : <View />}
+          <View style={styles.addChip}>
+            <Text style={styles.addText}>ADD</Text>
           </View>
         </View>
       </View>
@@ -78,86 +93,117 @@ export function SuggestedItemCard({ dish, onPress }: Props) {
   );
 }
 
+const CARD_W = 158;
+
 const styles = StyleSheet.create({
   card: {
-    width: 168,
+    width: CARD_W,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.06)',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
+        shadowColor: '#1A1A1A',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.12,
+        shadowRadius: 14,
       },
-      android: { elevation: 4 },
+      android: { elevation: 5 },
       default: {},
     }),
   },
-  pressed: { opacity: 0.94, transform: [{ scale: 0.98 }] },
+  pressed: {
+    opacity: 0.96,
+    transform: [{ scale: 0.985 }],
+  },
   imageWrap: {
     width: '100%',
-    height: 140,
-    backgroundColor: '#1C1917',
+    height: 148,
+    backgroundColor: '#E8E4E1',
+    position: 'relative',
   },
-  image: { width: '100%', height: '100%' },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
   fade: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 48,
+    height: 56,
   },
-  veg: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 16,
-    height: 16,
-    borderWidth: 1.6,
-    borderRadius: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF',
-  },
-  vegDot: { width: 7, height: 7, borderRadius: 3.5 },
-  badge: {
+  vegWrap: {
     position: 'absolute',
     top: 10,
     left: 10,
-    backgroundColor: 'rgba(172,15,69,0.92)',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 4,
+    padding: 3,
+  },
+  vegBox: {
+    width: 14,
+    height: 14,
+    borderWidth: 1.5,
+    borderRadius: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vegDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  ratingPill: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1BA672',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  ratingNum: {
+    color: '#FFF',
+    fontSize: 11,
+    fontFamily: fonts.uiBold,
+  },
+  suggestedPill: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: 'rgba(28,28,28,0.78)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    maxWidth: '70%',
+    borderRadius: 6,
   },
-  badgeText: {
+  suggestedText: {
     color: '#FFF',
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: fonts.uiBold,
-    letterSpacing: 0.2,
+    letterSpacing: 0.6,
   },
   body: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingTop: 10,
-    paddingBottom: 12,
+    paddingBottom: 11,
   },
   name: {
     fontFamily: fonts.displayBold,
-    fontSize: 14.5,
+    fontSize: 14,
     color: '#1C1C1C',
-    lineHeight: 19,
-    minHeight: 38,
-    letterSpacing: -0.2,
+    lineHeight: 18,
+    minHeight: 36,
+    letterSpacing: -0.25,
   },
   restaurant: {
-    marginTop: 2,
-    fontFamily: fonts.ui,
-    fontSize: 12,
-    color: '#8A8A8A',
+    marginTop: 3,
+    fontFamily: fonts.uiMedium,
+    fontSize: 11.5,
+    color: '#7A7A7A',
   },
   footer: {
     marginTop: 10,
@@ -166,18 +212,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   price: {
-    fontFamily: fonts.uiBold,
+    fontFamily: fonts.displayBold,
     fontSize: 15,
     color: '#1C1C1C',
+    letterSpacing: -0.2,
   },
-  addBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+  addChip: {
     borderWidth: 1.4,
-    borderColor: '#F3C0CE',
-    backgroundColor: '#FFF5F7',
+    borderColor: '#AC0F45',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    minWidth: 52,
     alignItems: 'center',
-    justifyContent: 'center',
+  },
+  addText: {
+    fontFamily: fonts.uiBold,
+    fontSize: 12,
+    color: '#AC0F45',
+    letterSpacing: 0.8,
   },
 });
+
+export const SUGGESTED_CARD_WIDTH = CARD_W;
