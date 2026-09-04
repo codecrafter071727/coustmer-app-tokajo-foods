@@ -42,3 +42,13 @@ export type HomeRailVariant =
   | 'pure-veg'
   | 'order-again'
   | 'for-you';
+
+/** Cuisine / dish chips on home “What's on your mind”. */
+export type HomeCategory = {
+  id: string;
+  label: string;
+  slug: string;
+  imageUrl?: string;
+  color?: string;
+  sortOrder?: number;
+};
