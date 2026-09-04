@@ -1,8 +1,9 @@
 ﻿import { useRouter } from 'expo-router';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import { LayoutGrid } from 'lucide-react-native';
 
+import { MindCategoriesDrawer } from '@/components/home/MindCategoriesDrawer';
 import { MindChip, MIND_CHIP_SIZE } from '@/components/home/MindChip';
 import { fonts } from '@/constants/typography';
 import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
@@ -20,21 +22,30 @@ type Props = {
   loading?: boolean;
 };
 
-/** Collapsed: row1 = 5 cats, row2 = 4 cats + Show more. */
-const ROW1 = 5;
-const ROW2_CATS = 4;
-const PREVIEW_CATS = ROW1 + ROW2_CATS;
+/** ~6 columns fit on screen (top + bottom = two lines of 6). */
+const COLS_VISIBLE = 6;
 const H_PAD = 12;
+const GAP = 12;
 
+type Col = { top?: CuisineChip; bottom?: CuisineChip | 'more' };
+
+/**
+ * What's on your mind:
+ * - ~6 categories per visible line (2-row columns)
+ * - Wider gaps + horizontal scroll for more
+ * - Show more opens a drawer with every nearby menu category
+ * - List stays live from GET /cuisines/nearby (new restaurant categories appear automatically)
+ */
 export function WhatsOnYourMind({ categories, loading = false }: Props) {
   const router = useRouter();
   const { width: screenW } = useWindowDimensions();
-  const [expanded, setExpanded] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const slotW = (screenW - H_PAD * 2) / ROW1;
+  const slotW =
+    (screenW - H_PAD * 2 - GAP * (COLS_VISIBLE - 1)) / COLS_VISIBLE;
   const circle = Math.min(
     MIND_CHIP_SIZE,
-    Math.max(52, Math.floor(slotW - 8))
+    Math.max(48, Math.floor(slotW - 6))
   );
 
   const withPhotos = useMemo(
@@ -46,25 +57,25 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
     [categories]
   );
 
-  const needsMore = withPhotos.length > PREVIEW_CATS;
-
-  const visible = useMemo(() => {
-    if (expanded || !needsMore) return withPhotos;
-    return withPhotos.slice(0, PREVIEW_CATS);
-  }, [withPhotos, expanded, needsMore]);
-
-  const row1 = visible.slice(0, ROW1);
-  const row2Cats = visible.slice(ROW1, ROW1 + ROW2_CATS);
-
-  const restRows = useMemo(() => {
-    if (!expanded || visible.length <= PREVIEW_CATS) return [] as CuisineChip[][];
-    const rest = visible.slice(PREVIEW_CATS);
-    const rows: CuisineChip[][] = [];
-    for (let i = 0; i < rest.length; i += ROW1) {
-      rows.push(rest.slice(i, i + ROW1));
+  const scrollColumns = useMemo((): Col[] => {
+    const cols: Col[] = [];
+    for (let i = 0; i < withPhotos.length; i += 2) {
+      cols.push({
+        top: withPhotos[i],
+        bottom: withPhotos[i + 1],
+      });
     }
-    return rows;
-  }, [expanded, visible]);
+    // Always offer the full-list drawer when there is more than one screenful.
+    if (withPhotos.length > COLS_VISIBLE) {
+      const last = cols[cols.length - 1];
+      if (last && last.bottom == null) {
+        last.bottom = 'more';
+      } else {
+        cols.push({ bottom: 'more' });
+      }
+    }
+    return cols;
+  }, [withPhotos]);
 
   const open = (cat: CuisineChip) => {
     router.push({
@@ -75,103 +86,99 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
 
   if (!loading && categories.length === 0) return null;
 
-  const renderRow = (
-    cats: CuisineChip[],
-    key: string,
-    trailing?: ReactNode
-  ) => (
-    <View key={key} style={styles.row}>
-      {cats.map((cat) => (
-        <MindChip
-          key={cat.id || cat.slug}
-          label={cat.name}
-          slug={cat.slug}
-          imageUrl={cat.imageUrl}
-          onPress={() => open(cat)}
-          slotWidth={slotW}
-        />
-      ))}
-      {trailing}
-    </View>
-  );
-
-  const moreControl = (mode: 'more' | 'less') => (
-    <Pressable
-      style={({ pressed }) => [
-        { width: slotW },
-        styles.moreCol,
-        pressed && styles.pressed,
-      ]}
-      onPress={() => setExpanded(mode === 'more')}
-      accessibilityRole="button"
-      accessibilityLabel={mode === 'more' ? 'Show more categories' : 'Show less'}
-    >
-      <View
-        style={[
-          styles.moreRing,
-          {
-            width: circle + 4,
-            height: circle + 4,
-            borderRadius: (circle + 4) / 2,
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.moreCircle,
-            {
-              width: circle - 2,
-              height: circle - 2,
-              borderRadius: (circle - 2) / 2,
-            },
-            mode === 'less' && styles.moreCircleMuted,
-          ]}
-        >
-          {mode === 'more' ? (
-            <LayoutGrid size={18} color="#AC0F45" strokeWidth={2.2} />
-          ) : (
-            <Text style={styles.moreMinus}>-</Text>
-          )}
-        </View>
-      </View>
-      <Text style={styles.moreLabel}>
-        {mode === 'more' ? 'Show more' : 'Show less'}
-      </Text>
-    </Pressable>
-  );
-
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{"What's on your mind?"}</Text>
+      <Text style={styles.title}>What's on your mind?</Text>
       {loading && categories.length === 0 ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator color="#AC0F45" />
         </View>
       ) : (
-        <View style={styles.grid}>
-          {row1.length > 0 ? renderRow(row1, 'row-1') : null}
-          {row2Cats.length > 0 || (!expanded && needsMore)
-            ? renderRow(
-                row2Cats,
-                'row-2',
-                !expanded && needsMore
-                  ? moreControl('more')
-                  : expanded && needsMore && restRows.length === 0
-                    ? moreControl('less')
-                    : null
-              )
-            : null}
-          {restRows.map((row, i) =>
-            renderRow(
-              row,
-              `row-extra-${i}`,
-              i === restRows.length - 1 && needsMore
-                ? moreControl('less')
-                : null
-            )
-          )}
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.rail}
+          decelerationRate="fast"
+        >
+          {scrollColumns.map((col, idx) => (
+            <View
+              key={`col-${idx}`}
+              style={[styles.column, { width: slotW, marginRight: GAP }]}
+            >
+              {col.top ? (
+                <MindChip
+                  label={col.top.name}
+                  slug={col.top.slug}
+                  imageUrl={col.top.imageUrl}
+                  onPress={() => open(col.top!)}
+                  slotWidth={slotW}
+                />
+              ) : (
+                <View style={{ height: circle + 36 }} />
+              )}
+              <View style={{ height: GAP + 6 }} />
+              {col.bottom === 'more' ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.moreCol,
+                    { width: slotW },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setDrawerOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show more categories"
+                >
+                  <View
+                    style={[
+                      styles.moreRing,
+                      {
+                        width: circle + 4,
+                        height: circle + 4,
+                        borderRadius: (circle + 4) / 2,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.moreCircle,
+                        {
+                          width: circle - 2,
+                          height: circle - 2,
+                          borderRadius: (circle - 2) / 2,
+                        },
+                      ]}
+                    >
+                      <LayoutGrid
+                        size={16}
+                        color="#AC0F45"
+                        strokeWidth={2.2}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.moreLabel}>Show more</Text>
+                </Pressable>
+              ) : col.bottom ? (
+                <MindChip
+                  label={col.bottom.name}
+                  slug={col.bottom.slug}
+                  imageUrl={col.bottom.imageUrl}
+                  onPress={() => open(col.bottom as CuisineChip)}
+                  slotWidth={slotW}
+                />
+              ) : (
+                <View style={{ height: circle + 36 }} />
+              )}
+            </View>
+          ))}
+        </ScrollView>
       )}
+
+      <MindCategoriesDrawer
+        visible={drawerOpen}
+        categories={withPhotos}
+        onClose={() => setDrawerOpen(false)}
+        onSelect={open}
+      />
     </View>
   );
 }
@@ -179,7 +186,7 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
 const styles = StyleSheet.create({
   wrap: {
     marginTop: 6,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   title: {
     fontFamily: fonts.displayBold,
@@ -190,17 +197,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   loadingRow: {
-    height: 140,
+    height: 150,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  grid: {
+  rail: {
     paddingHorizontal: H_PAD,
-    gap: 12,
+    paddingRight: H_PAD + 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  column: {
+    alignItems: 'center',
   },
   pressed: {
     opacity: 0.88,
@@ -221,17 +227,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  moreCircleMuted: {
-    backgroundColor: '#F4F4F5',
-    borderColor: '#D4D4D8',
-    borderStyle: 'solid',
-  },
-  moreMinus: {
-    fontSize: 22,
-    color: '#52525B',
-    lineHeight: 24,
-    fontWeight: '600',
   },
   moreLabel: {
     fontFamily: fonts.uiSemi,
