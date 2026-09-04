@@ -44,7 +44,8 @@ export function BillDetailsSection({
     bill.grandTotal > 0
       ? bill.grandTotal
       : Math.max(0, fallbackTotal ?? 0);
-  const savings = bill.discount + bill.walletApplied + bill.loyaltyDiscount;
+  // Promo / loyalty only — wallet is a payment, not a saving.
+  const savings = bill.discount + bill.loyaltyDiscount;
 
   return (
     <View style={styles.card}>
@@ -88,11 +89,12 @@ export function BillDetailsSection({
           green
         />
       ) : null}
-      {bill.walletApplied > 0 ? (
-        <BillRow label="Wallet applied" value={-bill.walletApplied} green />
-      ) : null}
       {bill.loyaltyDiscount > 0 ? (
         <BillRow label="Loyalty redeemed" value={-bill.loyaltyDiscount} green />
+      ) : null}
+
+      {bill.walletApplied > 0 ? (
+        <BillRow label="Paid via Tokajo wallet" value={-bill.walletApplied} />
       ) : null}
 
       <View style={styles.separator} />
@@ -108,6 +110,10 @@ export function BillDetailsSection({
         <Text style={styles.totalLabel}>To pay</Text>
         <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
       </View>
+
+      {bill.walletApplied > 0 && total <= 0.009 ? (
+        <Text style={styles.walletPaidHint}>Fully paid with Tokajo wallet</Text>
+      ) : null}
 
       <Text style={styles.footerHint}>
         Tap (i) on taxes to see restaurant GST and platform fee.
@@ -457,5 +463,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.ui,
     fontSize: 11,
     color: TEXT_MUTED,
+  },
+  walletPaidHint: {
+    marginTop: -2,
+    fontFamily: fonts.uiSemi,
+    fontSize: 12,
+    color: GREEN,
+    textAlign: 'right',
   },
 });

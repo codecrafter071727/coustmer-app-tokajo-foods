@@ -106,11 +106,11 @@ export function PaymentOptionsModal({
   const savedUpis = savedMethods?.filter((m) => m.type === 'upi') || [];
 
   const handleWalletSelect = () => {
-    if (wallet && wallet.balance < total) {
+    if (wallet && wallet.balance + 0.009 < total) {
       const diff = total - wallet.balance;
       Alert.alert(
         'Insufficient Balance',
-        `You need ₹${diff.toFixed(0)} more in your wallet to pay for this order.`,
+        `Tokajo wallet must cover the full bill. You need ₹${diff.toFixed(0)} more.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -208,8 +208,8 @@ export function PaymentOptionsModal({
                 </Text>
                 <Text style={styles.upiPromoDesc}>
                   {wallet
-                    ? `Balance ₹${wallet.balance.toFixed(0)} · pay in one tap`
-                    : 'Pay faster with your Tokajo balance'}
+                    ? `Balance ₹${wallet.balance.toFixed(0)} · pays the full bill`
+                    : 'Pay the full bill with your Tokajo balance'}
                 </Text>
                 <Pressable
                   style={styles.upiPromoBtn}
@@ -289,8 +289,8 @@ export function PaymentOptionsModal({
                     <Text style={styles.cardItemText}>Tokajo Foods Wallet</Text>
                     <Text style={styles.cardItemSubtext}>
                       {wallet
-                        ? `Available balance ₹${wallet.balance.toFixed(0)}`
-                        : 'Pay instantly from your Tokajo balance'}
+                        ? `₹${wallet.balance.toFixed(0)} · full bill only`
+                        : 'Pays the full bill from your Tokajo balance'}
                     </Text>
                   </View>
                   <SelectMark selected={selectedMethod === 'wallet'} />

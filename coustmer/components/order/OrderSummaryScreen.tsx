@@ -147,9 +147,14 @@ export function OrderSummaryScreen() {
   }, [bill.data, cartData, tip, discount, normalizedDeliveryType]);
 
   const payable =
-    billBreakdown.grandTotal > 0
-      ? billBreakdown.grandTotal
-      : cartData?.total ?? 0;
+    paymentMethod === 'wallet' &&
+    Number(wallet.data?.balance ?? 0) + 0.009 >= payableBeforeWallet(billBreakdown)
+      ? billBreakdown.walletApplied > 0
+        ? billBreakdown.grandTotal
+        : 0
+      : billBreakdown.grandTotal > 0
+        ? billBreakdown.grandTotal
+        : cartData?.total ?? 0;
 
   const displayName =
     profile.data?.displayName ||
@@ -512,16 +517,46 @@ export function OrderSummaryScreen() {
         visible={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
         selectedMethod={paymentMethod}
-        onSelectMethod={(m) => {
+        onSelectMethod={async (m) => {
+          if (m === 'wallet') {
+            try {
+              await ensureWalletCoversCheckout({
+                payableBeforeWallet: payableBeforeWallet(billBreakdown),
+                walletBalance: Number(wallet.data?.balance ?? 0),
+              });
+              void bill.refetch();
+            } catch (err) {
+              Alert.alert(
+                'Wallet',
+                err instanceof Error ? err.message : 'Could not apply wallet',
+              );
+              return;
+            }
+          }
           setPaymentMethod(m);
           setPaymentModalOpen(false);
         }}
-        onPay={(m) => {
+        onPay={async (m) => {
+          if (m === 'wallet') {
+            try {
+              await ensureWalletCoversCheckout({
+                payableBeforeWallet: payableBeforeWallet(billBreakdown),
+                walletBalance: Number(wallet.data?.balance ?? 0),
+              });
+              void bill.refetch();
+            } catch (err) {
+              Alert.alert(
+                'Wallet',
+                err instanceof Error ? err.message : 'Could not apply wallet',
+              );
+              return;
+            }
+          }
           setPaymentMethod(m);
           setPaymentModalOpen(false);
         }}
         itemCount={itemCount}
-        total={payable}
+        total={payableBeforeWallet(billBreakdown) || payable}
         savings={billBreakdown.discount}
         restaurantName={restaurant?.name || ''}
         addressLabel={location?.label || 'Delivery'}

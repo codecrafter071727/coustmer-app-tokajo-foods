@@ -366,17 +366,23 @@ export function CartScreen() {
 
   const displayTotal = Math.max(
     0,
-    billBreakdown.grandTotal > 0
-      ? billBreakdown.grandTotal
-      : Number(estimatedTotal) ||
-          Math.round(
-            (billSubtotal +
-              feeForTotal +
-              billBreakdown.taxesAndChargesTotal +
-              displayTip -
-              billBreakdown.discount) *
-              100
-          ) / 100
+    paymentMethod === 'wallet' &&
+      Number(wallet.data?.balance ?? 0) + 0.009 >=
+        payableBeforeWallet(billBreakdown)
+      ? billBreakdown.walletApplied > 0
+        ? billBreakdown.grandTotal
+        : 0
+      : billBreakdown.grandTotal > 0
+        ? billBreakdown.grandTotal
+        : Number(estimatedTotal) ||
+            Math.round(
+              (billSubtotal +
+                feeForTotal +
+                billBreakdown.taxesAndChargesTotal +
+                displayTip -
+                billBreakdown.discount) *
+                100
+            ) / 100
   );
 
   const displayDiscount = billBreakdown.discount;
