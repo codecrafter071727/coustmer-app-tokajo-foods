@@ -23,8 +23,9 @@ type Props = {
   banners?: HomeBanner[] | null;
 };
 
-const HERO_BODY = 268;
-const SEARCH_DOCK_H = 64;
+const HERO_BODY = 280;
+const SEARCH_DOCK_H = 72;
+const BANNER_BOTTOM_RADIUS = 28;
 
 /**
  * Everything lives inside the offer banner:
@@ -72,7 +73,7 @@ export function SwiggyHomeChrome({
           banners={banners}
           height={heroH}
           topOverlayPad={topOverlayPad}
-          bottomOverlayPad={SEARCH_DOCK_H + 10}
+          bottomOverlayPad={SEARCH_DOCK_H + 18}
         />
 
         <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>
@@ -130,11 +131,13 @@ export function SwiggyHomeChrome({
 const styles = StyleSheet.create({
   root: {
     backgroundColor: '#FFFFFF',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   heroShell: {
     position: 'relative',
     overflow: 'hidden',
+    borderBottomLeftRadius: BANNER_BOTTOM_RADIUS,
+    borderBottomRightRadius: BANNER_BOTTOM_RADIUS,
   },
   topBar: {
     position: 'absolute',
@@ -213,7 +216,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 14,
     right: 14,
-    bottom: 12,
+    bottom: 18,
     zIndex: 5,
   },
 });

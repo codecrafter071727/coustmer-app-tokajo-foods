@@ -153,11 +153,12 @@ export function HomeOfferHeroBanner({
             )}
             <LinearGradient
               colors={[
-                'rgba(0,0,0,0.52)',
-                'rgba(0,0,0,0.12)',
-                'rgba(0,0,0,0.78)',
+                'rgba(0,0,0,0.45)',
+                'rgba(0,0,0,0.08)',
+                'rgba(0,0,0,0.55)',
+                'rgba(0,0,0,0.88)',
               ]}
-              locations={[0, 0.42, 1]}
+              locations={[0, 0.28, 0.58, 1]}
               style={StyleSheet.absoluteFill}
             />
             <View
@@ -206,7 +207,6 @@ export function HomeOfferHeroBanner({
   );
 }
 
-const styles = StyleSheet.create({
   wrap: {
     overflow: 'hidden',
     backgroundColor: '#1C1C1C',
@@ -221,36 +221,42 @@ const styles = StyleSheet.create({
   },
   pill: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(252,128,25,0.92)',
     borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginBottom: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+    marginBottom: 10,
   },
   pillText: {
     color: '#FFFFFF',
     fontSize: 10,
     fontFamily: fonts.uiBold,
-    letterSpacing: 1.2,
+    letterSpacing: 1.3,
   },
   title: {
     color: '#FFFFFF',
     fontFamily: fonts.displayBold,
-    fontSize: 24,
-    lineHeight: 30,
-    letterSpacing: -0.4,
-    maxWidth: '90%',
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: -0.45,
+    maxWidth: '92%',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   sub: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.9)',
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.95)',
     fontFamily: fonts.uiSemi,
-    fontSize: 13.5,
-    lineHeight: 18,
-    maxWidth: '90%',
+    fontSize: 14,
+    lineHeight: 19,
+    maxWidth: '92%',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   orderBtn: {
-    marginTop: 12,
+    marginTop: 14,
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
@@ -258,12 +264,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   orderText: {
     color: '#FC8019',
     fontFamily: fonts.uiBold,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   dots: {
     position: 'absolute',
