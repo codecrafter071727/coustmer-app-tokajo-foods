@@ -60,6 +60,7 @@ export function SuggestedItemsRail({
           nestedScrollEnabled
           decelerationRate="fast"
           snapToInterval={180}
+          snapToAlignment="start"
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <SuggestedItemCard
