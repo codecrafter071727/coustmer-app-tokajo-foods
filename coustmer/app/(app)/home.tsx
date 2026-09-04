@@ -60,7 +60,6 @@ import {
   useRestaurantCuisines,
 } from '@/lib/restaurant/hooks';
 import { homeFiltersToNearbyParams } from '@/lib/restaurant/nearby-params';
-import { filterMindCategoriesToRestaurants } from '@/lib/restaurant/home-categories';
 import { useAuthStore } from '@/store/auth-store';
 import {
   useDeliveryCoords,
@@ -242,10 +241,10 @@ export default function HomeScreen() {
   const homeCategories = useHomeCategories(baseRestaurants);
 
   const mindCategoriesForHome = useMemo(() => {
-    const fromApi = mindCategories.data?.categories ?? [];
-    if (!baseRestaurants.length) return fromApi;
-    return filterMindCategoriesToRestaurants(fromApi, baseRestaurants);
-  }, [mindCategories.data?.categories, baseRestaurants]);
+    // API already returns unique menu categories from nearby restaurants
+    // (not cuisine tags). Trust the server list as-is.
+    return mindCategories.data?.categories ?? [];
+  }, [mindCategories.data?.categories]);
 
   /** Top rail: highest rated first (different order than feed / deals) */
   const topRestaurants = useMemo(() => {
