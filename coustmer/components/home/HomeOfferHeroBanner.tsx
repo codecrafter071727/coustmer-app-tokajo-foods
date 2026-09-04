@@ -207,6 +207,7 @@ export function HomeOfferHeroBanner({
   );
 }
 
+const styles = StyleSheet.create({
   wrap: {
     overflow: 'hidden',
     backgroundColor: '#1C1C1C',
