@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Star } from 'lucide-react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { VegMarkIcon } from '@/components/home/VegMarkIcon';
 import { fonts } from '@/constants/typography';
@@ -13,6 +14,10 @@ type Props = {
   onPress?: () => void;
 };
 
+const CARD_W = 228;
+const IMG_RADIUS = 18;
+
+/** Swiggy-style restaurant rail card — rounded photo, rating chip, clean meta. */
 export function HomeRestaurantRailCard({
   restaurant: r,
   badge,
@@ -20,25 +25,48 @@ export function HomeRestaurantRailCard({
   onPress,
 }: Props) {
   const closed = Boolean(r.availabilityLabel);
+  const hasRating = typeof r.rating === 'number' && r.rating > 0;
 
   return (
-    <Pressable style={styles.card} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      onPress={onPress}
+    >
       <View style={styles.imgWrap}>
         {r.image ? (
-          <Image source={{ uri: r.image }} style={styles.img} contentFit="cover" />
+          <Image
+            source={{ uri: r.image }}
+            style={styles.img}
+            contentFit="cover"
+            transition={200}
+          />
         ) : (
           <View style={[styles.img, styles.imgFallback]} />
         )}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.4)']}
+          style={styles.fade}
+        />
+
         {badge ? (
           <View style={[styles.railBadge, { backgroundColor: badgeColor ?? '#EA580C' }]}>
             <Text style={styles.railBadgeText}>{badge}</Text>
           </View>
         ) : null}
+
         {r.isPureVeg ? (
           <View style={styles.vegMark}>
             <VegMarkIcon variant="veg" size={14} />
           </View>
         ) : null}
+
+        {hasRating && !closed ? (
+          <View style={styles.ratingOnImg}>
+            <Text style={styles.ratingOnImgText}>{r.rating!.toFixed(1)}</Text>
+            <Star color="#FFF" fill="#FFF" size={9} />
+          </View>
+        ) : null}
+
         {closed ? (
           <View style={styles.closedOverlay}>
             <Text style={styles.closedText} numberOfLines={2}>
@@ -52,39 +80,37 @@ export function HomeRestaurantRailCard({
         <Text style={styles.name} numberOfLines={1}>
           {r.name}
         </Text>
+
         <View style={styles.meta}>
-          {typeof r.rating === 'number' && r.rating > 0 ? (
-            <View style={styles.rating}>
-              <Star color="#1BA672" size={11} fill="#1BA672" strokeWidth={0} />
-              <Text style={styles.ratingText}>{r.rating.toFixed(1)}</Text>
-              {typeof r.reviewCount === 'number' && r.reviewCount > 0 ? (
-                <Text style={styles.reviewCount}>
-                  ({r.reviewCount >= 1000
-                    ? `${(r.reviewCount / 1000).toFixed(r.reviewCount >= 10000 ? 0 : 1).replace(/\.0$/, '')}K+`
-                    : r.reviewCount})
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <View style={styles.ratingMuted}>
-              <Text style={styles.ratingMutedText}>No ratings</Text>
-            </View>
-          )}
           {r.deliveryTime && !closed ? (
             <View style={styles.time}>
-              <Clock color="#64748B" size={12} strokeWidth={2} />
+              <Clock color="#6B7280" size={12} strokeWidth={2.2} />
               <Text style={styles.timeText}>{r.deliveryTime}</Text>
             </View>
           ) : null}
+          {typeof r.reviewCount === 'number' && r.reviewCount > 0 ? (
+            <Text style={styles.reviewCount}>
+              {r.reviewCount >= 1000
+                ? `${(r.reviewCount / 1000).toFixed(r.reviewCount >= 10000 ? 0 : 1).replace(/\.0$/, '')}K+`
+                : r.reviewCount}{' '}
+              ratings
+            </Text>
+          ) : null}
         </View>
-        {r.hoursToday || (closed && r.availabilityLabel) ? (
-          <Text style={[styles.hours, closed && styles.hoursClosed]} numberOfLines={1}>
-            {closed && r.availabilityLabel ? r.availabilityLabel : r.hoursToday}
-          </Text>
-        ) : null}
+
         {r.cuisines && r.cuisines.length > 0 ? (
           <Text style={styles.cuisines} numberOfLines={1}>
             {r.cuisines.slice(0, 3).join(' • ')}
+          </Text>
+        ) : null}
+
+        {closed && r.availabilityLabel ? (
+          <Text style={styles.hoursClosed} numberOfLines={1}>
+            {r.availabilityLabel}
+          </Text>
+        ) : r.hoursToday ? (
+          <Text style={styles.hours} numberOfLines={1}>
+            {r.hoursToday}
           </Text>
         ) : null}
       </View>
@@ -92,47 +118,86 @@ export function HomeRestaurantRailCard({
   );
 }
 
+export const RESTAURANT_RAIL_CARD_WIDTH = CARD_W;
+
 const styles = StyleSheet.create({
   card: {
-    width: 232,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    overflow: 'hidden',
+    width: CARD_W,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingTop: 8,
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1A1A1A',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.11,
+        shadowRadius: 14,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
+  pressed: { opacity: 0.96, transform: [{ scale: 0.985 }] },
   imgWrap: {
-    height: 132,
-    position: 'relative',
-    borderRadius: 16,
+    height: 128,
+    borderRadius: IMG_RADIUS,
     overflow: 'hidden',
-    backgroundColor: '#F4F4F5',
+    backgroundColor: '#EDE9E6',
+    position: 'relative',
   },
-  img: { width: '100%', height: '100%' },
-  imgFallback: { backgroundColor: '#F1F5F9' },
+  img: { width: '100%', height: '100%', borderRadius: IMG_RADIUS },
+  imgFallback: { backgroundColor: '#E8E4E1' },
+  fade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 48,
+  },
   railBadge: {
     position: 'absolute',
     top: 10,
     left: 10,
     paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: 7,
   },
   railBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontFamily: fonts.uiBold,
-    letterSpacing: 0.6,
+    letterSpacing: 0.7,
   },
   vegMark: {
     position: 'absolute',
     top: 10,
     right: 10,
     backgroundColor: '#fff',
-    borderRadius: 4,
+    borderRadius: 5,
     padding: 3,
+  },
+  ratingOnImg: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1BA672',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 7,
+  },
+  ratingOnImgText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontFamily: fonts.uiBold,
   },
   closedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.52)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
@@ -144,13 +209,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
-  info: { paddingTop: 10, paddingHorizontal: 2 },
+  info: { paddingTop: 10, paddingHorizontal: 4 },
   name: {
     fontFamily: fonts.displayBold,
     fontSize: 15.5,
     color: '#1C1C1C',
-    letterSpacing: -0.2,
-    marginBottom: 4,
+    letterSpacing: -0.25,
+    marginBottom: 5,
   },
   meta: {
     flexDirection: 'row',
@@ -159,32 +224,24 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     flexWrap: 'wrap',
   },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#EAF6EC',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  ratingText: { fontSize: 12.5, fontFamily: fonts.uiBold, color: '#1BA672' },
-  reviewCount: { fontSize: 11, fontFamily: fonts.uiSemi, color: '#4B7A62' },
-  ratingMuted: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  ratingMutedText: { fontSize: 11, fontFamily: fonts.uiBold, color: '#64748B' },
+  time: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  timeText: { fontSize: 12.5, fontFamily: fonts.uiSemi, color: '#4B5563' },
+  reviewCount: { fontSize: 11.5, fontFamily: fonts.ui, color: '#9CA3AF' },
   hours: {
+    marginTop: 3,
+    fontSize: 11.5,
+    fontFamily: fonts.ui,
+    color: '#9CA3AF',
+  },
+  hoursClosed: {
+    marginTop: 3,
     fontSize: 12,
     fontFamily: fonts.uiSemi,
-    color: '#64748B',
-    marginBottom: 4,
+    color: '#DC2626',
   },
-  hoursClosed: { color: '#DC2626' },
-  time: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  timeText: { fontSize: 12.5, fontFamily: fonts.uiSemi, color: '#8A8A8A' },
-  cuisines: { fontSize: 12.5, fontFamily: fonts.ui, color: '#9A9A9A' },
+  cuisines: {
+    fontSize: 12.5,
+    fontFamily: fonts.ui,
+    color: '#8A8A8A',
+  },
 });
