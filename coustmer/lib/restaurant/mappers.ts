@@ -3,6 +3,7 @@ import {
   onlyApiMediaUrl,
   resolveMediaUrl,
 } from '@/lib/restaurant/media';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import {
   getMenuItemRating,
   getMenuItemReviewCount,
@@ -618,10 +619,11 @@ export function mapMenuItem(
   const itemName = String(data.name ?? data.title ?? 'Item');
   const itemId = String(data._id ?? data.id ?? '');
 
-  const apiImage =
-    onlyApiMediaUrl(
-      (data.imageUrl as string) || (data.image as string) || imageFromList
-    ) || undefined;
+  // Keep real partner uploads; otherwise name-matched dish photo (never blank).
+  const apiImage = resolveMenuItemImage(
+    itemName,
+    (data.imageUrl as string) || (data.image as string) || imageFromList,
+  );
 
   const tags = Array.isArray(data.tags)
     ? (data.tags as unknown[]).map(String).filter(Boolean)
