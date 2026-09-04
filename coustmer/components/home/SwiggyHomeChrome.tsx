@@ -19,14 +19,16 @@ type Props = {
   deliverySubtitle?: string;
   isDetectingLocation?: boolean;
   onLocationPress?: () => void;
-  banners?: HomeBanner[];
+  /** CMS / home feed offer slides — optional; fallback slide is used when empty. */
+  banners?: HomeBanner[] | null;
 };
 
-const HERO_BODY = 236;
+const HERO_BODY = 268;
+const SEARCH_DOCK_H = 64;
 
 /**
- * Offer hero up top · location left · profile right ·
- * search + notifications docked under Order now.
+ * Everything lives inside the offer banner:
+ * location (left) · profile (right) · offer + Order now · search + bell.
  */
 export function SwiggyHomeChrome({
   topInset = 0,
@@ -57,6 +59,7 @@ export function SwiggyHomeChrome({
     .toUpperCase()
     .slice(0, 2);
 
+  const topOverlayPad = topInset + 56;
   const heroH = HERO_BODY + topInset;
   const headline = isDetectingLocation
     ? 'Detecting location…'
@@ -68,7 +71,8 @@ export function SwiggyHomeChrome({
         <HomeOfferHeroBanner
           banners={banners}
           height={heroH}
-          contentTopPad={topInset + 52}
+          topOverlayPad={topOverlayPad}
+          bottomOverlayPad={SEARCH_DOCK_H + 10}
         />
 
         <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>
@@ -114,9 +118,11 @@ export function SwiggyHomeChrome({
             )}
           </SmoothPressable>
         </View>
-      </View>
 
-      <HomeHeroSearchDock unreadCount={unreadCount} />
+        <View style={styles.searchOverlay}>
+          <HomeHeroSearchDock unreadCount={unreadCount} onBanner />
+        </View>
+      </View>
     </View>
   );
 }
@@ -124,10 +130,11 @@ export function SwiggyHomeChrome({
 const styles = StyleSheet.create({
   root: {
     backgroundColor: '#FFFFFF',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   heroShell: {
     position: 'relative',
+    overflow: 'hidden',
   },
   topBar: {
     position: 'absolute',
@@ -201,5 +208,12 @@ const styles = StyleSheet.create({
     color: '#FC8019',
     fontSize: 14,
     fontFamily: fonts.displayBold,
+  },
+  searchOverlay: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 12,
+    zIndex: 5,
   },
 });

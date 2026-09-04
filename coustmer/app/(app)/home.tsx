@@ -32,6 +32,7 @@ import { fonts } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
 import { addressApi } from '@/lib/address/api';
 import { formatAddressLabel } from '@/lib/address/types';
+import type { HomeBanner } from '@/lib/customer/types';
 import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import {
   useAppConfig,
@@ -537,6 +538,15 @@ export default function HomeScreen() {
     />
   );
 
+  const offerBanners: HomeBanner[] = Array.isArray(offers.data?.banners)
+    ? offers.data.banners
+    : [];
+  const feedBanners: HomeBanner[] = Array.isArray(home.data?.banners)
+    ? home.data.banners
+    : [];
+  const chromeBanners =
+    offerBanners.length > 0 ? offerBanners : feedBanners;
+
   const chrome = (
     <SwiggyHomeChrome
       topInset={insets.top}
@@ -545,11 +555,7 @@ export default function HomeScreen() {
       deliverySubtitle={deliverySubtitle}
       isDetectingLocation={isDetectingLocation}
       onLocationPress={() => setPickerOpen(true)}
-      banners={
-        (offers.data?.banners?.length
-          ? offers.data.banners
-          : home.data?.banners) ?? []
-      }
+      banners={chromeBanners}
     />
   );
 

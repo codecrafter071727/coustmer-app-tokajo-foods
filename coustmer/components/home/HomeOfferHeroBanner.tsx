@@ -21,7 +21,7 @@ import type { HomeBanner } from '@/lib/customer/types';
 const { width: SCREEN_W } = Dimensions.get('window');
 const AUTO_MS = 4000;
 
-const FALLBACK_BANNER: HomeBanner = {
+export const FALLBACK_HOME_BANNER: HomeBanner = {
   id: 'fallback-offer',
   title: 'Hungry? Order now',
   subtitle: 'Fresh meals from kitchens near you',
@@ -36,19 +36,30 @@ const GRADIENTS: [string, string][] = [
 ];
 
 type Props = {
-  banners: HomeBanner[];
+  banners?: HomeBanner[] | null;
   height: number;
-  contentTopPad: number;
+  /** Space reserved at top for location + profile overlay. */
+  topOverlayPad: number;
+  /** Space reserved at bottom for search + notification overlay. */
+  bottomOverlayPad: number;
 };
 
-/** Full-bleed auto-scrolling offer hero with Order now CTA. */
+function normalizeBanners(banners?: HomeBanner[] | null): HomeBanner[] {
+  if (!Array.isArray(banners) || banners.length === 0) {
+    return [FALLBACK_HOME_BANNER];
+  }
+  return banners;
+}
+
+/** Full-bleed offer slides; chrome overlays sit on top inside the same hero. */
 export function HomeOfferHeroBanner({
   banners,
   height,
-  contentTopPad,
+  topOverlayPad,
+  bottomOverlayPad,
 }: Props) {
   const router = useRouter();
-  const slides = banners.length > 0 ? banners : [FALLBACK_BANNER];
+  const list = normalizeBanners(banners);
   const scrollRef = useRef<ScrollView>(null);
   const [activeIdx, setActiveIdx] = useState(0);
   const activeRef = useRef(0);
@@ -63,13 +74,13 @@ export function HomeOfferHeroBanner({
 
   const scheduleNext = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (slides.length <= 1) return;
+    if (list.length <= 1) return;
     timerRef.current = setTimeout(() => {
       if (touchingRef.current) return;
-      goto((activeRef.current + 1) % slides.length);
+      goto((activeRef.current + 1) % list.length);
       scheduleNext();
     }, AUTO_MS);
-  }, [goto, slides.length]);
+  }, [goto, list.length]);
 
   useEffect(() => {
     scheduleNext();
@@ -119,7 +130,7 @@ export function HomeOfferHeroBanner({
         }}
         style={StyleSheet.absoluteFill}
       >
-        {slides.map((banner, i) => (
+        {list.map((banner, i) => (
           <Pressable
             key={banner.id || `hero-${i}`}
             style={[styles.slide, { width: SCREEN_W, height }]}
@@ -142,14 +153,22 @@ export function HomeOfferHeroBanner({
             )}
             <LinearGradient
               colors={[
-                'rgba(0,0,0,0.48)',
+                'rgba(0,0,0,0.52)',
                 'rgba(0,0,0,0.12)',
-                'rgba(0,0,0,0.74)',
+                'rgba(0,0,0,0.78)',
               ]}
-              locations={[0, 0.38, 1]}
+              locations={[0, 0.42, 1]}
               style={StyleSheet.absoluteFill}
             />
-            <View style={[styles.copy, { paddingTop: contentTopPad }]}>
+            <View
+              style={[
+                styles.copy,
+                {
+                  paddingTop: topOverlayPad,
+                  paddingBottom: bottomOverlayPad,
+                },
+              ]}
+            >
               <View style={styles.pill}>
                 <Text style={styles.pillText}>OFFER</Text>
               </View>
@@ -170,9 +189,12 @@ export function HomeOfferHeroBanner({
         ))}
       </ScrollView>
 
-      {slides.length > 1 ? (
-        <View style={styles.dots}>
-          {slides.map((b, i) => (
+      {list.length > 1 ? (
+        <View
+          style={[styles.dots, { bottom: bottomOverlayPad - 6 }]}
+          pointerEvents="none"
+        >
+          {list.map((b, i) => (
             <View
               key={b.id || `dot-${i}`}
               style={[styles.dot, i === activeIdx && styles.dotActive]}
@@ -194,7 +216,8 @@ const styles = StyleSheet.create({
   },
   copy: {
     paddingHorizontal: 18,
-    paddingBottom: 30,
+    justifyContent: 'flex-end',
+    flex: 1,
   },
   pill: {
     alignSelf: 'flex-start',
@@ -216,7 +239,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
     letterSpacing: -0.4,
-    maxWidth: '88%',
+    maxWidth: '90%',
   },
   sub: {
     marginTop: 4,
@@ -244,7 +267,6 @@ const styles = StyleSheet.create({
   },
   dots: {
     position: 'absolute',
-    bottom: 10,
     left: 0,
     right: 0,
     flexDirection: 'row',

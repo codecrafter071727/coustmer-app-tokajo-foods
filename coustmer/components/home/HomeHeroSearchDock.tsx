@@ -16,10 +16,12 @@ const SEARCH_HINTS = [
 
 type Props = {
   unreadCount: number;
+  /** Glass style when docked inside the offer banner. */
+  onBanner?: boolean;
 };
 
-/** Floating search + notification row under the offer hero. */
-export function HomeHeroSearchDock({ unreadCount }: Props) {
+/** Search + notification row (standalone or inside offer hero). */
+export function HomeHeroSearchDock({ unreadCount, onBanner = false }: Props) {
   const router = useRouter();
   const [hintIndex, setHintIndex] = useState(0);
 
@@ -31,20 +33,20 @@ export function HomeHeroSearchDock({ unreadCount }: Props) {
   }, []);
 
   return (
-    <View style={styles.searchDock}>
+    <View style={[styles.dock, onBanner && styles.dockOnBanner]}>
       <Pressable
-        style={styles.searchBox}
+        style={[styles.searchBox, onBanner && styles.searchOnBanner]}
         onPress={() => router.push('/search')}
         accessibilityRole="search"
       >
-        <Search color="#FC8019" size={19} strokeWidth={2.4} />
-        <Text style={styles.searchPlaceholder} numberOfLines={1}>
+        <Search color="#FC8019" size={18} strokeWidth={2.4} />
+        <Text style={styles.placeholder} numberOfLines={1}>
           {SEARCH_HINTS[hintIndex]}
         </Text>
       </Pressable>
 
       <SmoothPressable
-        style={styles.bellBtn}
+        style={[styles.bellBtn, onBanner && styles.bellOnBanner]}
         onPress={() => router.push('/notifications')}
         pressScale={0.94}
         accessibilityLabel={
@@ -53,10 +55,10 @@ export function HomeHeroSearchDock({ unreadCount }: Props) {
             : 'Notifications'
         }
       >
-        <Bell color="#1C1C1C" size={20} strokeWidth={2.2} />
+        <Bell color="#1C1C1C" size={19} strokeWidth={2.2} />
         {unreadCount > 0 ? (
-          <View style={styles.bellBadge}>
-            <Text style={styles.bellBadgeText}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>
               {unreadCount > 9 ? '9+' : unreadCount}
             </Text>
           </View>
@@ -66,22 +68,14 @@ export function HomeHeroSearchDock({ unreadCount }: Props) {
   );
 }
 
-const cardShadow = {
-  elevation: 5,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.1,
-  shadowRadius: 10,
-} as const;
-
 const styles = StyleSheet.create({
-  searchDock: {
-    marginTop: -20,
-    marginHorizontal: 14,
+  dock: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    zIndex: 5,
+  },
+  dockOnBanner: {
+    marginTop: 14,
   },
   searchBox: {
     flex: 1,
@@ -90,33 +84,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     paddingHorizontal: 14,
-    height: 50,
+    height: 48,
     gap: 10,
-    borderWidth: 1,
-    borderColor: '#ECECEC',
-    ...cardShadow,
   },
-  searchPlaceholder: {
+  searchOnBanner: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  placeholder: {
     flex: 1,
     color: '#9A9A9A',
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '500',
   },
   bellBtn: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#ECECEC',
     alignItems: 'center',
     justifyContent: 'center',
-    ...cardShadow,
   },
-  bellBadge: {
+  bellOnBanner: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  badge: {
     position: 'absolute',
-    top: 9,
-    right: 9,
+    top: 8,
+    right: 8,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -127,7 +121,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#FFF',
   },
-  bellBadgeText: {
+  badgeText: {
     color: '#fff',
     fontSize: 9,
     fontFamily: fonts.uiBold,
