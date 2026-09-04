@@ -34,7 +34,9 @@ export type HomeFilterState = {
   priceBand: DishPriceBand;
   offersOnly: boolean;
   pureVeg: boolean;
+  /** @deprecated Stub — hidden from UI; kept for persisted state. */
   noPackagingCharge: boolean;
+  /** @deprecated Stub — hidden from UI; kept for persisted state. */
   lowPlastic: boolean;
   /** Server-side GET /restaurants/nearby?hygiene=1 (score ≥ 4). Off by default. */
   hygieneRatedOnly: boolean;
@@ -72,6 +74,7 @@ export const HOME_CUISINES: {
   { id: 'south_indian', label: 'South Indian', emoji: '🥘' },
 ];
 
+/** Backend `sort=cost` is ascending only — one cost option in the sheet. */
 export const HOME_SORT_OPTIONS: { id: HomeSortId; label: string; hint: string }[] =
   [
     { id: 'relevance', label: 'Relevance', hint: 'Best match for you' },
@@ -79,7 +82,6 @@ export const HOME_SORT_OPTIONS: { id: HomeSortId; label: string; hint: string }[
     { id: 'rating', label: 'Rating: High to Low', hint: 'Top rated first' },
     { id: 'fastest', label: 'Delivery Time', hint: 'Fastest first' },
     { id: 'cost_low', label: 'Cost: Low to High', hint: 'Budget friendly' },
-    { id: 'cost_high', label: 'Cost: High to Low', hint: 'Premium first' },
   ];
 
 export const DISH_PRICE_OPTIONS: {
@@ -128,22 +130,20 @@ function restaurantText(r: Restaurant): string {
   return `${r.name} ${(r.cuisines ?? []).join(' ')} ${r.description ?? ''} ${r.offer ?? ''}`.toLowerCase();
 }
 
-/** Stable rating for filtering/sorting when API rating is missing. */
+/** Live rating only — no invented scores for filters. */
 export function effectiveRating(r: Restaurant): number {
   const live = r.avgRating ?? r.rating;
   if (typeof live === 'number' && Number.isFinite(live) && live > 0) {
     return live;
   }
-  // 3.5 – 4.9
-  return Math.round((3.5 + (hashSeed(r.id || r.name) % 15) / 10) * 10) / 10;
+  return 0;
 }
 
-/** Stable cost-for-two when API value is missing. */
+/** Live cost-for-two only — no invented prices for filters. */
 export function effectiveCost(r: Restaurant): number {
   const raw = Number(r.costForTwo || r.priceForTwo || 0);
   if (Number.isFinite(raw) && raw > 0) return raw;
-  const buckets = [149, 179, 199, 249, 279, 299, 349, 399, 449, 499];
-  return buckets[hashSeed(`${r.id}|cost`) % buckets.length];
+  return 0;
 }
 
 export function parseDeliveryMinutes(value?: string | null): number {
@@ -153,23 +153,27 @@ export function parseDeliveryMinutes(value?: string | null): number {
   return Number(nums[0]) || 0;
 }
 
+/** Real promise / label ETA only — no hash fake for Near/Fast filters. */
 export function effectiveDeliveryMinutes(r: Restaurant): number {
   if (typeof r.promiseMinutes === 'number' && r.promiseMinutes > 0) {
     return Math.round(r.promiseMinutes);
   }
-  const parsed = parseDeliveryMinutes(r.deliveryTimeLabel || r.deliveryTime);
-  if (parsed > 0) return parsed;
-  const buckets = [18, 22, 25, 28, 32, 35, 40, 45, 50];
-  return buckets[hashSeed(`${r.id}|eta`) % buckets.length];
+  return parseDeliveryMinutes(r.deliveryTimeLabel || r.deliveryTime);
 }
 
-/** Distance in km — API value or stable fallback. */
+/** API distance only — no invented km for Near filter. */
 export function effectiveDistanceKm(r: Restaurant): number {
   if (typeof r.distance === 'number' && Number.isFinite(r.distance) && r.distance > 0) {
     return r.distance;
   }
-  // 0.6 km – 6.4 km
-  return Math.round((0.6 + (hashSeed(`${r.id}|dist`) % 59) / 10) * 10) / 10;
+  if (
+    typeof r.distanceMeters === 'number' &&
+    Number.isFinite(r.distanceMeters) &&
+    r.distanceMeters > 0
+  ) {
+    return Math.round((r.distanceMeters / 1000) * 10) / 10;
+  }
+  return 0;
 }
 
 export function restaurantCost(r: Restaurant): number {
@@ -178,10 +182,9 @@ export function restaurantCost(r: Restaurant): number {
 
 export function hasActiveOffer(r: Restaurant): boolean {
   if (r.offer && String(r.offer).trim()) return true;
+  if (Array.isArray(r.offerBadges) && r.offerBadges.length > 0) return true;
   const hay = restaurantText(r);
-  if (/(offer|% off|discount|deal|promo|flat)/i.test(hay)) return true;
-  // Align with Hot Deals badges — most places show a deal chip
-  return hashSeed(`${r.id}|offer`) % 3 !== 0;
+  return /(offer|% off|discount|deal|promo|flat)/i.test(hay);
 }
 
 export function isPureVegRestaurant(r: Restaurant): boolean {
@@ -189,20 +192,10 @@ export function isPureVegRestaurant(r: Restaurant): boolean {
   if (r.isPureVeg === false) return false;
   const hay = restaurantText(r);
   if (/(pure\s*veg|vegetarian only|veg only|jain)/i.test(hay)) return true;
-  if (
-    /(non[-\s]?veg|chicken|mutton|fish|egg|kebab|biryani|seafood|meat)/i.test(
-      hay
-    )
-  ) {
-    return false;
-  }
-  // Soft signal from cuisine tags
-  if ((r.cuisines ?? []).some((c) => /veg|south indian|dosa|idli/i.test(c))) {
-    return hashSeed(`${r.id}|veg`) % 2 === 0;
-  }
-  return hashSeed(`${r.id}|veg`) % 5 === 0;
+  return false;
 }
 
+/** Only true when the restaurant document exposes the flag — no hash stub. */
 export function hasNoPackagingCharge(r: Restaurant): boolean {
   const settings = r.settings as Record<string, unknown> | undefined;
   if (typeof settings?.noPackagingCharge === 'boolean') {
@@ -211,16 +204,17 @@ export function hasNoPackagingCharge(r: Restaurant): boolean {
   if (typeof (r as { noPackagingCharge?: boolean }).noPackagingCharge === 'boolean') {
     return Boolean((r as { noPackagingCharge?: boolean }).noPackagingCharge);
   }
-  return hashSeed(`${r.id}|nopkg`) % 2 === 0;
+  return false;
 }
 
+/** Only true when the restaurant document exposes the flag — no hash stub. */
 export function hasLowPlasticPackaging(r: Restaurant): boolean {
   const settings = r.settings as Record<string, unknown> | undefined;
   if (typeof settings?.lowPlastic === 'boolean') return settings.lowPlastic;
   if (typeof (r as { lowPlastic?: boolean }).lowPlastic === 'boolean') {
     return Boolean((r as { lowPlastic?: boolean }).lowPlastic);
   }
-  return hashSeed(`${r.id}|plastic`) % 3 === 0;
+  return false;
 }
 
 export function matchesCuisine(r: Restaurant, cuisine: HomeCuisineId): boolean {
@@ -232,7 +226,6 @@ export function matchesCuisine(r: Restaurant, cuisine: HomeCuisineId): boolean {
     if (keys.some((k) => hay.includes(k))) return true;
   }
 
-  // Dynamic menu / cuisine slugs from GET .../categories
   return restaurantMatchesCategory(r, cuisine);
 }
 
@@ -253,6 +246,7 @@ function maxMinutesForBand(band: DeliveryTimeBand): number {
 function matchesPriceBand(r: Restaurant, band: DishPriceBand): boolean {
   if (band === 'any') return true;
   const cost = effectiveCost(r);
+  if (cost <= 0) return false;
   if (band === 'under_200') return cost < 200;
   if (band === '200_350') return cost >= 200 && cost <= 350;
   return cost > 350;
@@ -270,8 +264,6 @@ export function countActiveHomeFilters(filters: HomeFilterState): number {
   if (filters.priceBand !== 'any') n += 1;
   if (filters.offersOnly) n += 1;
   if (filters.pureVeg) n += 1;
-  if (filters.noPackagingCharge) n += 1;
-  if (filters.lowPlastic) n += 1;
   if (filters.hygieneRatedOnly) n += 1;
   return n;
 }
@@ -282,7 +274,10 @@ export function applyHomeFilters(
   options?: { skipServerSide?: boolean }
 ): Restaurant[] {
   const skipServer = Boolean(options?.skipServerSide);
-  let list = rows.filter((r) => matchesCuisine(r, filters.cuisine));
+  // When nearby already applied `cuisines`, skip client cuisine re-filter.
+  let list = skipServer
+    ? [...rows]
+    : rows.filter((r) => matchesCuisine(r, filters.cuisine));
 
   if (!skipServer && filters.pureVeg) {
     list = list.filter((r) => isPureVegRestaurant(r));
@@ -295,7 +290,10 @@ export function applyHomeFilters(
 
   const maxMins = maxMinutesForBand(filters.timeBand);
   if (maxMins < 999) {
-    list = list.filter((r) => effectiveDeliveryMinutes(r) <= maxMins);
+    list = list.filter((r) => {
+      const mins = effectiveDeliveryMinutes(r);
+      return mins > 0 && mins <= maxMins;
+    });
   }
 
   if (!skipServer && filters.priceBand !== 'any') {
@@ -306,23 +304,19 @@ export function applyHomeFilters(
     list = list.filter((r) => hasActiveOffer(r));
   }
 
-  if (filters.noPackagingCharge) {
-    list = list.filter((r) => hasNoPackagingCharge(r));
-  }
+  // Packaging / plastic stubs removed from UI — ignore leftover persisted flags.
 
-  if (filters.lowPlastic) {
-    list = list.filter((r) => hasLowPlasticPackaging(r));
-  }
-
-  if (filters.hygieneRatedOnly) {
+  if (filters.hygieneRatedOnly && !skipServer) {
     list = list.filter(
       (r) => typeof r.hygieneScore === 'number' && r.hygieneScore >= 4
     );
   }
 
   if (filters.nearOnly) {
-    // Keep restaurants within ~4 km
-    list = list.filter((r) => effectiveDistanceKm(r) <= 4);
+    list = list.filter((r) => {
+      const km = effectiveDistanceKm(r);
+      return km > 0 && km <= 4;
+    });
   }
 
   list = [...list];
@@ -332,24 +326,43 @@ export function applyHomeFilters(
       ? 'nearest'
       : filters.sort;
 
-  if (skipServer && sortMode !== 'nearest') {
+  if (skipServer && sortMode !== 'nearest' && sortMode !== 'fastest' && sortMode !== 'cost_high') {
     return list;
   }
 
   switch (sortMode) {
     case 'nearest':
-      list.sort((a, b) => effectiveDistanceKm(a) - effectiveDistanceKm(b));
+      list.sort((a, b) => {
+        const da = effectiveDistanceKm(a);
+        const db = effectiveDistanceKm(b);
+        if (da <= 0 && db <= 0) return 0;
+        if (da <= 0) return 1;
+        if (db <= 0) return -1;
+        return da - db;
+      });
       break;
     case 'rating':
       list.sort((a, b) => effectiveRating(b) - effectiveRating(a));
       break;
     case 'fastest':
-      list.sort(
-        (a, b) => effectiveDeliveryMinutes(a) - effectiveDeliveryMinutes(b)
-      );
+      list.sort((a, b) => {
+        const ta = effectiveDeliveryMinutes(a);
+        const tb = effectiveDeliveryMinutes(b);
+        if (ta <= 0 && tb <= 0) return 0;
+        if (ta <= 0) return 1;
+        if (tb <= 0) return -1;
+        return ta - tb;
+      });
       break;
     case 'cost_low':
-      list.sort((a, b) => effectiveCost(a) - effectiveCost(b));
+      list.sort((a, b) => {
+        const ca = effectiveCost(a);
+        const cb = effectiveCost(b);
+        if (ca <= 0 && cb <= 0) return 0;
+        if (ca <= 0) return 1;
+        if (cb <= 0) return -1;
+        return ca - cb;
+      });
       break;
     case 'cost_high':
       list.sort((a, b) => effectiveCost(b) - effectiveCost(a));
@@ -359,9 +372,9 @@ export function applyHomeFilters(
       list.sort((a, b) => {
         const score = (r: Restaurant) =>
           effectiveRating(r) * 10 +
-          Math.min(r.reviewCount ?? hashSeed(r.id) % 80, 200) / 20 -
-          effectiveDeliveryMinutes(r) / 50 -
-          effectiveDistanceKm(r);
+          Math.min(r.reviewCount ?? 0, 200) / 20 -
+          (effectiveDeliveryMinutes(r) || 40) / 50 -
+          (effectiveDistanceKm(r) || 3);
         return score(b) - score(a);
       });
       break;

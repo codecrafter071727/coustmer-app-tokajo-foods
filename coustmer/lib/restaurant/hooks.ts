@@ -248,133 +248,62 @@ export type CategoryDish = {
 };
 
 /**
- * Menu items across restaurants for a home category chip
- * (Starters, Beverages, etc.) — Swiggy/Zomato style dish browse.
+ * Menu items across nearby restaurants for a mind / category chip.
+ * Prefers GET /restaurants/nearby/dishes when lat/lng are set.
  */
 export function useCategoryDishes(input: {
   cuisine: string;
   city?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   enabled?: boolean;
   restaurantLimit?: number;
 }) {
   const cuisine = input.cuisine.trim();
   const city = input.city?.trim() || undefined;
-  const restaurantLimit = input.restaurantLimit ?? 12;
+  const lat = input.lat;
+  const lng = input.lng;
+  const restaurantLimit = input.restaurantLimit ?? 40;
+  const hasPin =
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng);
 
   return useQuery({
     queryKey: [
       ...restaurantKeys.all,
       'category-dishes',
+      'v2-nearby',
       cuisine,
-      city ?? '',
+      hasPin ? `${lat},${lng}` : city ?? '',
       restaurantLimit,
     ],
     queryFn: async (): Promise<CategoryDish[]> => {
-      // Load city (or cuisine) restaurants, then keep only those with a matching menu category
-      const { restaurants: listed } = await restaurantApi.getRestaurants({
-        city,
-        sort: 'newest',
-        limit: 50,
-        page: 1,
-      });
-
-      let candidates = listed.length
-        ? listed
-        : (
-            await restaurantApi.getRestaurants({
-              cuisine,
-              sort: 'newest',
-              limit: 40,
-              page: 1,
-            })
-          ).restaurants;
-
-      if (candidates.length === 0) return [];
-
-      const sample = candidates.slice(0, restaurantLimit);
-      const dishes: CategoryDish[] = [];
-      const chunkSize = 4;
-
-      for (let i = 0; i < sample.length; i += chunkSize) {
-        const chunk = sample.slice(i, i + chunkSize);
-        const rows = await Promise.all(
-          chunk.map(async (restaurant) => {
-            try {
-              const cats = await restaurantApi
-                .getCategories(restaurant.id)
-                .catch(() => []);
-
-              const matchedCats = cats.filter((c) =>
-                menuCategoryMatchesCuisine(c, cuisine)
-              );
-              if (matchedCats.length === 0) return [] as CategoryDish[];
-
-              const matchedCatIds = new Set(matchedCats.map((c) => c.id));
-
-              // Prefer filtered items API per matched category, then merge
-              const byCategory = await Promise.all(
-                matchedCats.map((cat) =>
-                  restaurantApi
-                    .getItems(restaurant.id, { categoryId: cat.id })
-                    .catch(() => [] as Awaited<
-                      ReturnType<typeof restaurantApi.getItems>
-                    >)
-                )
-              );
-
-              let matchedItems = byCategory.flat();
-
-              // Fallback: full items list filtered strictly by category id/name
-              if (matchedItems.length === 0) {
-                const allItems = await restaurantApi
-                  .getItems(restaurant.id)
-                  .catch(() => []);
-                matchedItems = allItems.filter((item) =>
-                  menuItemMatchesCategory(item, cuisine, matchedCatIds)
-                );
-              } else {
-                matchedItems = matchedItems.filter(
-                  (item) => item.isAvailable !== false
-                );
-              }
-
-              // Still nothing for this restaurant — skip (never invent unrelated dishes)
-              if (matchedItems.length === 0) return [] as CategoryDish[];
-
-              return matchedItems.slice(0, 10).map((item) => ({
-                id: item.id,
-                name: item.name,
-                description: item.description,
-                price: item.price,
-                imageUrl: item.imageUrl,
-                isVeg: item.isVeg,
-                isAvailable: item.isAvailable,
-                isBestSeller: item.isBestSeller,
-                categoryName: item.categoryName,
-                restaurantId: restaurant.id,
-                restaurantName: restaurant.name,
-                restaurantImageUrl:
-                  restaurant.logoUrl ||
-                  restaurant.imageUrl ||
-                  restaurant.coverUrl,
-                deliveryTime: restaurant.deliveryTime,
-                rating: restaurant.rating,
-              }));
-            } catch {
-              return [] as CategoryDish[];
-            }
-          })
-        );
-        for (const row of rows) dishes.push(...row);
+      if (hasPin) {
+        const { dishes } = await restaurantApi.getNearbyDishes({
+          lat: lat as number,
+          lng: lng as number,
+          category: cuisine,
+          radius: CUSTOMER_DISCOVERY_RADIUS_KM,
+          limit: restaurantLimit,
+          itemLimit: 48,
+        });
+        return dishes.map((d) => ({
+          id: d.itemId,
+          name: d.name,
+          price: d.price,
+          imageUrl: d.image ?? undefined,
+          isVeg: d.isVeg,
+          isAvailable: true,
+          categoryName: d.categoryName,
+          restaurantId: d.restaurantId,
+          restaurantName: d.restaurantName,
+        }));
       }
 
-      // Prefer bestsellers, then available items
-      return dishes.sort((a, b) => {
-        if (Number(b.isBestSeller) !== Number(a.isBestSeller)) {
-          return Number(b.isBestSeller) - Number(a.isBestSeller);
-        }
-        return a.name.localeCompare(b.name);
-      });
+      // No pin — empty rather than city-wide fake browse.
+      return [];
     },
     enabled:
       input.enabled !== false &&

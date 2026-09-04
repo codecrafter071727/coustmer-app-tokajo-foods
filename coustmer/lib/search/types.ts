@@ -91,6 +91,10 @@ export type SearchCombinedParams = {
 export type SearchSuggestionsParams = {
   q: string;
   limit?: number;
+  lat?: number;
+  lng?: number;
+  /** Meters — search-service default ~50km when omitted. */
+  radius?: number;
 };
 
 export type SearchRestaurantsResult = {

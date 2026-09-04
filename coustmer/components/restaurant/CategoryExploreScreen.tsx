@@ -65,10 +65,14 @@ export function CategoryExploreScreen() {
         : null);
     return normalizeCityName(raw);
   }, [deliveryLocation]);
+  const lat = deliveryLocation?.lat ?? null;
+  const lng = deliveryLocation?.lng ?? null;
 
   const dishesQuery = useCategoryDishes({
     cuisine: slug,
     city,
+    lat: typeof lat === 'number' ? lat : null,
+    lng: typeof lng === 'number' ? lng : null,
     enabled: Boolean(slug) && slug !== 'popular',
   });
 
@@ -115,9 +119,7 @@ export function CategoryExploreScreen() {
           <Text style={styles.subtitle} numberOfLines={1}>
             {dishesQuery.isLoading
               ? 'Finding dishes near you…'
-              : `${dishes.length} item${dishes.length === 1 ? '' : 's'} from restaurants${
-                  city ? ` in ${city}` : ''
-                }`}
+              : `${dishes.length} item${dishes.length === 1 ? '' : 's'} near you`}
           </Text>
         </View>
       </View>

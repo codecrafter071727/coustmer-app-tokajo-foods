@@ -344,44 +344,6 @@ export function HomeFilterSheet({
                     <Pressable
                       style={[
                         styles.trustCard,
-                        draft.noPackagingCharge && styles.choiceCardOn,
-                      ]}
-                      onPress={() =>
-                        patch({ noPackagingCharge: !draft.noPackagingCharge })
-                      }
-                    >
-                      <Text style={styles.trustEmoji}>🥡</Text>
-                      <Text
-                        style={[
-                          styles.trustLabel,
-                          draft.noPackagingCharge && styles.choiceLabelOn,
-                        ]}
-                      >
-                        No packaging charges
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[
-                        styles.trustCard,
-                        draft.lowPlastic && styles.choiceCardOn,
-                      ]}
-                      onPress={() => patch({ lowPlastic: !draft.lowPlastic })}
-                    >
-                      <Text style={styles.trustEmoji}>🛍️</Text>
-                      <Text
-                        style={[
-                          styles.trustLabel,
-                          draft.lowPlastic && styles.choiceLabelOn,
-                        ]}
-                      >
-                        Low plastic packaging
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[
-                        styles.trustCard,
                         draft.hygieneRatedOnly && styles.choiceCardOn,
                       ]}
                       onPress={() =>
@@ -427,42 +389,6 @@ export function HomeFilterSheet({
                         ]}
                       >
                         Pure Veg
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.trustCard,
-                        draft.noPackagingCharge && styles.choiceCardOn,
-                      ]}
-                      onPress={() =>
-                        patch({ noPackagingCharge: !draft.noPackagingCharge })
-                      }
-                    >
-                      <Text style={styles.trustEmoji}>🥡</Text>
-                      <Text
-                        style={[
-                          styles.trustLabel,
-                          draft.noPackagingCharge && styles.choiceLabelOn,
-                        ]}
-                      >
-                        No packaging charges
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.trustCard,
-                        draft.lowPlastic && styles.choiceCardOn,
-                      ]}
-                      onPress={() => patch({ lowPlastic: !draft.lowPlastic })}
-                    >
-                      <Text style={styles.trustEmoji}>🛍️</Text>
-                      <Text
-                        style={[
-                          styles.trustLabel,
-                          draft.lowPlastic && styles.choiceLabelOn,
-                        ]}
-                      >
-                        Low plastic packaging
                       </Text>
                     </Pressable>
                     <Pressable

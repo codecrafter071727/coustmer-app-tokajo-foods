@@ -382,12 +382,16 @@ export function mapSearchSuggestion(
       ? String(row.restaurantId)
       : row.restaurant
         ? String(row.restaurant)
-        : undefined,
+        : ((row.type as string) === 'restaurant' || (row.kind as string) === 'restaurant')
+          ? String(row._id ?? row.id ?? '')
+          : undefined,
     dishId: row.dishId
       ? String(row.dishId)
       : row.itemId
         ? String(row.itemId)
-        : undefined,
+        : ((row.type as string) === 'dish' || (row.kind as string) === 'dish')
+          ? String(row._id ?? row.id ?? '')
+          : undefined,
     imageUrl: resolveMediaUrl(
       (row.imageUrl as string) || (row.image as string) || undefined
     ),
@@ -883,6 +887,9 @@ async function searchServiceSuggestions(
       `${SEARCH_SERVICE}/suggestions${buildQuery({
         q: params.q,
         limit: params.limit ?? 10,
+        lat: params.lat,
+        lng: params.lng,
+        radius: params.radius,
       })}`
     );
     return extractList(res.data, [
@@ -1224,7 +1231,13 @@ export const searchApi = {
     if (!q) return { suggestions: [], query: '' };
 
     const limit = params.limit ?? 10;
-    const remotePromise = searchServiceSuggestions({ q, limit });
+    const remotePromise = searchServiceSuggestions({
+      q,
+      limit,
+      lat: params.lat,
+      lng: params.lng,
+      radius: params.radius,
+    });
     const fallbackPromise = fallbackSuggestions(q, limit);
 
     const remote = await remotePromise;

@@ -1,3 +1,4 @@
+import { Pressable } from '@/components/common/Pressable';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -172,6 +173,15 @@ export function HomeFeedSections(props: Props) {
         />
       ) : null}
 
+      <Pressable
+        style={styles.exploreAllBtn}
+        onPress={() => router.push('/restaurants')}
+        accessibilityRole="button"
+        accessibilityLabel="Explore all restaurants"
+      >
+        <Text style={styles.exploreAllText}>Explore all restaurants</Text>
+      </Pressable>
+
       {userLoggedIn ? (
         <TrendingDishesRail
           dishes={feedRails?.orderAgain ?? []}
@@ -241,6 +251,21 @@ export function HomeFeedSections(props: Props) {
 }
 
 const styles = StyleSheet.create({
+  exploreAllBtn: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 12,
+    backgroundColor: '#AC0F45',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  exploreAllText: {
+    fontFamily: fonts.uiSemi,
+    fontSize: 15,
+    color: '#FFFFFF',
+  },
   hintCard: {
     marginHorizontal: 16,
     marginTop: 8,

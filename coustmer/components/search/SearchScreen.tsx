@@ -22,6 +22,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fonts } from '@/constants/typography';
+import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import {
   useDebouncedValue,
   useSearchCombined,
@@ -42,6 +43,9 @@ const MUTED = '#64748B';
 const BORDER = '#F1F5F9';
 const BG = '#FFFFFF';
 
+/** search-service radius is meters; discovery radius is km. */
+const SUGGEST_RADIUS_M = CUSTOMER_DISCOVERY_RADIUS_KM * 1000;
+
 export function SearchScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
@@ -54,7 +58,13 @@ export function SearchScreen() {
   const debouncedQuery = useDebouncedValue(query, 250);
 
   const suggestions = useSearchSuggestions(
-    { q: debouncedQuery, limit: 8 },
+    {
+      q: debouncedQuery,
+      limit: 10,
+      lat: coords?.lat,
+      lng: coords?.lng,
+      radius: coords ? SUGGEST_RADIUS_M : undefined,
+    },
     { enabled: !submitted && debouncedQuery.length >= 1 }
   );
 
@@ -89,8 +99,26 @@ export function SearchScreen() {
     removeLocalRecentSearch(term).then(setRecentSearches);
   }, []);
 
-  const openRestaurant = (id: string) => {
-    router.push({ pathname: '/restaurants/[restaurantId]', params: { restaurantId: id } });
+  const openRestaurant = (id: string, itemId?: string) => {
+    router.push({
+      pathname: '/restaurants/[restaurantId]',
+      params: {
+        restaurantId: id,
+        ...(itemId ? { itemId } : {}),
+      },
+    });
+  };
+
+  const openSuggestion = (item: SearchSuggestion) => {
+    if (item.type === 'restaurant' && (item.restaurantId || item.id)) {
+      openRestaurant(item.restaurantId || item.id);
+      return;
+    }
+    if (item.type === 'dish' && item.restaurantId) {
+      openRestaurant(item.restaurantId, item.dishId || item.id);
+      return;
+    }
+    performSearch(item.text);
   };
 
   const showingResults = submitted && debouncedQuery.length >= 1;
@@ -169,7 +197,7 @@ export function SearchScreen() {
           keyboardShouldPersistTaps="handled"
           style={styles.suggestionsList}
           renderItem={({ item }) => (
-            <SuggestionRow item={item} onPress={performSearch} />
+            <SuggestionRow item={item} onPress={openSuggestion} />
           )}
         />
       )}
@@ -227,7 +255,7 @@ export function SearchScreen() {
                 return (
                   <DishRow
                     dish={item.data}
-                    onPress={() => openRestaurant(item.data.restaurantId)}
+                    onPress={() => openRestaurant(item.data.restaurantId, item.data.id)}
                   />
                 );
               }}
@@ -266,10 +294,10 @@ function SuggestionRow({
   onPress,
 }: {
   item: SearchSuggestion;
-  onPress: (text: string) => void;
+  onPress: (item: SearchSuggestion) => void;
 }) {
   return (
-    <Pressable style={styles.suggestionRow} onPress={() => onPress(item.text)}>
+    <Pressable style={styles.suggestionRow} onPress={() => onPress(item)}>
       {item.imageUrl ? (
         <Image source={{ uri: item.imageUrl }} style={styles.suggestionImg} contentFit="cover" />
       ) : (

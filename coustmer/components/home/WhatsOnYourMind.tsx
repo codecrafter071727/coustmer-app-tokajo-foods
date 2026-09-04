@@ -86,7 +86,11 @@ export function WhatsOnYourMind({ categories, loading = false }: Props) {
   const open = (cat: CuisineChip) => {
     router.push({
       pathname: '/restaurants',
-      params: { cuisine: cat.slug, label: cat.name },
+      params: {
+        cuisine: cat.slug,
+        label: cat.name,
+        view: 'dishes',
+      },
     });
   };
 

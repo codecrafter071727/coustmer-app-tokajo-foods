@@ -24,6 +24,7 @@ export type Restaurant = {
   costForTwo?: number;
   priceRange?: string;
   distance?: number;
+  distanceMeters?: number;
   isOpen?: boolean;
   address?: string;
   city?: string;
@@ -250,6 +251,8 @@ export type NearbyParams = {
   offers?: boolean;
   hygiene?: boolean;
   isOnline?: boolean;
+  /** Comma-separated cuisine labels/slugs for GET nearby `cuisines`. */
+  cuisines?: string;
 };
 
 /** Dish shown on home “trending” rails with its restaurant. */

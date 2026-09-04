@@ -31,9 +31,20 @@ export function normalizeRestaurantSort(
 export function nearbySortFromHome(sort: HomeFilterState['sort']): NearbySort | undefined {
   if (sort === 'rating') return 'rating';
   if (sort === 'fastest' || sort === 'nearest') return 'delivery_time';
+  // Backend only supports ascending cost — map both UI cost sorts to `cost`.
   if (sort === 'cost_low' || sort === 'cost_high') return 'cost';
   if (sort === 'relevance') return 'relevance';
   return undefined;
+}
+
+/** Cuisine slug/label for nearby `cuisines` query (not "popular"). */
+export function cuisineParamFromHome(cuisine: HomeFilterState['cuisine']): string | undefined {
+  const raw = String(cuisine ?? '').trim();
+  if (!raw || raw === 'popular') return undefined;
+  // Send slug + spaced form so case-insensitive backend match can hit "Chinese" / "South Indian".
+  const spaced = raw.replace(/[-_]+/g, ' ').trim();
+  if (spaced === raw) return raw;
+  return `${raw},${spaced}`;
 }
 
 export function minRatingFromHome(band: HomeFilterState['ratingBand']): number | undefined {
@@ -75,5 +86,6 @@ export function homeFiltersToNearbyParams(
     sort: nearbySortFromHome(filters.sort),
     offers: filters.offersOnly || undefined,
     hygiene: filters.hygieneRatedOnly || undefined,
+    cuisines: cuisineParamFromHome(filters.cuisine),
   };
 }

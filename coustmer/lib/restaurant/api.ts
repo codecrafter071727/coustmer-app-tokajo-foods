@@ -200,6 +200,7 @@ export const restaurantApi = {
             : params.isOnline
               ? 'true'
               : 'false',
+        cuisines: params.cuisines || undefined,
       })}`
     );
     return {
@@ -287,6 +288,70 @@ export const restaurantApi = {
       categories: rawList.map((row, i) =>
         mapCuisineChip((row ?? {}) as Record<string, unknown> | string, i)
       ),
+    };
+  },
+
+  /**
+   * GET /restaurants/nearby/dishes — menu-category dishes from kitchens near pin.
+   */
+  getNearbyDishes: async (params: {
+    lat: number;
+    lng: number;
+    category: string;
+    radius?: number;
+    limit?: number;
+    itemLimit?: number;
+  }): Promise<{
+    restaurantSampleSize: number;
+    category: string;
+    dishes: Array<{
+      itemId: string;
+      name: string;
+      price: number;
+      image: string | null;
+      isVeg: boolean;
+      restaurantId: string;
+      restaurantName: string;
+      categoryName: string;
+    }>;
+  }> => {
+    const res = await request<Record<string, unknown>>(
+      `${RESTAURANT_BASE}/nearby/dishes${buildQuery({
+        lat: params.lat,
+        lng: params.lng,
+        category: params.category,
+        radius: params.radius ?? CUSTOMER_DISCOVERY_RADIUS_KM,
+        limit: params.limit ?? 40,
+        itemLimit: params.itemLimit ?? 48,
+      })}`
+    );
+    const payload = (res.data ?? res ?? {}) as Record<string, unknown>;
+    const raw = Array.isArray(payload.dishes) ? payload.dishes : [];
+    return {
+      restaurantSampleSize:
+        typeof payload.restaurantSampleSize === 'number'
+          ? payload.restaurantSampleSize
+          : Number(payload.restaurantSampleSize) || 0,
+      category: String(payload.category ?? params.category),
+      dishes: raw
+        .map((row) => {
+          const d = (row ?? {}) as Record<string, unknown>;
+          return {
+            itemId: String(d.itemId ?? d.id ?? ''),
+            name: String(d.name ?? ''),
+            price: typeof d.price === 'number' ? d.price : Number(d.price) || 0,
+            image: d.image
+              ? String(d.image)
+              : d.imageUrl
+                ? String(d.imageUrl)
+                : null,
+            isVeg: d.isVeg !== false,
+            restaurantId: String(d.restaurantId ?? ''),
+            restaurantName: String(d.restaurantName ?? ''),
+            categoryName: String(d.categoryName ?? ''),
+          };
+        })
+        .filter((d) => d.itemId && d.restaurantId && d.name),
     };
   },
 
