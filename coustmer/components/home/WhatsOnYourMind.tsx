@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { LayoutGrid } from 'lucide-react-native';
 
+import { MindChip, MIND_CHIP_SIZE } from '@/components/home/MindChip';
 import { fonts } from '@/constants/typography';
 import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
 import type { CuisineChip } from '@/lib/restaurant/types';
@@ -18,12 +18,11 @@ import type { CuisineChip } from '@/lib/restaurant/types';
 type Props = {
   categories: CuisineChip[];
   loading?: boolean;
-  /** How many chips to show before “Show more” (paired into 2-row columns). */
   previewCount?: number;
 };
 
 const PREVIEW_DEFAULT = 8;
-const SIZE = 72;
+const SIZE = MIND_CHIP_SIZE;
 
 function toColumns(cats: CuisineChip[]): CuisineChip[][] {
   const cols: CuisineChip[][] = [];
@@ -33,60 +32,7 @@ function toColumns(cats: CuisineChip[]): CuisineChip[][] {
   return cols;
 }
 
-function MindChip({
-  label,
-  slug,
-  imageUrl,
-  onPress,
-}: {
-  label: string;
-  slug: string;
-  imageUrl?: string;
-  onPress: () => void;
-}) {
-  const [failed, setFailed] = useState(false);
-  const uri = useMemo(
-    () => resolveMindChipImage(slug, label, imageUrl),
-    [slug, label, imageUrl]
-  );
-
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <View style={styles.ring}>
-        <View style={styles.imgWrap}>
-          {!failed ? (
-            <Image
-              source={{ uri }}
-              style={styles.img}
-              contentFit="cover"
-              transition={220}
-              cachePolicy="memory-disk"
-              onError={() => setFailed(true)}
-            />
-          ) : (
-            <View style={[styles.img, styles.imgFallback]}>
-              <Text style={styles.fallbackLetter}>
-                {(label || '?').charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
-      <Text style={styles.label} numberOfLines={2}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/**
- * Swiggy-style “What's on your mind” — real food photos, compact 2-row rail.
- */
+/** Swiggy-style mind strip with real food photos + Show more. */
 export function WhatsOnYourMind({
   categories,
   loading = false,
@@ -153,7 +99,7 @@ export function WhatsOnYourMind({
             <Pressable
               style={({ pressed }) => [
                 styles.moreCol,
-                pressed && styles.itemPressed,
+                pressed && styles.pressed,
               ]}
               onPress={() => setExpanded(true)}
               accessibilityRole="button"
@@ -172,7 +118,7 @@ export function WhatsOnYourMind({
             <Pressable
               style={({ pressed }) => [
                 styles.moreCol,
-                pressed && styles.itemPressed,
+                pressed && styles.pressed,
               ]}
               onPress={() => setExpanded(false)}
               accessibilityRole="button"
@@ -219,59 +165,9 @@ const styles = StyleSheet.create({
     width: 88,
     gap: 14,
   },
-  item: {
-    alignItems: 'center',
-    width: 88,
-  },
-  itemPressed: {
+  pressed: {
     opacity: 0.88,
     transform: [{ scale: 0.96 }],
-  },
-  ring: {
-    width: SIZE + 6,
-    height: SIZE + 6,
-    borderRadius: (SIZE + 6) / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    marginBottom: 7,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  imgWrap: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
-    overflow: 'hidden',
-    backgroundColor: '#F3F4F6',
-  },
-  img: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
-  },
-  imgFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFE8D6',
-  },
-  fallbackLetter: {
-    fontFamily: fonts.displayBold,
-    fontSize: 26,
-    color: '#AC0F45',
-  },
-  label: {
-    fontFamily: fonts.uiSemi,
-    fontSize: 11.5,
-    color: '#374151',
-    textAlign: 'center',
-    lineHeight: 14,
-    paddingHorizontal: 2,
   },
   moreCol: {
     width: 88,
