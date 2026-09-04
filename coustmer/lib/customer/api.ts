@@ -31,7 +31,8 @@ import type {
   RateTicketPayload,
 } from '@/lib/support/types';
 import { mapRestaurant } from '@/lib/restaurant/mappers';
-import { mapHomeFeedPayload } from '@/lib/home/feed-mappers';
+import { mapFeedDishCard, mapHomeFeedPayload } from '@/lib/home/feed-mappers';
+import type { HomeTrendingDish } from '@/lib/home/types';
 import type { KitchenAlert } from '@/lib/restaurant/types';
 const CUSTOMER_BASE = '/api/v1/customer-service/customers';
 
@@ -313,6 +314,29 @@ export const customerApi = {
     ).map(mapBanner);
 
     return mapHomeFeedPayload(data, banners);
+  },
+
+  /** GET /customers/suggested-items?lat=&lng= — sampled dishes from nearby restaurants */
+  getSuggestedItems: async (coords: {
+    lat: number;
+    lng: number;
+    radius?: number;
+    limit?: number;
+  }): Promise<HomeTrendingDish[]> => {
+    const params = new URLSearchParams({
+      lat: String(coords.lat),
+      lng: String(coords.lng),
+    });
+    if (coords.radius != null) params.set('radius', String(coords.radius));
+    if (coords.limit != null) params.set('limit', String(coords.limit));
+    const res = await request<{ items?: unknown[]; radiusKm?: number }>(
+      `${CUSTOMER_BASE}/suggested-items?${params.toString()}`
+    );
+    const data = (res.data ?? {}) as Record<string, unknown>;
+    const rows = Array.isArray(data.items) ? data.items : [];
+    return rows
+      .map(mapFeedDishCard)
+      .filter((d): d is HomeTrendingDish => d != null);
   },
 
   /** GET /customers/deals?lat=&lng=&radius= — deals near delivery pin */

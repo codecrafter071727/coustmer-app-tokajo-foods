@@ -147,6 +147,9 @@ export function mapHomeFeedPayload(
     forYou: mapFeedRestaurantList(data.forYou),
     orderAgain: mapFeedOrderAgainList(data.orderAgain),
     dishesToTry: mapFeedDishList(data.dishesToTry),
+    suggestedItems: mapFeedDishList(
+      data.suggestedItems ?? data.suggested_items ?? data.suggestions
+    ),
     trendingDishes: mapFeedDishList(data.trendingDishes),
   };
 }

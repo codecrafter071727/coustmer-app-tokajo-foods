@@ -35,6 +35,7 @@ export type HomeFeed = {
   forYou: import('@/lib/home/types').HomeRestaurantCard[];
   orderAgain: import('@/lib/home/types').HomeOrderAgainDish[];
   dishesToTry: import('@/lib/home/types').HomeTrendingDish[];
+  suggestedItems?: import('@/lib/home/types').HomeTrendingDish[];
   trendingDishes: import('@/lib/home/types').HomeTrendingDish[];
 };
 

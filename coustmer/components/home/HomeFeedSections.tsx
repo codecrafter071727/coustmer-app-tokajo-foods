@@ -7,6 +7,7 @@ import { FilteredHomeResults } from '@/components/home/FilteredHomeResults';
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { HomeRestaurantRail } from '@/components/home/HomeRestaurantRail';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
+import { SuggestedItemsRail } from '@/components/home/SuggestedItemsRail';
 import { TrendingDishesRail } from '@/components/home/TrendingDishesRail';
 import { WhatsOnYourMind } from '@/components/home/WhatsOnYourMind';
 import { ErrorView } from '@/components/common/StateViews';
@@ -116,6 +117,10 @@ export function HomeFeedSections(props: Props) {
 
   const listBusy = listLoading && topRestaurants.length === 0;
   const radiusLabel = radiusKm ?? CUSTOMER_DISCOVERY_RADIUS_KM;
+  const suggested =
+    (feedRails?.suggestedItems?.length
+      ? feedRails.suggestedItems
+      : feedRails?.dishesToTry) ?? [];
 
   return (
     <View>
@@ -145,13 +150,12 @@ export function HomeFeedSections(props: Props) {
         onPressRestaurant={onPressRestaurant}
       />
 
-      <TrendingDishesRail
-        dishes={feedRails?.dishesToTry ?? []}
+      <SuggestedItemsRail
+        items={suggested}
         loading={homeLoading && !feedRails}
-        title="Dishes to try"
-        subtitle="Popular picks near you"
-        accent="discover"
-        onPressDish={(dish) => openDish(dish.restaurantId)}
+        title="Suggested for you"
+        subtitle="Tasty picks from nearby restaurants"
+        onPressItem={(dish) => openDish(dish.restaurantId)}
       />
 
       {chunks.first.length > 0 || listBusy ? (

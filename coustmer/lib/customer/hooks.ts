@@ -34,6 +34,8 @@ export const customerKeys = {
   health: () => [...customerKeys.all, 'health'] as const,
   home: (lat?: number, lng?: number, radius?: number) =>
     [...customerKeys.all, 'home', lat, lng, radius] as const,
+  suggestedItems: (lat?: number, lng?: number, radius?: number) =>
+    [...customerKeys.all, 'suggested-items', lat, lng, radius] as const,
   deals: (lat?: number, lng?: number, radius?: number) =>
     [...customerKeys.all, 'deals', lat, lng, radius] as const,
   offers: (lat?: number, lng?: number, radius?: number) =>
@@ -95,6 +97,25 @@ export function useHomeFeed() {
         lat: coords!.lat,
         lng: coords!.lng,
         radius: HOME_RADIUS_KM,
+      }),
+    enabled: hasCoords,
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
+/** Standalone suggested dishes from nearby restaurants. */
+export function useSuggestedItems() {
+  const coords = useDeliveryCoords();
+  const hasCoords = Boolean(coords?.lat && coords?.lng);
+  return useQuery({
+    queryKey: customerKeys.suggestedItems(coords?.lat, coords?.lng, HOME_RADIUS_KM),
+    queryFn: () =>
+      customerApi.getSuggestedItems({
+        lat: coords!.lat,
+        lng: coords!.lng,
+        radius: HOME_RADIUS_KM,
+        limit: 16,
       }),
     enabled: hasCoords,
     staleTime: 60_000,
