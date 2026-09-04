@@ -12,6 +12,7 @@ import {
 import { LayoutGrid } from 'lucide-react-native';
 
 import { fonts } from '@/constants/typography';
+import { resolveMindChipImage } from '@/lib/restaurant/mind-chip-images';
 import type { CuisineChip } from '@/lib/restaurant/types';
 
 type Props = {
@@ -22,29 +23,7 @@ type Props = {
 };
 
 const PREVIEW_DEFAULT = 8;
-const SIZE = 68;
-
-const EMOJI: Record<string, string> = {
-  pizza: '🍕',
-  biryani: '🍲',
-  burger: '🍔',
-  burgers: '🍔',
-  'north-indian': '🍛',
-  chinese: '🥡',
-  dessert: '🍰',
-  desserts: '🍰',
-  cake: '🍰',
-  cafe: '☕',
-  rolls: '🌯',
-  momos: '🥟',
-  shawarma: '🥙',
-  'south-indian': '🥞',
-  seafood: '🦐',
-  pasta: '🍝',
-  noodles: '🍜',
-  thali: '🍽️',
-  chaat: '🫓',
-};
+const SIZE = 72;
 
 function toColumns(cats: CuisineChip[]): CuisineChip[][] {
   const cols: CuisineChip[][] = [];
@@ -66,31 +45,37 @@ function MindChip({
   onPress: () => void;
 }) {
   const [failed, setFailed] = useState(false);
-  const emoji = EMOJI[slug] ?? '🍴';
-  const showImage = Boolean(imageUrl) && !failed;
+  const uri = useMemo(
+    () => resolveMindChipImage(slug, label, imageUrl),
+    [slug, label, imageUrl]
+  );
 
   return (
     <Pressable
-      style={styles.item}
+      style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <View style={styles.imgWrap}>
-        {showImage ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.img}
-            contentFit="cover"
-            transition={200}
-            cachePolicy="memory-disk"
-            onError={() => setFailed(true)}
-          />
-        ) : (
-          <View style={[styles.img, styles.imgFallback]}>
-            <Text style={styles.emoji}>{emoji}</Text>
-          </View>
-        )}
+      <View style={styles.ring}>
+        <View style={styles.imgWrap}>
+          {!failed ? (
+            <Image
+              source={{ uri }}
+              style={styles.img}
+              contentFit="cover"
+              transition={220}
+              cachePolicy="memory-disk"
+              onError={() => setFailed(true)}
+            />
+          ) : (
+            <View style={[styles.img, styles.imgFallback]}>
+              <Text style={styles.fallbackLetter}>
+                {(label || '?').charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
       <Text style={styles.label} numberOfLines={2}>
         {label}
@@ -100,8 +85,7 @@ function MindChip({
 }
 
 /**
- * What's on your mind — categories from GET /cuisines/nearby only.
- * Compact circles + “Show more” for the rest.
+ * Swiggy-style “What's on your mind” — real food photos, compact 2-row rail.
  */
 export function WhatsOnYourMind({
   categories,
@@ -111,12 +95,21 @@ export function WhatsOnYourMind({
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
 
-  const visible = useMemo(() => {
-    if (expanded || categories.length <= previewCount) return categories;
-    return categories.slice(0, previewCount);
-  }, [categories, expanded, previewCount]);
+  const withPhotos = useMemo(
+    () =>
+      categories.map((c) => ({
+        ...c,
+        imageUrl: resolveMindChipImage(c.slug, c.name, c.imageUrl),
+      })),
+    [categories]
+  );
 
-  const hasMore = categories.length > previewCount && !expanded;
+  const visible = useMemo(() => {
+    if (expanded || withPhotos.length <= previewCount) return withPhotos;
+    return withPhotos.slice(0, previewCount);
+  }, [withPhotos, expanded, previewCount]);
+
+  const hasMore = withPhotos.length > previewCount && !expanded;
   const columns = toColumns(visible);
 
   const open = (cat: CuisineChip) => {
@@ -158,27 +151,37 @@ export function WhatsOnYourMind({
 
           {hasMore ? (
             <Pressable
-              style={styles.moreCol}
+              style={({ pressed }) => [
+                styles.moreCol,
+                pressed && styles.itemPressed,
+              ]}
               onPress={() => setExpanded(true)}
               accessibilityRole="button"
               accessibilityLabel="Show more categories"
             >
-              <View style={styles.moreCircle}>
-                <LayoutGrid size={22} color="#AC0F45" strokeWidth={2.2} />
+              <View style={styles.moreRing}>
+                <View style={styles.moreCircle}>
+                  <LayoutGrid size={20} color="#AC0F45" strokeWidth={2.2} />
+                </View>
               </View>
               <Text style={styles.moreLabel}>Show more</Text>
             </Pressable>
           ) : null}
 
-          {expanded && categories.length > previewCount ? (
+          {expanded && withPhotos.length > previewCount ? (
             <Pressable
-              style={styles.moreCol}
+              style={({ pressed }) => [
+                styles.moreCol,
+                pressed && styles.itemPressed,
+              ]}
               onPress={() => setExpanded(false)}
               accessibilityRole="button"
               accessibilityLabel="Show less"
             >
-              <View style={[styles.moreCircle, styles.moreCircleMuted]}>
-                <Text style={styles.moreMinus}>−</Text>
+              <View style={styles.moreRing}>
+                <View style={[styles.moreCircle, styles.moreCircleMuted]}>
+                  <Text style={styles.moreMinus}>−</Text>
+                </View>
               </View>
               <Text style={styles.moreLabel}>Show less</Text>
             </Pressable>
@@ -191,44 +194,61 @@ export function WhatsOnYourMind({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 8,
-    paddingBottom: 4,
+    marginTop: 6,
+    paddingBottom: 8,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: 19,
-    color: '#1C1C1C',
-    letterSpacing: -0.3,
+    fontSize: 20,
+    color: '#111827',
+    letterSpacing: -0.45,
     paddingHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   loadingRow: {
-    height: 120,
+    height: 140,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rail: {
-    paddingHorizontal: 12,
-    gap: 2,
+    paddingHorizontal: 10,
+    gap: 4,
     alignItems: 'flex-start',
   },
   column: {
-    width: 84,
-    gap: 12,
+    width: 88,
+    gap: 14,
   },
   item: {
     alignItems: 'center',
-    width: 84,
+    width: 88,
+  },
+  itemPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.96 }],
+  },
+  ring: {
+    width: SIZE + 6,
+    height: SIZE + 6,
+    borderRadius: (SIZE + 6) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 7,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   imgWrap: {
     width: SIZE,
     height: SIZE,
     borderRadius: SIZE / 2,
     overflow: 'hidden',
-    backgroundColor: '#F4F4F5',
-    marginBottom: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E7E7E7',
+    backgroundColor: '#F3F4F6',
   },
   img: {
     width: SIZE,
@@ -238,48 +258,58 @@ const styles = StyleSheet.create({
   imgFallback: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF4EC',
+    backgroundColor: '#FFE8D6',
   },
-  emoji: {
-    fontSize: 28,
+  fallbackLetter: {
+    fontFamily: fonts.displayBold,
+    fontSize: 26,
+    color: '#AC0F45',
   },
   label: {
     fontFamily: fonts.uiSemi,
-    fontSize: 11,
-    color: '#3F3F46',
+    fontSize: 11.5,
+    color: '#374151',
     textAlign: 'center',
     lineHeight: 14,
     paddingHorizontal: 2,
   },
   moreCol: {
-    width: 84,
+    width: 88,
     alignItems: 'center',
-    paddingTop: 0,
+  },
+  moreRing: {
+    width: SIZE + 6,
+    height: SIZE + 6,
+    borderRadius: (SIZE + 6) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 7,
   },
   moreCircle: {
     width: SIZE,
     height: SIZE,
     borderRadius: SIZE / 2,
-    backgroundColor: '#FFF0F4',
-    borderWidth: 1,
-    borderColor: '#F5C6D4',
+    backgroundColor: '#FFF5F7',
+    borderWidth: 1.5,
+    borderColor: '#F3C0CE',
+    borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
   moreCircleMuted: {
     backgroundColor: '#F4F4F5',
-    borderColor: '#E4E4E7',
+    borderColor: '#D4D4D8',
+    borderStyle: 'solid',
   },
   moreMinus: {
-    fontSize: 28,
+    fontSize: 26,
     color: '#52525B',
-    lineHeight: 30,
+    lineHeight: 28,
     fontWeight: '600',
   },
   moreLabel: {
     fontFamily: fonts.uiSemi,
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#AC0F45',
     textAlign: 'center',
   },
