@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { AutoScrollingDeals } from '@/components/home/AutoScrollingDeals';
+import { FilteredHomeResults } from '@/components/home/FilteredHomeResults';
 import { HomeFiltersBar } from '@/components/home/HomeFiltersBar';
 import { HomeRestaurantRail } from '@/components/home/HomeRestaurantRail';
 import { PopularRestaurantsSection } from '@/components/home/PopularRestaurantsSection';
@@ -12,6 +14,7 @@ import { fonts } from '@/constants/typography';
 import { CUSTOMER_DISCOVERY_RADIUS_KM } from '@/lib/location/discovery-radius';
 import type { Deal, HomeFeed } from '@/lib/customer/types';
 import type { HomeFilterState } from '@/lib/home/filters';
+import { splitHomeRestaurantList } from '@/lib/home/split-list';
 import type { HomeCategory } from '@/lib/home/types';
 import type { CuisineChip, Restaurant } from '@/lib/restaurant/types';
 
@@ -46,82 +49,73 @@ type Props = {
 };
 
 /**
- * Swiggy / Zomato-style home body:
- * filters → what's on your mind → promos → curated rails → all restaurants.
+ * Swiggy / Zomato home:
+ * trending → dishes → restaurants → order again → more → top rated → rest.
  */
-export function HomeFeedSections({
-  filtersActive,
-  homeFilters,
-  onFiltersChange,
-  onClearFilters,
-  baseRestaurants,
-  restaurants,
-  topRestaurants,
-  homeCategories,
-  mindCategories = [],
-  mindCategoriesLoading = false,
-  liveCuisines = [],
-  deals,
-  feedRails,
-  homeLoading,
-  userLoggedIn,
-  hasCoords,
-  isDetectingLocation,
-  favoriteIds,
-  surgeChipLabel,
-  onToggleFavorite,
-  onPressRestaurant,
-  feedError,
-  onRetryFeed,
-  loadingMore,
-  listLoading,
-  totalCount,
-  radiusKm,
-}: Props) {
+export function HomeFeedSections(props: Props) {
+  const {
+    filtersActive,
+    homeFilters,
+    onFiltersChange,
+    onClearFilters,
+    baseRestaurants,
+    restaurants,
+    topRestaurants,
+    homeCategories,
+    mindCategories = [],
+    mindCategoriesLoading = false,
+    liveCuisines = [],
+    deals,
+    feedRails,
+    homeLoading,
+    userLoggedIn,
+    hasCoords,
+    isDetectingLocation,
+    favoriteIds,
+    surgeChipLabel,
+    onToggleFavorite,
+    onPressRestaurant,
+    feedError,
+    onRetryFeed,
+    loadingMore,
+    listLoading,
+    totalCount,
+    radiusKm,
+  } = props;
+
   const router = useRouter();
+  const chunks = useMemo(
+    () => splitHomeRestaurantList(topRestaurants, 4, 4),
+    [topRestaurants]
+  );
+
+  const openDish = (restaurantId: string) => {
+    router.push({
+      pathname: '/restaurants/[restaurantId]',
+      params: { restaurantId },
+    });
+  };
 
   if (filtersActive) {
     return (
-      <View style={styles.filteredWrap}>
-        <HomeFiltersBar
-          filters={homeFilters}
-          onChange={onFiltersChange}
-          onClear={onClearFilters}
-          allRestaurants={baseRestaurants}
-          categories={homeCategories}
-          liveCuisines={liveCuisines}
-          hideCuisineRow
-        />
-        <Text style={styles.filteredTitle}>
-          {restaurants.length > 0
-            ? `${restaurants.length} restaurant${restaurants.length === 1 ? '' : 's'} found`
-            : 'No restaurants found'}
-        </Text>
-        {restaurants.length === 0 ? (
-          <View style={styles.filteredEmpty}>
-            <Text style={styles.filteredEmptyText}>
-              Nothing matches these filters. Clear filters to see all restaurants.
-            </Text>
-            <Text style={styles.filteredClear} onPress={onClearFilters}>
-              Clear filters
-            </Text>
-          </View>
-        ) : (
-          <PopularRestaurantsSection
-            title=""
-            restaurants={restaurants}
-            totalCount={restaurants.length}
-            favoriteIds={favoriteIds}
-            surgeChipLabel={surgeChipLabel}
-            onToggleFavorite={onToggleFavorite}
-            onPressRestaurant={onPressRestaurant}
-            loadingMore={false}
-            loading={false}
-          />
-        )}
-      </View>
+      <FilteredHomeResults
+        homeFilters={homeFilters}
+        onFiltersChange={onFiltersChange}
+        onClearFilters={onClearFilters}
+        baseRestaurants={baseRestaurants}
+        restaurants={restaurants}
+        homeCategories={homeCategories}
+        liveCuisines={liveCuisines}
+        favoriteIds={favoriteIds}
+        surgeChipLabel={surgeChipLabel}
+        onToggleFavorite={onToggleFavorite}
+        onPressRestaurant={onPressRestaurant}
+      />
     );
   }
+
+  const listBusy = listLoading && topRestaurants.length === 0;
+  const radiusLabel = radiusKm ?? CUSTOMER_DISCOVERY_RADIUS_KM;
 
   return (
     <View>
@@ -156,22 +150,46 @@ export function HomeFeedSections({
         loading={homeLoading && !feedRails}
         title="Dishes to try"
         subtitle="Popular picks near you"
-        onPressDish={(dish) =>
-          router.push({
-            pathname: '/restaurants/[restaurantId]',
-            params: { restaurantId: dish.restaurantId },
-          })
-        }
+        accent="discover"
+        onPressDish={(dish) => openDish(dish.restaurantId)}
       />
 
-      {userLoggedIn ? (
-        <HomeRestaurantRail
-          variant="order-again"
-          title="Order again"
-          subtitle="Your recent favourites"
-          restaurants={feedRails?.orderAgain ?? []}
-          loading={homeLoading && !feedRails}
+      {chunks.first.length > 0 || listBusy ? (
+        <PopularRestaurantsSection
+          title="Restaurants near you"
+          restaurants={chunks.first}
+          totalCount={chunks.first.length}
+          favoriteIds={favoriteIds}
+          surgeChipLabel={surgeChipLabel}
+          onToggleFavorite={onToggleFavorite}
           onPressRestaurant={onPressRestaurant}
+          loadingMore={false}
+          loading={listBusy}
+        />
+      ) : null}
+
+      {userLoggedIn ? (
+        <TrendingDishesRail
+          dishes={feedRails?.orderAgain ?? []}
+          loading={homeLoading && !feedRails}
+          title="Order again"
+          subtitle="Dishes you loved last time"
+          accent="reorder"
+          onPressDish={(dish) => openDish(dish.restaurantId)}
+        />
+      ) : null}
+
+      {chunks.mid.length > 0 ? (
+        <PopularRestaurantsSection
+          title="More to explore"
+          restaurants={chunks.mid}
+          totalCount={chunks.mid.length}
+          favoriteIds={favoriteIds}
+          surgeChipLabel={surgeChipLabel}
+          onToggleFavorite={onToggleFavorite}
+          onPressRestaurant={onPressRestaurant}
+          loadingMore={false}
+          loading={false}
         />
       ) : null}
 
@@ -198,21 +216,20 @@ export function HomeFeedSections({
         </View>
       ) : null}
 
-      {topRestaurants.length > 0 || listLoading ? (
+      {chunks.rest.length > 0 || (listLoading && chunks.first.length > 0) ? (
         <PopularRestaurantsSection
-          title={
-            radiusKm
-              ? `All restaurants within ${radiusKm} km`
-              : `All restaurants within ${CUSTOMER_DISCOVERY_RADIUS_KM} km`
-          }
-          restaurants={topRestaurants}
-          totalCount={totalCount}
+          title={`All restaurants within ${radiusLabel} km`}
+          restaurants={chunks.rest}
+          totalCount={Math.max(
+            0,
+            totalCount - chunks.first.length - chunks.mid.length
+          )}
           favoriteIds={favoriteIds}
           surgeChipLabel={surgeChipLabel}
           onToggleFavorite={onToggleFavorite}
           onPressRestaurant={onPressRestaurant}
           loadingMore={loadingMore}
-          loading={listLoading}
+          loading={false}
         />
       ) : null}
     </View>
@@ -239,42 +256,5 @@ const styles = StyleSheet.create({
   errorWrap: {
     paddingHorizontal: 16,
     marginBottom: 8,
-  },
-  filteredWrap: {
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  filteredTitle: {
-    fontFamily: fonts.displayBold,
-    fontSize: 18,
-    color: '#0B1220',
-    paddingHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 12,
-    letterSpacing: -0.3,
-  },
-  filteredEmpty: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 24,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FAFAFA',
-    alignItems: 'center',
-  },
-  filteredEmptyText: {
-    fontFamily: fonts.ui,
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  filteredClear: {
-    marginTop: 12,
-    fontFamily: fonts.uiBold,
-    fontSize: 14,
-    color: '#F97316',
   },
 });

@@ -33,7 +33,7 @@ export type HomeFeed = {
   topRated: import('@/lib/home/types').HomeRestaurantCard[];
   pureVeg: import('@/lib/home/types').HomeRestaurantCard[];
   forYou: import('@/lib/home/types').HomeRestaurantCard[];
-  orderAgain: import('@/lib/home/types').HomeOrderAgainCard[];
+  orderAgain: import('@/lib/home/types').HomeOrderAgainDish[];
   dishesToTry: import('@/lib/home/types').HomeTrendingDish[];
   trendingDishes: import('@/lib/home/types').HomeTrendingDish[];
 };

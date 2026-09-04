@@ -1,6 +1,6 @@
 import type { HomeBanner, HomeFeed } from '@/lib/customer/types';
 import type {
-  HomeOrderAgainCard,
+  HomeOrderAgainDish,
   HomeRestaurantCard,
   HomeTrendingDish,
 } from '@/lib/home/types';
@@ -76,17 +76,6 @@ export function mapFeedRestaurantCard(raw: unknown): HomeRestaurantCard | null {
   };
 }
 
-export function mapFeedOrderAgainCard(raw: unknown): HomeOrderAgainCard | null {
-  const base = mapFeedRestaurantCard(raw);
-  if (!base) return null;
-  const r = asRecord(raw);
-  return {
-    ...base,
-    lastOrderedAt: str(r.lastOrderedAt) ?? null,
-    itemsSummary: str(r.itemsSummary) ?? null,
-  };
-}
-
 export function mapFeedDishCard(raw: unknown): HomeTrendingDish | null {
   const r = asRecord(raw);
   const id = str(r.itemId ?? r._id ?? r.id);
@@ -106,6 +95,22 @@ export function mapFeedDishCard(raw: unknown): HomeTrendingDish | null {
   };
 }
 
+/** Order-again is food items; tolerate legacy restaurant-shaped payloads. */
+export function mapFeedOrderAgainDish(raw: unknown): HomeOrderAgainDish | null {
+  const r = asRecord(raw);
+  const dish = mapFeedDishCard(raw);
+  if (dish) {
+    return {
+      ...dish,
+      lastOrderedAt: str(r.lastOrderedAt) ?? null,
+      orderCount: num(r.orderCount),
+    };
+  }
+
+  // Legacy restaurant card with itemsSummary — skip (no food item id).
+  return null;
+}
+
 function mapFeedRestaurantList(raw: unknown): HomeRestaurantCard[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -113,11 +118,11 @@ function mapFeedRestaurantList(raw: unknown): HomeRestaurantCard[] {
     .filter((c): c is HomeRestaurantCard => c != null);
 }
 
-function mapFeedOrderAgainList(raw: unknown): HomeOrderAgainCard[] {
+function mapFeedOrderAgainList(raw: unknown): HomeOrderAgainDish[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map(mapFeedOrderAgainCard)
-    .filter((c): c is HomeOrderAgainCard => c != null);
+    .map(mapFeedOrderAgainDish)
+    .filter((c): c is HomeOrderAgainDish => c != null);
 }
 
 function mapFeedDishList(raw: unknown): HomeTrendingDish[] {

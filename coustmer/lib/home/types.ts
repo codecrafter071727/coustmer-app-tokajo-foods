@@ -16,13 +16,7 @@ export type HomeRestaurantCard = {
   hasOffers?: boolean;
 };
 
-/** Order-again rail card — recent restaurants in delivery radius. */
-export type HomeOrderAgainCard = HomeRestaurantCard & {
-  lastOrderedAt?: string | null;
-  itemsSummary?: string | null;
-};
-
-/** Dish card for "Dishes to try" rail. */
+/** Dish card for "Dishes to try" / order-again rails. */
 export type HomeTrendingDish = {
   id: string;
   name: string;
@@ -34,6 +28,15 @@ export type HomeTrendingDish = {
   restaurantName: string;
   badge?: string | null;
 };
+
+/** Order-again rail — food items the customer previously ordered. */
+export type HomeOrderAgainDish = HomeTrendingDish & {
+  lastOrderedAt?: string | null;
+  orderCount?: number;
+};
+
+/** @deprecated Prefer HomeOrderAgainDish (food items). */
+export type HomeOrderAgainCard = HomeOrderAgainDish;
 
 export type HomeRailVariant =
   | 'trending'
