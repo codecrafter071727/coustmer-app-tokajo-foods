@@ -6,7 +6,7 @@ import {
 } from '@/lib/restaurant/categories';
 import type { Restaurant } from '@/lib/restaurant/types';
 
-export const HOME_CATEGORY_PREVIEW_COUNT = 20;
+export const HOME_CATEGORY_PREVIEW_COUNT = 24;
 
 export function slugifyCategoryLabel(label: string): string {
   return String(label ?? '')
@@ -24,16 +24,16 @@ function titleCase(label: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Not cuisine chips — menu chrome / noise. */
+/** Marketing / menu chrome — never mind chips. */
 const NOISE =
-  /^(all|recommended|bestsellers?|best sellers?|chef'?s? specials?|main courses?|mains?|starters?|appetizers?|sides?|extras?|add[- ]?ons?|combos?|breads?( and rice)?|rice and breads?|beverages?|drinks?|soups?|salads?|accompaniments?|others?|misc|popular|new arrivals?|today'?s? specials?|snacks?)$/i;
+  /^(all|recommended|bestsellers?|best sellers?|chef'?s? specials?|main courses?|mains?|starters?|appetizers?|sides?|extras?|add[- ]?ons?|combos?|breads?( and rice)?|rice and breads?|beverages?|drinks?|soups?|salads?|accompaniments?|others?|misc|popular|new|new arrivals?|today'?s? specials?|snacks?|featured|promoted|pure[- ]?veg|veg|non[- ]?veg|vegetarian|hygiene|fssai|open|closed|top rated|trending|free delivery|offer|offers|deal|deals)$/i;
 
 function isNoise(label: string): boolean {
   const clean = label.trim();
   return !clean || clean.length < 2 || NOISE.test(clean);
 }
 
-/** Cuisine / dish photo — always a concrete square Unsplash URL. */
+/** Photo only — never rewrite the cuisine label/slug from FOOD_CATEGORIES. */
 export function resolveMindCategoryImage(slug: string, label: string): string {
   const known =
     findCategoryBySlug(slug) ||
@@ -41,28 +41,28 @@ export function resolveMindCategoryImage(slug: string, label: string): string {
     FOOD_CATEGORIES.find(
       (c) =>
         c.slug === slug ||
-        c.label.toLowerCase() === label.toLowerCase() ||
-        slug.includes(c.slug) ||
-        c.slug.includes(slug)
+        c.label.toLowerCase() === label.toLowerCase()
     );
 
-  if (known?.imageUrl) {
-    return known.imageUrl.includes('?')
-      ? known.imageUrl.replace(/([?&])w=\d+/g, '$1w=400').replace(/([?&])h=\d+/g, '$1h=400')
-      : `${known.imageUrl}?w=400&h=400&fit=crop&q=80`;
+  const url = known?.imageUrl || menuItemImageForName(label || slug);
+  if (!url) return menuItemImageForName('food');
+  if (url.includes('w=')) {
+    return url.replace(/([?&])w=\d+/g, '$1w=400').replace(/([?&])h=\d+/g, '$1h=400');
   }
-
-  return menuItemImageForName(label || slug).replace(
-    /([?&])w=\d+/g,
-    '$1w=400'
-  );
+  return `${url}${url.includes('?') ? '&' : '?'}w=400&h=400&fit=crop&q=80`;
 }
 
-type Bucket = { label: string; slug: string; count: number };
+type Bucket = {
+  label: string;
+  slug: string;
+  count: number;
+  /** Restaurant ids that actually list this cuisine. */
+  restaurantIds: string[];
+};
 
 /**
- * Unique cuisine tags from nearby restaurants only — each slug once.
- * Does not invent a global cuisine list or menu-section names.
+ * Unique cuisines that appear on the given restaurants — each once.
+ * Label/slug stay exactly as stored on restaurants (no FOOD_CATEGORIES rename).
  */
 export function buildHomeCategories(input: {
   restaurants: Restaurant[];
@@ -72,7 +72,6 @@ export function buildHomeCategories(input: {
   for (const r of input.restaurants) {
     if (!r?.id || r.status === 'deleted') continue;
 
-    // One pass per restaurant: each cuisine on that outlet counted once.
     const seenOnRestaurant = new Set<string>();
     for (const raw of r.cuisines ?? []) {
       const clean = titleCase(String(raw));
@@ -84,29 +83,30 @@ export function buildHomeCategories(input: {
       const existing = buckets.get(slug);
       if (existing) {
         existing.count += 1;
+        existing.restaurantIds.push(r.id);
       } else {
-        buckets.set(slug, { label: clean, slug, count: 1 });
+        buckets.set(slug, {
+          label: clean,
+          slug,
+          count: 1,
+          restaurantIds: [r.id],
+        });
       }
     }
   }
 
   return [...buckets.values()]
+    .filter((b) => b.restaurantIds.length > 0)
     .sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return a.label.localeCompare(b.label);
     })
     .slice(0, HOME_CATEGORY_PREVIEW_COUNT)
-    .map((b, i) => {
-      const known = findCategoryBySlug(b.slug) || findCategoryBySlug(b.label);
-      const label = known?.label || b.label;
-      const slug = known?.slug || b.slug;
-      return {
-        id: slug,
-        label,
-        slug,
-        imageUrl: resolveMindCategoryImage(slug, label),
-        color: known?.color,
-        sortOrder: i + 1,
-      };
-    });
+    .map((b, i) => ({
+      id: b.slug,
+      label: b.label,
+      slug: b.slug,
+      imageUrl: resolveMindCategoryImage(b.slug, b.label),
+      sortOrder: i + 1,
+    }));
 }

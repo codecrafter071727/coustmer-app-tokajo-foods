@@ -129,19 +129,37 @@ export function HomeFiltersBar({
       imageUrl: POPULAR_IMAGE,
       kind: 'cuisine',
     };
-    const fromCuisines: CuisineChip[] = [];
-    for (const c of liveCuisines ?? []) {
-      const slug = (c.slug || c.name || c.id || '').trim();
-      if (!slug || slug === 'all' || slug === 'popular') continue;
-      fromCuisines.push({
-        id: slug,
-        label: c.name || slug,
-        emoji: emojiForSlug(slug),
-        imageUrl: imageForSlug(slug, c.imageUrl),
-        kind: 'cuisine',
-      });
+
+    // Prefer cuisines actually present on the restaurants on this screen.
+    const fromNearby = new Map<string, CuisineChip>();
+    for (const r of allRestaurants ?? []) {
+      if (!r?.id || r.status === 'deleted') continue;
+      for (const raw of r.cuisines ?? []) {
+        const label = String(raw).trim();
+        if (!label) continue;
+        const slug = label
+          .toLowerCase()
+          .replace(/&/g, 'and')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (!slug || slug === 'all' || slug === 'popular' || fromNearby.has(slug)) {
+          continue;
+        }
+        fromNearby.set(slug, {
+          id: slug,
+          label,
+          emoji: emojiForSlug(slug),
+          imageUrl: imageForSlug(slug),
+          kind: 'cuisine',
+        });
+      }
     }
 
+    if (fromNearby.size > 0) {
+      return [popular, ...fromNearby.values()];
+    }
+
+    // Fall back to homeCategories (same nearby set), never global GET /cuisines.
     const fromCategories = (categories ?? [])
       .filter((c) => c.slug && c.slug !== 'all' && c.slug !== 'popular')
       .map((c) => ({
@@ -152,24 +170,12 @@ export function HomeFiltersBar({
         kind: 'category' as const,
       }));
 
-    const seen = new Set<string>(['popular']);
-    const rest: CuisineChip[] = [];
-    for (const chip of [...fromCuisines, ...fromCategories]) {
-      if (seen.has(chip.id)) continue;
-      seen.add(chip.id);
-      rest.push(chip);
+    if (fromCategories.length === 0) {
+      return [popular];
     }
 
-    if (rest.length === 0) {
-      return HOME_CUISINES.map((c) => ({
-        ...c,
-        imageUrl: imageForSlug(c.id),
-        kind: 'cuisine' as const,
-      }));
-    }
-
-    return [popular, ...rest];
-  }, [categories, liveCuisines]);
+    return [popular, ...fromCategories];
+  }, [allRestaurants, categories]);
 
   // Always keep Popular; preview up to 10 API categories after it
   const previewChips = useMemo(() => {

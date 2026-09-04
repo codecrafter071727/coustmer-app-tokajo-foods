@@ -14,7 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { authTheme } from '@/constants/auth-theme';
 import { ScreenTopOffsetProvider } from '@/components/common/ScreenTopOffsetProvider';
 import { useAppFonts } from '@/lib/fonts';
-import { queryClient, asyncStoragePersister } from '@/lib/query-client';
+import { queryClient, asyncStoragePersister, shouldPersistQuery } from '@/lib/query-client';
 import { useAuthStore } from '@/store/auth-store';
 import { CrashBoundary } from '@/components/common/CrashBoundary';
 import { SocketProvider } from '@/lib/socket/SocketProvider';
@@ -90,7 +90,13 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PersistQueryClientProvider
           client={queryClient}
-          persistOptions={{ persister: asyncStoragePersister }}
+          persistOptions={{
+            persister: asyncStoragePersister,
+            dehydrateOptions: {
+              shouldDehydrateQuery: (query) =>
+                query.state.status === 'success' && shouldPersistQuery(query),
+            },
+          }}
         >
           <ScreenTopOffsetProvider>
             <CrashBoundary>

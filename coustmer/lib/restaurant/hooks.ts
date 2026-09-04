@@ -541,8 +541,8 @@ export function useRestaurantCategories(restaurantId: string) {
 }
 
 /**
- * Home “What's on your mind” — unique cuisines from nearby restaurants only.
- * Sync: no menu-section sampling (that invented extras like Snacks / Recommended).
+ * Categories for filter chips — unique cuisines from the restaurant list.
+ * Mind strip does not use this (builds inline to avoid persisted stale cache).
  */
 export function useHomeCategories(restaurants: Restaurant[]) {
   const fingerprint = useMemo(() => {
@@ -551,7 +551,7 @@ export function useHomeCategories(restaurants: Restaurant[]) {
       if (!r?.id || r.status === 'deleted') continue;
       for (const c of r.cuisines ?? []) {
         const s = String(c).toLowerCase().trim();
-        if (s) parts.push(s);
+        if (s) parts.push(`${r.id}:${s}`);
       }
     }
     parts.sort();
@@ -559,11 +559,12 @@ export function useHomeCategories(restaurants: Restaurant[]) {
   }, [restaurants]);
 
   return useQuery({
-    queryKey: [...restaurantKeys.all, 'home-categories', fingerprint],
+    queryKey: [...restaurantKeys.all, 'home-categories', 'v5-cuisines-only', fingerprint],
     queryFn: (): Promise<HomeCategory[]> =>
       Promise.resolve(buildHomeCategories({ restaurants })),
     enabled: restaurants.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    gcTime: 0,
     placeholderData: () => buildHomeCategories({ restaurants }),
   });
 }

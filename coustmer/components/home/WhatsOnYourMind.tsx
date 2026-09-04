@@ -1,22 +1,27 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/typography';
-import type { HomeCategory } from '@/lib/home/types';
+import { buildHomeCategories } from '@/lib/restaurant/home-categories';
+import type { Restaurant } from '@/lib/restaurant/types';
 
 type Props = {
-  categories: HomeCategory[];
+  /** Nearby / city restaurants currently on home — mind chips come only from these. */
+  restaurants: Restaurant[];
 };
 
 const EMOJI: Record<string, string> = {
   pizza: '🍕',
   biryani: '🍲',
   burger: '🍔',
+  burgers: '🍔',
   'north-indian': '🍛',
   chinese: '🥡',
   dessert: '🍰',
+  desserts: '🍰',
+  cake: '🍰',
   cafe: '☕',
   rolls: '🌯',
   momos: '🥟',
@@ -29,36 +34,40 @@ const EMOJI: Record<string, string> = {
   chaat: '🫓',
 };
 
-function toColumns(cats: HomeCategory[]): HomeCategory[][] {
-  const cols: HomeCategory[][] = [];
-  for (let i = 0; i < cats.length; i += 2) {
-    cols.push(cats.slice(i, i + 2));
+function toColumns<T>(items: T[]): T[][] {
+  const cols: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) {
+    cols.push(items.slice(i, i + 2));
   }
   return cols;
 }
 
 function MindChip({
-  cat,
+  label,
+  slug,
+  imageUrl,
   onPress,
 }: {
-  cat: HomeCategory;
+  label: string;
+  slug: string;
+  imageUrl?: string;
   onPress: () => void;
 }) {
   const [failed, setFailed] = useState(false);
-  const emoji = EMOJI[cat.slug] ?? '🍴';
-  const showImage = Boolean(cat.imageUrl) && !failed;
+  const emoji = EMOJI[slug] ?? '🍴';
+  const showImage = Boolean(imageUrl) && !failed;
 
   return (
     <Pressable
       style={styles.item}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={cat.label}
+      accessibilityLabel={label}
     >
       <View style={styles.imgWrap}>
         {showImage ? (
           <Image
-            source={{ uri: cat.imageUrl }}
+            source={{ uri: imageUrl }}
             style={styles.img}
             contentFit="cover"
             transition={200}
@@ -72,27 +81,27 @@ function MindChip({
         )}
       </View>
       <Text style={styles.label} numberOfLines={2}>
-        {cat.label}
+        {label}
       </Text>
     </Pressable>
   );
 }
 
 /**
- * Unique cuisines from nearby restaurants. Hides when none are tagged.
+ * Mind strip built synchronously from restaurant.cuisines only.
+ * No React Query / persisted cache — avoids stale invented categories.
  */
-export function WhatsOnYourMind({ categories }: Props) {
+export function WhatsOnYourMind({ restaurants }: Props) {
   const router = useRouter();
+
+  const categories = useMemo(
+    () => buildHomeCategories({ restaurants }),
+    [restaurants]
+  );
+
   if (!categories.length) return null;
 
   const columns = toColumns(categories);
-
-  const open = (cat: HomeCategory) => {
-    router.push({
-      pathname: '/restaurants',
-      params: { cuisine: cat.slug, label: cat.label },
-    });
-  };
 
   return (
     <View style={styles.wrap}>
@@ -107,9 +116,16 @@ export function WhatsOnYourMind({ categories }: Props) {
           <View key={`col-${idx}`} style={styles.column}>
             {col.map((cat) => (
               <MindChip
-                key={cat.id || cat.slug}
-                cat={cat}
-                onPress={() => open(cat)}
+                key={cat.slug}
+                label={cat.label}
+                slug={cat.slug}
+                imageUrl={cat.imageUrl}
+                onPress={() =>
+                  router.push({
+                    pathname: '/restaurants',
+                    params: { cuisine: cat.slug, label: cat.label },
+                  })
+                }
               />
             ))}
           </View>

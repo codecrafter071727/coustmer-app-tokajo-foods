@@ -131,7 +131,7 @@ export function HomeFeedSections({
         hideCuisineRow
       />
 
-      <WhatsOnYourMind categories={homeCategories} />
+      <WhatsOnYourMind restaurants={baseRestaurants} />
 
       {deals.length > 0 ? <AutoScrollingDeals deals={deals} /> : null}
 

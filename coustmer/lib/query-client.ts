@@ -21,3 +21,10 @@ export const queryClient = new QueryClient({
 export const asyncStoragePersister = createAsyncStoragePersister({
   storage: AsyncStorage,
 });
+
+/** Drop stale home-category caches that used to invent extra chips. */
+export function shouldPersistQuery(query: { queryKey: readonly unknown[] }): boolean {
+  const key = query.queryKey;
+  if (Array.isArray(key) && key.includes('home-categories')) return false;
+  return true;
+}

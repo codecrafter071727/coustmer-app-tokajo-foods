@@ -126,9 +126,13 @@ export function enrichMenuItems(
 }
 
 export function mapRestaurant(data: Record<string, unknown>): Restaurant {
-  const cuisinesRaw = data.cuisines ?? data.cuisineTypes ?? data.tags;
+  // Never fall back to `tags` — marketing tags are not cuisines and were
+  // leaking into “What's on your mind” as fake categories.
+  const cuisinesRaw = data.cuisines ?? data.cuisineTypes;
   const cuisines = Array.isArray(cuisinesRaw)
-    ? (cuisinesRaw as string[]).map(String).filter(Boolean)
+    ? (cuisinesRaw as string[])
+        .map((c) => String(c).trim())
+        .filter(Boolean)
     : undefined;
 
   const addressRaw = data.address;
