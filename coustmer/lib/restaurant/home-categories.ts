@@ -56,7 +56,7 @@ const CUISINE_PHOTO_HINTS: Record<string, string> = {
   italian: 'pasta',
   mexican: 'burger',
   thai: 'thai curry',
-  japanese: 'sushi',
+  japanese: 'fish',
   korean: 'noodles',
   continental: 'pasta',
   american: 'burger',
@@ -93,7 +93,6 @@ const CUISINE_PHOTO_HINTS: Record<string, string> = {
   sandwiches: 'sandwich',
   noodles: 'noodles',
   pasta: 'pasta',
-  sushi: 'sushi',
 };
 
 function resolveImage(slug: string, label: string): string {
