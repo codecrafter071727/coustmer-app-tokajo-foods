@@ -3,6 +3,7 @@ import {
   useRecommendedMenuItems,
   useRestaurantItems,
 } from '@/lib/restaurant/hooks';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import { useCartStore } from '@/store/cart-store';
 import { Image } from 'expo-image';
 import { Plus } from 'lucide-react-native';
@@ -51,9 +52,7 @@ export function CartSuggestionsFromStore() {
           <View key={item.id} style={styles.itemCard}>
             <Image
               source={{
-                uri:
-                  item.imageUrl ||
-                  'https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=400&auto=format&fit=crop',
+                uri: resolveMenuItemImage(item.name, item.imageUrl),
               }}
               style={styles.image}
               contentFit="cover"

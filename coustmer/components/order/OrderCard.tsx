@@ -9,6 +9,7 @@ import { fonts } from '@/constants/typography';
 import { useRepeatOrder } from '@/lib/cart/hooks';
 import { useReorder } from '@/lib/order/hooks';
 import { ORDER_STATUS_LABELS, type Order } from '@/lib/order/types';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 
 function formatOrderWhen(iso?: string) {
   if (!iso) return '';
@@ -36,8 +37,6 @@ type Props = {
 const BRAND_ORANGE = '#F3744B';
 const TEXT_DARK = '#202020';
 const TEXT_MUTED = '#9CA3AF';
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=200&auto=format&fit=crop';
 
 export function OrderCard({ order }: Props) {
   const router = useRouter();
@@ -47,11 +46,12 @@ export function OrderCard({ order }: Props) {
 
   const headline =
     order.restaurantName || order.items[0]?.name || 'Your order';
-  const cover =
-    order.items[0]?.imageUrl ||
-    (typeof order.restaurantImageUrl === 'string'
+  const firstItem = order.items[0];
+  const cover = firstItem
+    ? resolveMenuItemImage(firstItem.name, firstItem.imageUrl)
+    : typeof order.restaurantImageUrl === 'string'
       ? order.restaurantImageUrl
-      : FALLBACK_IMAGE);
+      : resolveMenuItemImage('plated');
   const when = formatOrderWhen(order.createdAt || order.scheduledFor);
   const total =
     typeof order.total === 'number'
@@ -191,7 +191,7 @@ export function OrderCard({ order }: Props) {
           {order.items.map((item, index) => {
             const originalPrice = (item.price + 2).toFixed(2);
             const currentPrice = item.price.toFixed(2);
-            const itemThumb = item.imageUrl || FALLBACK_IMAGE;
+            const itemThumb = resolveMenuItemImage(item.name, item.imageUrl);
 
             return (
               <View key={index} style={styles.itemRow}>

@@ -1,6 +1,5 @@
 import { Pressable } from '@/components/common/Pressable';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Minus, Plus } from 'lucide-react-native';
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -20,6 +19,7 @@ import {
   decrementCartItem,
   incrementCartItem,
 } from '@/lib/order/add-to-cart';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -50,6 +50,7 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
       .filter((i) => i.id === item.id || i.menuItemId === item.id)
       .reduce((n, i) => n + i.quantity, 0)
   );
+  const photoUri = resolveMenuItemImage(item.name, item.imageUrl);
 
   useEffect(() => {
     if (highlighted) {
@@ -86,17 +87,13 @@ export function MenuItemGridCard({ item, onPress, onAdd, highlighted }: Props) {
     <Animated.View style={[styles.wrap, highlightStyle]}>
       <Pressable onPress={onPress} style={styles.card}>
         <View style={styles.imageWrap}>
-          {item.imageUrl ? (
-            <Image
-              source={{ uri: item.imageUrl }}
-              style={styles.image}
-              contentFit="cover"
-              recyclingKey={item.id}
-              transition={180}
-            />
-          ) : (
-            <LinearGradient colors={['#FFF7ED', '#FFEDD5']} style={styles.image} />
-          )}
+          <Image
+            source={{ uri: photoUri }}
+            style={styles.image}
+            contentFit="cover"
+            recyclingKey={item.id}
+            transition={180}
+          />
 
           {item.isAvailable !== false ? (
             quantity > 0 && !hasCustomizations ? (

@@ -38,6 +38,7 @@ import {
   useNotifyStock,
 } from '@/lib/restaurant/hooks';
 import type { CustomizationGroup, MenuItem } from '@/lib/restaurant/types';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useAuthStore } from '@/store/auth-store';
 import { useCartStore } from '@/store/cart-store';
@@ -284,15 +285,16 @@ export function MenuItemDetailSheet({
             bounces={false}
           >
             <View style={styles.heroWrap}>
-              {displayItem.imageUrl ? (
-                <Image
-                  source={{ uri: displayItem.imageUrl }}
-                  style={[styles.heroImg, !available && styles.heroDim]}
-                  contentFit="cover"
-                />
-              ) : (
-                <View style={[styles.heroImg, styles.heroPlaceholder, !available && styles.heroDim]} />
-              )}
+              <Image
+                source={{
+                  uri: resolveMenuItemImage(
+                    displayItem.name,
+                    displayItem.imageUrl,
+                  ),
+                }}
+                style={[styles.heroImg, !available && styles.heroDim]}
+                contentFit="cover"
+              />
               <View style={styles.heroActions}>
                 <Pressable style={styles.iconCircle}>
                   <Share2 color="#E87431" size={18} strokeWidth={2.5} />

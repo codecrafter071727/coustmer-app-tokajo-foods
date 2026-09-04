@@ -79,7 +79,7 @@ const IMG = {
   paniPuri:
     'https://images.unsplash.com/photo-1606491956689-2ea866258177?w=600&h=450&fit=crop&q=80',
   pavBhaji:
-    'https://images.unsplash.com/photo-1606491956689-2ea866258177?w=600&h=450&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=600&h=450&fit=crop&q=80',
   thali:
     'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&h=450&fit=crop&q=80',
   pasta:

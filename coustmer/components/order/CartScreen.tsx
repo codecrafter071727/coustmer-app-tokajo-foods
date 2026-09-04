@@ -69,6 +69,7 @@ import {
   ensureWalletCoversCheckout,
   payableBeforeWallet,
 } from '@/lib/cart/ensure-wallet-checkout';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import { parseDeliveryAddress } from '@/lib/order/parse-address';
 import {
   useInitiatePayment,
@@ -152,9 +153,7 @@ function CartItemCard({
   onDecrement: () => void;
   onIncrement: () => void;
 }) {
-  const imageUri =
-    item.imageUrl ||
-    'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=200&h=200&fit=crop';
+  const imageUri = resolveMenuItemImage(item.name, item.imageUrl);
   const modifierLabel = (item.modifiers ?? [])
     .map((m) => m.optionName)
     .filter(Boolean)

@@ -8,6 +8,7 @@ import {
   decrementCartItem,
   incrementCartItem,
 } from '@/lib/order/add-to-cart';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import type { MenuItem } from '@/lib/restaurant/types';
 import { playHapticFeedback } from '@/lib/utils/haptics';
 import { useCartStore } from '@/store/cart-store';
@@ -28,7 +29,7 @@ export function MenuItemRow({ item, onPress, onAdd, unavailable: forceUnavailabl
   );
 
   const available = item.isAvailable !== false && !forceUnavailable;
-  const photoUri = item.imageUrl?.trim() || '';
+  const photoUri = resolveMenuItemImage(item.name, item.imageUrl);
   const hasCustomizations =
     item.hasCustomizations === true ||
     (Array.isArray(item.modifierGroups) && item.modifierGroups.length > 0);

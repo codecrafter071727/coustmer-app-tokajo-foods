@@ -22,6 +22,7 @@ import { VegBadge } from '@/components/restaurant/MenuBadges';
 import { APP_BOTTOM_NAV_INSET } from '@/components/navigation/AppBottomNav';
 import { CartFloatingBar } from '@/components/order/CartFloatingBar';
 import { fonts } from '@/constants/typography';
+import { resolveMenuItemImage } from '@/lib/restaurant/menu-item-images';
 import {
   extractCityFromAddress,
   normalizeCityName,
@@ -151,9 +152,7 @@ export function CategoryExploreScreen() {
               <View style={styles.imageWrap}>
                 <Image
                   source={{
-                    uri:
-                      item.imageUrl ||
-                      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=400&fit=crop',
+                    uri: resolveMenuItemImage(item.name, item.imageUrl),
                   }}
                   style={styles.image}
                   contentFit="cover"
