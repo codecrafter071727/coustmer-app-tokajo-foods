@@ -43,6 +43,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 import { ErrorView, LoadingView } from '@/components/common/StateViews';
+import { ParcelProofSection } from '@/components/order/ParcelProofSection';
 import { fonts } from '@/constants/typography';
 import { deliveryApi } from '@/lib/delivery/api';
 import {
@@ -1377,6 +1378,11 @@ export function OrderTrackingScreen() {
               </View>
             </View>
           ) : null}
+
+          <ParcelProofSection
+            pickupProofUrl={t?.pickupProofUrl}
+            proofOfDelivery={t?.proofOfDelivery}
+          />
 
           {partnerAssigned ? (
             <View style={styles.section}>

@@ -42,6 +42,11 @@ export type OrderTracker = {
   timeline?: TrackingTimelineEvent[];
   shareToken?: string;
   dropOtp?: string;
+  /** Parcel bag photo at restaurant. */
+  pickupProofUrl?: string | null;
+  /** Handoff / door photo at customer. */
+  proofOfDelivery?: string | null;
+  signatureUrl?: string | null;
   raw: Record<string, unknown>;
 };
 

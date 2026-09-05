@@ -220,6 +220,15 @@ function mapTracker(raw: unknown, orderId: string): OrderTracker {
         : undefined,
     shareToken: (r.shareToken as string) || undefined,
     dropOtp: (r.dropOtp as string) || (r.otp as string) || undefined,
+    pickupProofUrl:
+      typeof r.pickupProofUrl === 'string' ? r.pickupProofUrl : null,
+    proofOfDelivery:
+      typeof r.proofOfDelivery === 'string'
+        ? r.proofOfDelivery
+        : typeof r.proofPhotoUrl === 'string'
+          ? r.proofPhotoUrl
+          : null,
+    signatureUrl: typeof r.signatureUrl === 'string' ? r.signatureUrl : null,
     raw: r,
   };
 }
